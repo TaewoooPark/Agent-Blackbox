@@ -884,9 +884,22 @@ function fileMentionsFromText(value: string): string[] {
   for (const match of value.matchAll(/(?:\$PROJECT\/)?(?:[\w.-]+\/)*[\w.-]+\.(?:json|yaml|html|[cm]?[jt]sx?|md|css|py|go|rs|java|kt|swift|rb|php|yml|toml)/g)) {
     const path = match[0];
     if (!path.includes("/") && !/^(package\.json|README\.md)$/i.test(path)) continue;
-    mentions.add(path.startsWith("$PROJECT/") ? path : `$PROJECT/${path}`);
+    const normalized = normalizeMentionPath(path);
+    if (normalized) mentions.add(normalized);
   }
   return [...mentions].sort((a, b) => a.localeCompare(b));
+}
+
+function normalizeMentionPath(raw: string): string | undefined {
+  const withoutPrefix = raw.startsWith("$PROJECT/") ? raw.slice("$PROJECT/".length) : raw;
+  const segments = withoutPrefix.split("/").filter((segment) => segment.length > 0);
+  // A relative mention from prompt text ("./foo.js", "../foo.js") can't be
+  // resolved to a project location, so it would render as a stray "." folder.
+  // Drop these instead of inventing a phantom node.
+  if (segments.length === 0 || segments.some((segment) => segment === "." || segment === "..")) {
+    return undefined;
+  }
+  return `$PROJECT/${segments.join("/")}`;
 }
 
 function describeCommandPurpose(command: string | undefined, description: string | undefined) {

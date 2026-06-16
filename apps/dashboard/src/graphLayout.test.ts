@@ -245,6 +245,31 @@ describe("dashboard graph helpers", () => {
     expect(liveSteps[1]?.branches.map((branch) => branch.label)).toContain("src/late.ts");
   });
 
+  it("drops unresolvable relative file mentions from prompt text", () => {
+    const events = [
+      createTraceEvent(1, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "message",
+        summary: "opencode.run.prompt",
+        payload: {
+          properties: {
+            role: "user",
+            text: "Create src/mathutils/stats.js and import it from ./stats.js in the test."
+          }
+        }
+      })
+    ];
+
+    const steps = createWorkflowSteps(events);
+    const fileBranches = steps[0]?.branches.filter((branch) => branch.kind === "file") ?? [];
+    const labels = fileBranches.map((branch) => branch.label);
+
+    expect(labels).toContain("$PROJECT/src/mathutils/stats.js");
+    expect(labels.some((label) => label.includes("/./") || label.endsWith("/."))).toBe(false);
+  });
+
   it("understands nested file paths from provider watcher events", () => {
     const events = [
       createTraceEvent(1, {
