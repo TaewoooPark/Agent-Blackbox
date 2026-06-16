@@ -347,7 +347,7 @@ function createEventNode(
 }
 
 function createFileActivity(graph: MutableGraph, event: TraceEvent): void {
-  const path = stringPayload(event, "path") ?? stringPayload(event, "file") ?? "unknown-file";
+  const path = filePathPayload(event) ?? "unknown-file";
   const fileId = fileNodeId(path);
   ensureNode(graph, {
     id: fileId,
@@ -536,6 +536,37 @@ function stringPayload(event: TraceEvent, key: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+function stringPayloadPath(event: TraceEvent, paths: string[]): string | undefined {
+  for (const path of paths) {
+    const value = payloadPath(event.payload, path);
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function filePathPayload(event: TraceEvent): string | undefined {
+  return stringPayloadPath(event, [
+    "path",
+    "file",
+    "properties.file",
+    "properties.path",
+    "output.metadata.path",
+    "input.args.filePath",
+    "input.args.path"
+  ]);
+}
+
+function payloadPath(value: unknown, path: string): unknown {
+  let current = value;
+  for (const part of path.split(".")) {
+    if (!isRecord(current)) return undefined;
+    current = current[part];
+  }
+  return current;
+}
+
 function numberPayload(event: TraceEvent, key: string): number | undefined {
   const value = event.payload[key];
   return typeof value === "number" ? value : undefined;
@@ -580,4 +611,8 @@ function workflowEdgeId(from: string, to: string, type: WorkflowEdgeType): strin
 
 function stablePart(value: string): string {
   return value.replace(/[^a-zA-Z0-9_.:-]/g, "_");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

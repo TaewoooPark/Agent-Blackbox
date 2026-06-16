@@ -103,5 +103,25 @@ describe("workflow graph materialization", () => {
     expect(diff.addedNodeIds.some((id) => id.includes("000009"))).toBe(true);
     expect(diff.removedNodeIds).toEqual([]);
   });
-});
 
+  it("extracts file paths from nested provider payloads", () => {
+    const sequencer = createEventSequencer({
+      host: "opencode",
+      runId: "run-graph",
+      sessionId: "session-main"
+    });
+    const graph = materializeWorkflowGraph([
+      sequencer.next({
+        kind: "file_edit",
+        payload: {
+          properties: {
+            file: "$PROJECT/src/calc.js"
+          }
+        }
+      })
+    ]);
+
+    expect(graph.nodes.some((node) => node.type === "FILE" && node.label === "$PROJECT/src/calc.js")).toBe(true);
+    expect(graph.nodes.some((node) => node.type === "FILE" && node.label === "unknown-file")).toBe(false);
+  });
+});

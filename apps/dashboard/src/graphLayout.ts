@@ -232,6 +232,14 @@ export function createWorkflowSteps(events: TraceEvent[]): WorkflowStep[] {
 
     const step = trunkStepForEvent(event);
     if (step) {
+      const previousStep = steps.at(-1);
+      if (shouldMergeSequentialStep(previousStep, step, event)) {
+        previousStep.branches.push(...step.branches);
+        previousStep.tokens = addTokenUsage(previousStep.tokens, addTokenUsage(pendingTokens, tokenDelta));
+        pendingBranches = [];
+        pendingTokens = emptyTokenUsage();
+        continue;
+      }
       step.branches.unshift(...pendingBranches);
       step.tokens = addTokenUsage(step.tokens, addTokenUsage(pendingTokens, tokenDelta));
       pendingBranches = [];
@@ -520,7 +528,7 @@ function promptStepForEvent(event: TraceEvent): WorkflowStep | undefined {
 }
 
 function trunkStepForEvent(event: TraceEvent): WorkflowStep | undefined {
-  const path = stringPayload(event, "path") ?? stringPayload(event, "file");
+  const path = filePathForEvent(event);
   if (path && event.kind === "file_edit") {
     return makeStep(event, {
       kind: "change",
@@ -697,7 +705,7 @@ function trunkStepForEvent(event: TraceEvent): WorkflowStep | undefined {
 }
 
 function contextualBranchForEvent(event: TraceEvent, treeIsEmpty: boolean): WorkflowBranch | undefined {
-  const path = stringPayload(event, "path") ?? stringPayload(event, "file");
+  const path = filePathForEvent(event);
   if (path && event.kind === "file_read") {
     return makeBranch(event, {
       kind: "file",
@@ -816,7 +824,7 @@ function stableIdPart(value: string): string {
 }
 
 function visibleTextForEvent(event: TraceEvent): string | undefined {
-  const path = stringPayload(event, "path") ?? stringPayload(event, "file");
+  const path = filePathForEvent(event);
   if (path && event.kind === "file_read") return `Read ${path}`;
   if (path && event.kind === "file_edit") return `Changed ${path}`;
   if (path && event.kind === "file_created") return `Created ${path}`;
@@ -1020,6 +1028,57 @@ function toneForEvent(event: TraceEvent): TimelineTone {
 function stringPayload(event: TraceEvent, key: string): string | undefined {
   const value = event.payload[key];
   return typeof value === "string" ? value : undefined;
+}
+
+function filePathForEvent(event: TraceEvent): string | undefined {
+  return stringPayloadPath(event, [
+    "path",
+    "file",
+    "properties.file",
+    "properties.path",
+    "output.metadata.path",
+    "input.args.filePath",
+    "input.args.path"
+  ]);
+}
+
+function shouldMergeSequentialStep(
+  previousStep: WorkflowStep | undefined,
+  nextStep: WorkflowStep,
+  event: TraceEvent
+): previousStep is WorkflowStep {
+  if (!previousStep) return false;
+  if (previousStep.kind !== "change" || nextStep.kind !== "change") return false;
+  if (previousStep.title !== nextStep.title || previousStep.description !== nextStep.description) return false;
+  if (previousStep.agentLabel !== nextStep.agentLabel) return false;
+  if (event.kind !== "file_edit" && event.kind !== "file_created" && event.kind !== "file_deleted") return false;
+  if (nextStep.seq - previousStep.seq > 5) return false;
+
+  const previousFileKey = changedFileKey(previousStep);
+  const nextFileKey = changedFileKey(nextStep);
+
+  if (previousFileKey.length === 0 || previousFileKey !== nextFileKey) return false;
+  return isToolAfterFileEvent(event) || isFileWatcherFileEvent(event);
+}
+
+function isToolAfterFileEvent(event: TraceEvent): boolean {
+  return stringPayload(event, "source") === "tool.after";
+}
+
+function isFileWatcherFileEvent(event: TraceEvent): boolean {
+  return stringPayloadPath(event, ["type"]) === "file.edited";
+}
+
+function changedFileKey(step: WorkflowStep): string {
+  return step.branches
+    .filter(
+      (branch) =>
+        branch.kind === "file" &&
+        (branch.detail === "modified" || branch.detail === "created" || branch.detail === "removed")
+    )
+    .map((branch) => `${branch.label}:${branch.detail ?? ""}`)
+    .sort()
+    .join("|");
 }
 
 function numberPayload(event: TraceEvent, key: string): number | undefined {
