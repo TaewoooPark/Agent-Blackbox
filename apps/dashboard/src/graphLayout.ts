@@ -15,7 +15,7 @@ export type DashboardSummary = {
   decisions: number;
 };
 
-export type TimelineTone = "neutral" | "work" | "decision" | "risk" | "claim";
+export type TimelineTone = "neutral" | "work" | "decision" | "risk" | "claim" | "success";
 
 export type TimelineMark = {
   id: string;
@@ -997,7 +997,7 @@ function describeCommandOutcome(exitCode: number | undefined): {
     return {
       branchLabel: "Passed",
       sentence: "It completed successfully.",
-      tone: "work",
+      tone: "success",
       titleFor: (purpose) => `${capitalize(purpose)} passed`
     };
   }
@@ -1050,6 +1050,9 @@ function toneForEvent(event: TraceEvent): TimelineTone {
     (event.kind === "bash" && numberPayload(event, "exitCode") !== undefined && numberPayload(event, "exitCode") !== 0)
   ) {
     return "risk";
+  }
+  if (event.kind === "bash" && numberPayload(event, "exitCode") === 0) {
+    return "success";
   }
   if (
     event.kind === "tool_call" ||

@@ -477,6 +477,10 @@ h3 {
   background: #c4403c;
 }
 
+.tick-success {
+  background: #2f9e57;
+}
+
 .tick-claim {
   background: #c2c6cb;
 }
@@ -708,6 +712,14 @@ h3 {
 
 .treeStep.tone-decision {
   box-shadow: var(--card-shadow), inset 3px 0 0 rgba(124, 92, 196, 0.65);
+}
+
+.treeStep.tone-success {
+  box-shadow: var(--card-shadow), inset 3px 0 0 rgba(47, 158, 87, 0.75);
+}
+
+.treeStep.tone-success .stepMain strong {
+  color: #2f7d4f;
 }
 
 .treeStep.tone-risk {
