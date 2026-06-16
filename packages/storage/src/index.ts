@@ -4,3 +4,10 @@ export function describeStorage(): string {
   return "Agent-Blackbox storage: append-only traces and replay indexes.";
 }
 
+export {
+  appendTraceEvent,
+  parseTraceEventLine,
+  parseTraceEvents,
+  readTraceEvents,
+  serializeTraceEvent
+} from "./ndjson.js";

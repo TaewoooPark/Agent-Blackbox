@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "baseUrl": ".",
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
@@ -12,7 +13,11 @@
     "resolveJsonModule": true,
     "declaration": true,
     "declarationMap": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "paths": {
+      "@agent-blackbox/core": ["packages/core/src/index.ts"],
+      "@agent-blackbox/storage": ["packages/storage/src/index.ts"],
+      "@agent-blackbox/opencode-adapter": ["packages/opencode-adapter/src/index.ts"]
+    }
   }
 }
-
