@@ -966,7 +966,7 @@ function TreeItemCard({
   const fileCount = uniqueFileCount(step);
   return (
     <button
-      aria-label={`${step.title}. ${formatTokenCount(step.tokens.total)}. ${fileCount} connected files.`}
+      aria-label={`${stepDisplayTitle(step, fileCount)}. ${formatTokenCount(step.tokens.total)}. ${fileCount} connected files.`}
       className={`treeNode spineStep treeStep tone-${step.tone} ${step.agentLabel ? "agentStep" : "rootStep"} ${
         selected ? "selected" : ""
       } ${manuallySelected ? "manualSelected" : ""} ${agentFocused ? "agentFocused" : ""} ${
@@ -1325,12 +1325,15 @@ function GlassInspector({
     ? connections.filter((connection) => connection.path === selectedFilePath)
     : [];
   const latestFileConnection = fileConnections.at(-1);
+  const stepTitle = selectedStep ? stepDisplayTitle(selectedStep, uniqueFileCount(selectedStep)) : undefined;
   const title = selectedFilePath
     ? fileNameFromPath(selectedFilePath)
-    : selectedBranch?.title ?? selectedStep?.title ?? "Nothing selected";
+    : selectedBranch?.title ?? stepTitle ?? "Nothing selected";
   const description = selectedFilePath
     ? `${fileConnections.length} workflow moments are connected to this file.`
-    : selectedBranch?.description ?? selectedStep?.description ?? "Click a workflow moment or a file to focus its connection.";
+    : selectedBranch?.description ??
+      (selectedStep ? aggregatedStepDescription(selectedStep) : undefined) ??
+      "Click a workflow moment or a file to focus its connection.";
   const seq = selectedFilePath ? latestFileConnection?.seq : selectedBranch?.seq ?? selectedStep?.seq;
   const showsFullPrompt = !selectedFilePath && (selectedBranch?.kind === "prompt" || selectedStep?.kind === "prompt");
 
@@ -1649,6 +1652,20 @@ function fileFolderAncestors(path: string): string[] {
 
 function uniqueFileCount(step: WorkflowStep): number {
   return new Set(step.branches.filter((branch) => branch.kind === "file").map((branch) => branch.label)).size;
+}
+
+// Inspector body for a moment: when it aggregates several files, list them so
+// the operator can see exactly what "Created 12 files" covered.
+function aggregatedStepDescription(step: WorkflowStep): string {
+  const files = [...new Set(step.branches.filter((branch) => branch.kind === "file").map((branch) => branch.label))];
+  if (files.length > 1) {
+    return `${files.length} files: ${files.map(fileNameFromPath).join(", ")}`;
+  }
+  const runs = step.branches.filter((branch) => branch.kind === "verification").length;
+  if (runs > 1) {
+    return `${step.description} (${runs} runs)`;
+  }
+  return step.description;
 }
 
 // When consecutive identical moments are aggregated into one node, surface the
