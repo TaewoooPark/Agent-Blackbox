@@ -385,8 +385,10 @@ h3 {
 
 .mapCanvas {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(210px, var(--files-width, 252px));
-  gap: 12px;
+  grid-template-columns: var(--tree-render-width, minmax(0, 1fr)) minmax(190px, var(--files-width, 252px));
+  gap: 30px;
+  align-content: center;
+  justify-content: center;
   height: calc(100vh - 104px);
   min-height: calc(100vh - 104px);
   overflow: hidden;
@@ -402,8 +404,9 @@ h3 {
 }
 
 .workflowTree {
-  height: 100%;
-  overflow: hidden;
+  width: var(--tree-render-width, 100%);
+  height: var(--tree-render-height, 100%);
+  overflow: visible;
   overscroll-behavior: contain;
   padding: 0;
   scrollbar-gutter: auto;
@@ -876,7 +879,7 @@ h3 {
 }
 
 .fileStructure {
-  align-self: start;
+  align-self: center;
   background: rgba(255, 255, 255, 0.72);
   border: 1px solid rgba(25, 28, 33, 0.08);
   border-radius: 13px;
