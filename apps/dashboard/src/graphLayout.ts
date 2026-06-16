@@ -280,7 +280,32 @@ export function createWorkflowSteps(events: TraceEvent[]): WorkflowStep[] {
     }
   }
 
-  return steps;
+  return aggregateConsecutiveSteps(steps);
+}
+
+// Collapse a run of identical consecutive moments (e.g. 12 sequential
+// "Created a file" steps) into one node so a large run stays scannable. The
+// first step keeps its seq, so replay reveals the node at the right moment and
+// its branch count fills in progressively as the slider advances.
+function aggregateConsecutiveSteps(steps: WorkflowStep[]): WorkflowStep[] {
+  const result: WorkflowStep[] = [];
+  for (const step of steps) {
+    const previous = result.at(-1);
+    if (previous && canAggregateSteps(previous, step)) {
+      previous.branches.push(...step.branches);
+      previous.tokens = addTokenUsage(previous.tokens, step.tokens);
+      continue;
+    }
+    result.push({ ...step, branches: [...step.branches] });
+  }
+  return result;
+}
+
+function canAggregateSteps(previous: WorkflowStep, next: WorkflowStep): boolean {
+  if (previous.kind !== next.kind) return false;
+  if (previous.title !== next.title) return false;
+  if (previous.agentLabel !== next.agentLabel) return false;
+  return previous.kind === "change" || previous.kind === "verification";
 }
 
 export function filterWorkflowStepsBySeq(steps: WorkflowStep[], replaySeq: number): WorkflowStep[] {
