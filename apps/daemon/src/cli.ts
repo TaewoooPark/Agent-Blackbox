@@ -1,12 +1,53 @@
 #!/usr/bin/env node
 import { AGENT_BLACKBOX_DAEMON_VERSION, describeDaemon } from "./index.js";
+import { buildReplaySummary, startTraceDaemon } from "./server.js";
 
 const args = process.argv.slice(2);
 
-if (args.includes("--version") || args.includes("-v")) {
-  console.log(AGENT_BLACKBOX_DAEMON_VERSION);
-} else {
+void main(args);
+
+async function main(argv: string[]): Promise<void> {
+  if (argv.includes("--version") || argv.includes("-v")) {
+    console.log(AGENT_BLACKBOX_DAEMON_VERSION);
+    return;
+  }
+
+  const command = argv[0] ?? "help";
+  if (command === "daemon") {
+    const projectDir = readFlag(argv, "--project") ?? process.cwd();
+    const port = Number(readFlag(argv, "--port") ?? "47831");
+    const daemon = await startTraceDaemon({ projectDir, port });
+    console.log(`Agent-Blackbox daemon listening on http://127.0.0.1:${daemon.port}`);
+    console.log(`Trace file: ${daemon.eventsFile}`);
+    return;
+  }
+
+  if (command === "replay") {
+    const eventsFile = argv[1];
+    if (!eventsFile) {
+      throw new Error("Usage: agent-blackbox replay <events.ndjson>");
+    }
+    console.log(JSON.stringify(await buildReplaySummary(eventsFile), null, 2));
+    return;
+  }
+
+  printHelp();
+}
+
+function printHelp(): void {
   console.log(describeDaemon());
-  console.log("Commands are scaffolded. Next: daemon, replay, dashboard, init-opencode.");
+  console.log("");
+  console.log("Usage:");
+  console.log("  agent-blackbox daemon [--project <dir>] [--port <port>]");
+  console.log("  agent-blackbox replay <events.ndjson>");
+  console.log("  agent-blackbox --version");
+}
+
+function readFlag(argv: string[], flag: string): string | undefined {
+  const index = argv.indexOf(flag);
+  if (index < 0) {
+    return undefined;
+  }
+  return argv[index + 1];
 }
 
