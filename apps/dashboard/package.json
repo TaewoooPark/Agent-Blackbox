@@ -12,11 +12,13 @@
     }
   },
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -b && vite build",
+    "dev": "vite --host 127.0.0.1",
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
-    "@agent-blackbox/core": "file:../../packages/core"
+    "@agent-blackbox/core": "file:../../packages/core",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
   }
 }
-
