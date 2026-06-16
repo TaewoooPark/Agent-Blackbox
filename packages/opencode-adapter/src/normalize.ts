@@ -96,22 +96,24 @@ export function normalizeToolAfter(
   output: OpenCodeHookOutput,
   context: OpenCodeNormalizerContext
 ): TraceEvent {
+  const tool = readString(input, ["tool", "name"]) ?? readString(output, ["tool", "name"]) ?? "unknown-tool";
   const payload = normalizePayload(
     {
       phase: "after",
-      tool: readString(input, ["tool", "name"]) ?? readString(output, ["tool", "name"]) ?? "unknown-tool",
+      tool,
       input,
       output
     },
     context
   );
+  const observed = deriveObservedToolResult(tool, payload.value);
   const traceInput: TraceEventInput = {
     host: "opencode",
     runId: context.runId,
     sessionId: extractSessionId(input, context.defaultSessionId),
-    kind: "tool_result",
-    summary: `tool.after:${payload.value.tool ?? "unknown-tool"}`,
-    payload: payload.value,
+    kind: observed?.kind ?? "tool_result",
+    summary: observed?.summary ?? `tool.after:${payload.value.tool ?? "unknown-tool"}`,
+    payload: observed?.payload ?? payload.value,
     redaction: {
       rawStored: context.rawStored ?? false,
       rulesApplied: payload.rulesApplied,
@@ -123,6 +125,67 @@ export function normalizeToolAfter(
     traceInput.agentId = agentId;
   }
   return createTraceEvent(context.seq, traceInput);
+}
+
+function deriveObservedToolResult(
+  tool: string,
+  payload: JsonObject
+): { kind: TraceEventKind; summary: string; payload: JsonObject } | undefined {
+  if (tool === "read") {
+    const path =
+      readString(payload, ["input.args.filePath", "output.metadata.display.path"]) ??
+      readString(payload, ["output.title"]);
+    const observedPayload = compactJsonObject({
+      tool,
+      source: "tool.after",
+      path,
+      callID: readString(payload, ["input.callID"]),
+      preview: readString(payload, ["output.metadata.preview"]),
+      truncated: readBoolean(payload, ["output.metadata.truncated"])
+    });
+    return {
+      kind: "file_read",
+      summary: path ? `Read ${path}` : "Read file",
+      payload: observedPayload
+    };
+  }
+
+  if (tool === "bash") {
+    const command = readString(payload, ["input.args.command", "output.metadata.command"]);
+    const exitCode = readNumber(payload, ["output.metadata.exit", "output.metadata.exitCode"]);
+    const outputPreview = shortenOptional(readString(payload, ["output.metadata.output", "output.output"]), 1200);
+    const observedPayload = compactJsonObject({
+      tool,
+      source: "tool.after",
+      command,
+      exitCode,
+      description: readString(payload, ["input.args.description", "output.metadata.description"]),
+      outputPreview,
+      truncated: readBoolean(payload, ["output.metadata.truncated"])
+    });
+    return {
+      kind: "bash",
+      summary: command ? `Ran ${command}` : "Ran shell command",
+      payload: observedPayload
+    };
+  }
+
+  if (tool === "edit" || tool === "write" || tool === "patch") {
+    const path = readString(payload, ["input.args.filePath", "input.args.path", "output.metadata.path"]);
+    const observedPayload = compactJsonObject({
+      tool,
+      source: "tool.after",
+      path,
+      callID: readString(payload, ["input.callID"])
+    });
+    return {
+      kind: tool === "write" ? "file_created" : "file_edit",
+      summary: path ? `Edited ${path}` : "Edited file",
+      payload: observedPayload
+    };
+  }
+
+  return undefined;
 }
 
 function normalizePayload(value: unknown, context: OpenCodeNormalizerContext) {
@@ -190,6 +253,26 @@ function readString(record: UnknownRecord, keys: string[]): string | undefined {
   return undefined;
 }
 
+function readNumber(record: UnknownRecord, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = readPath(record, key);
+    if (typeof value === "number") {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function readBoolean(record: UnknownRecord, keys: string[]): boolean | undefined {
+  for (const key of keys) {
+    const value = readPath(record, key);
+    if (typeof value === "boolean") {
+      return value;
+    }
+  }
+  return undefined;
+}
+
 function readPath(record: UnknownRecord, path: string): unknown {
   const parts = path.split(".");
   let current: unknown = record;
@@ -200,6 +283,24 @@ function readPath(record: UnknownRecord, path: string): unknown {
     current = current[part];
   }
   return current;
+}
+
+function compactJsonObject(input: Record<string, unknown>): JsonObject {
+  const output: JsonObject = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (typeof value === "undefined") {
+      continue;
+    }
+    output[key] = sanitizeJson(value, new WeakSet<object>()) as JsonObject[keyof JsonObject];
+  }
+  return output;
+}
+
+function shortenOptional(value: string | undefined, maxLength: number): string | undefined {
+  if (value === undefined || value.length <= maxLength) {
+    return value;
+  }
+  return `${value.slice(0, maxLength)}...`;
 }
 
 function asRecord(value: unknown): UnknownRecord {

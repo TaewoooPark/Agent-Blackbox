@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeOpenCodeEvent, normalizeToolBefore } from "./normalize.js";
+import { normalizeOpenCodeEvent, normalizeToolAfter, normalizeToolBefore } from "./normalize.js";
 
 describe("OpenCode event normalization", () => {
   it("maps file edited events to canonical file_edit trace events", () => {
@@ -61,5 +61,67 @@ describe("OpenCode event normalization", () => {
 
     const payloadInput = event.payload.input as { self?: string };
     expect(payloadInput.self).toBe("[Circular]");
+  });
+
+  it("promotes completed read tools to redacted file_read events", () => {
+    const event = normalizeToolAfter(
+      {
+        tool: "read",
+        sessionID: "session-1",
+        args: {
+          filePath: "/repo/README.md"
+        }
+      },
+      {
+        output: "<content>private file body</content>",
+        metadata: {
+          preview: "Project README",
+          display: { path: "/repo/README.md" },
+          truncated: false
+        }
+      },
+      {
+        runId: "run-opencode",
+        seq: 4,
+        defaultSessionId: "fallback-session",
+        projectDir: "/repo"
+      }
+    );
+
+    expect(event.kind).toBe("file_read");
+    expect(event.payload.path).toBe("$PROJECT/README.md");
+    expect(event.payload.preview).toBe("Project README");
+    expect(JSON.stringify(event.payload)).not.toContain("private file body");
+  });
+
+  it("promotes completed bash tools to command events with exit codes", () => {
+    const event = normalizeToolAfter(
+      {
+        tool: "bash",
+        sessionID: "session-1",
+        args: {
+          command: "npm test",
+          description: "Run tests"
+        }
+      },
+      {
+        metadata: {
+          output: "pass",
+          exit: 0,
+          truncated: false
+        }
+      },
+      {
+        runId: "run-opencode",
+        seq: 5,
+        defaultSessionId: "fallback-session"
+      }
+    );
+
+    expect(event.kind).toBe("bash");
+    expect(event.summary).toBe("Ran npm test");
+    expect(event.payload.command).toBe("npm test");
+    expect(event.payload.exitCode).toBe(0);
+    expect(event.payload.outputPreview).toBe("pass");
   });
 });

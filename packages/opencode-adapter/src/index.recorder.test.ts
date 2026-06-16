@@ -19,11 +19,14 @@ describe("OpenCode recorder hooks", () => {
 
     await recorder.event({ event: { type: "session.created", sessionID: "session-hooks" } });
     await recorder["tool.execute.before"]({ tool: "read", sessionID: "session-hooks" }, { args: { filePath: "README.md" } });
-    await recorder["tool.execute.after"]({ tool: "read", sessionID: "session-hooks" }, { result: "ok" });
+    await recorder["tool.execute.after"](
+      { tool: "read", sessionID: "session-hooks", args: { filePath: "README.md" } },
+      { metadata: { preview: "README" } }
+    );
 
-    expect(events.map((event) => event.kind)).toEqual(["session_created", "tool_call", "tool_result"]);
+    expect(events.map((event) => event.kind)).toEqual(["session_created", "tool_call", "file_read"]);
     expect(events.map((event) => event.seq)).toEqual([1, 2, 3]);
     expect(events.every((event) => event.runId === "run-hooks")).toBe(true);
+    expect(events[2]?.payload.path).toBe("README.md");
   });
 });
-

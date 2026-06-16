@@ -17,7 +17,7 @@ describe("init-opencode", () => {
   it("renders a project-local OpenCode plugin", () => {
     expect(
       renderOpenCodePlugin({
-        adapterPackage: "@agent-blackbox/opencode-adapter",
+        adapterImport: "@agent-blackbox/opencode-adapter",
         daemonUrl: "http://127.0.0.1:47831"
       })
     ).toContain("createOpenCodePlugin");
@@ -32,7 +32,11 @@ describe("init-opencode", () => {
       daemonUrl: "http://127.0.0.1:4999"
     });
 
-    expect(await readFile(result.pluginPath, "utf8")).toContain("http://127.0.0.1:4999");
+    const plugin = await readFile(result.pluginPath, "utf8");
+    expect(plugin).toContain('from "@agent-blackbox/opencode-adapter"');
+    expect(plugin).not.toContain("file:/local/adapter");
+    expect(plugin).toContain("http://127.0.0.1:4999");
+    expect(result.adapterImport).toBe("@agent-blackbox/opencode-adapter");
     const packageJson = JSON.parse(await readFile(result.packageJsonPath, "utf8")) as {
       dependencies: Record<string, string>;
     };
@@ -59,4 +63,3 @@ describe("init-opencode", () => {
     expect(packageJson.dependencies["@agent-blackbox/opencode-adapter"]).toBe("@agent-blackbox/opencode-adapter");
   });
 });
-
