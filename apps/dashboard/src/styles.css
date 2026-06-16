@@ -106,6 +106,85 @@ button {
   border-color: rgba(24, 28, 34, 0.22);
 }
 
+.topbarAction {
+  background: #111317;
+  border: 1px solid rgba(17, 19, 23, 0.1);
+  border-radius: var(--card-radius);
+  color: #fff;
+  cursor: pointer;
+  font-size: var(--fs-body);
+  font-weight: 700;
+  padding: 4px 11px;
+}
+
+.topbarAction:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.handoffOverlay {
+  align-items: center;
+  background: rgba(20, 22, 26, 0.28);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 40px;
+  position: fixed;
+  z-index: 50;
+}
+
+.handoffPanel {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border-color);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+  display: flex;
+  flex-direction: column;
+  max-height: 80vh;
+  overflow: hidden;
+  padding: 14px;
+  width: min(720px, 90vw);
+  -webkit-backdrop-filter: var(--card-blur);
+  backdrop-filter: var(--card-blur);
+}
+
+.handoffHeader {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.handoffActions {
+  display: flex;
+  gap: 6px;
+}
+
+.handoffActions button {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border-color);
+  border-radius: var(--card-radius);
+  color: #262a30;
+  cursor: pointer;
+  font-size: var(--fs-body);
+  font-weight: 700;
+  padding: 4px 10px;
+}
+
+.handoffBody {
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid var(--card-border-color);
+  border-radius: var(--card-radius);
+  color: #24282e;
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  margin: 0;
+  overflow: auto;
+  padding: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .statusChip.host {
   color: #2b2f36;
   text-transform: lowercase;
