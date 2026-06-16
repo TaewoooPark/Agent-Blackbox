@@ -167,4 +167,34 @@ describe("OpenCode event normalization", () => {
       }
     });
   });
+
+  it("keeps user prompt text for prompt timeline nodes", () => {
+    const event = normalizeOpenCodeEvent(
+      {
+        id: "evt-user-message",
+        type: "message.updated",
+        properties: {
+          sessionID: "session-1",
+          info: {
+            id: "message-1",
+            role: "user",
+            text: "Please inspect src/calc.js and fix the failing test."
+          }
+        }
+      },
+      {
+        runId: "run-opencode",
+        seq: 7,
+        defaultSessionId: "fallback-session",
+        projectDir: "/repo"
+      }
+    );
+
+    expect(event.payload.properties).toMatchObject({
+      sessionID: "session-1",
+      messageID: "message-1",
+      role: "user",
+      text: "Please inspect src/calc.js and fix the failing test."
+    });
+  });
 });

@@ -147,4 +147,63 @@ describe("dashboard graph helpers", () => {
     ]);
     expect(steps[0]?.branches.map((branch) => branch.kind)).toEqual(["file", "agent", "file"]);
   });
+
+  it("shows user prompts with file mentions and token deltas", () => {
+    const events = [
+      createTraceEvent(1, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "message",
+        payload: {
+          properties: {
+            role: "user",
+            text: "Please update src/calc.ts and package.json before running tests."
+          }
+        }
+      }),
+      createTraceEvent(2, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "session_updated",
+        payload: {
+          properties: {
+            info: {
+              tokens: {
+                input: 120,
+                output: 12,
+                reasoning: 3,
+                cache: {
+                  read: 5,
+                  write: 0
+                }
+              }
+            }
+          }
+        }
+      }),
+      createTraceEvent(3, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "file_edit",
+        payload: { path: "src/calc.ts" }
+      })
+    ];
+
+    const steps = createWorkflowSteps(events);
+
+    expect(steps.map((step) => step.kind)).toEqual(["prompt", "change"]);
+    expect(steps[0]?.description).toContain("Please update src/calc.ts");
+    expect(steps[0]?.branches.map((branch) => branch.label)).toContain("$PROJECT/src/calc.ts");
+    expect(steps[0]?.branches.map((branch) => branch.label)).toContain("$PROJECT/package.json");
+    expect(steps[0]?.tokens).toMatchObject({
+      input: 120,
+      output: 12,
+      reasoning: 3,
+      cacheRead: 5,
+      total: 140
+    });
+  });
 });

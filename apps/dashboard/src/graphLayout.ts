@@ -25,9 +25,18 @@ export type TimelineMark = {
   tone: TimelineTone;
 };
 
-export type WorkflowStepKind = "context" | "change" | "verification" | "decision" | "risk" | "coordination";
+export type TokenUsage = {
+  input: number;
+  output: number;
+  reasoning: number;
+  cacheRead: number;
+  cacheWrite: number;
+  total: number;
+};
 
-export type WorkflowBranchKind = "file" | "verification" | "decision" | "risk" | "agent" | "evidence";
+export type WorkflowStepKind = "prompt" | "context" | "change" | "verification" | "decision" | "risk" | "coordination";
+
+export type WorkflowBranchKind = "file" | "verification" | "decision" | "risk" | "agent" | "evidence" | "prompt";
 
 export type WorkflowBranch = {
   id: string;
@@ -51,6 +60,7 @@ export type WorkflowStep = {
   title: string;
   description: string;
   tone: TimelineTone;
+  tokens: TokenUsage;
   branches: WorkflowBranch[];
   agentLabel?: string;
 };
@@ -126,10 +136,37 @@ export function summarizeTraceEvent(event: TraceEvent): string {
 export function createWorkflowSteps(events: TraceEvent[]): WorkflowStep[] {
   const steps: WorkflowStep[] = [];
   let pendingBranches: WorkflowBranch[] = [];
+  let pendingTokens = emptyTokenUsage();
+  let previousTokenSnapshot: TokenUsage | undefined;
+  const seenPrompts = new Set<string>();
 
   for (const event of [...events].sort((a, b) => a.seq - b.seq)) {
+    const tokenSnapshot = tokenUsageForEvent(event);
+    const tokenDelta = tokenSnapshot
+      ? previousTokenSnapshot
+        ? subtractTokenUsage(tokenSnapshot, previousTokenSnapshot)
+        : tokenSnapshot
+      : emptyTokenUsage();
+    if (tokenSnapshot) {
+      previousTokenSnapshot = tokenSnapshot;
+    }
+
+    const promptStep = promptStepForEvent(event);
+    if (promptStep && !seenPrompts.has(promptStep.description)) {
+      seenPrompts.add(promptStep.description);
+      promptStep.branches.unshift(...pendingBranches);
+      promptStep.tokens = addTokenUsage(promptStep.tokens, addTokenUsage(pendingTokens, tokenDelta));
+      pendingBranches = [];
+      pendingTokens = emptyTokenUsage();
+      steps.push(promptStep);
+      continue;
+    }
+
     const branch = contextualBranchForEvent(event, steps.length === 0);
     if (branch) {
+      if (tokenDelta.total > 0) {
+        pendingTokens = addTokenUsage(pendingTokens, tokenDelta);
+      }
       if (branch.kind === "agent" && steps.length > 0) {
         steps[steps.length - 1]!.branches.push(branch);
       } else {
@@ -139,10 +176,23 @@ export function createWorkflowSteps(events: TraceEvent[]): WorkflowStep[] {
     }
 
     const step = trunkStepForEvent(event);
-    if (!step) continue;
-    step.branches.unshift(...pendingBranches);
-    pendingBranches = [];
-    steps.push(step);
+    if (step) {
+      step.branches.unshift(...pendingBranches);
+      step.tokens = addTokenUsage(step.tokens, addTokenUsage(pendingTokens, tokenDelta));
+      pendingBranches = [];
+      pendingTokens = emptyTokenUsage();
+      steps.push(step);
+      continue;
+    }
+
+    if (tokenDelta.total > 0) {
+      const target = steps.at(-1);
+      if (target) {
+        target.tokens = addTokenUsage(target.tokens, tokenDelta);
+      } else {
+        pendingTokens = addTokenUsage(pendingTokens, tokenDelta);
+      }
+    }
   }
 
   if (pendingBranches.length > 0) {
@@ -160,12 +210,42 @@ export function createWorkflowSteps(events: TraceEvent[]): WorkflowStep[] {
         title: "Gathered context",
         description: "Read and coordination events were collected before a change step appeared.",
         tone: firstBranch.tone,
+        tokens: pendingTokens,
         branches: pendingBranches
       });
     }
   }
 
   return steps;
+}
+
+function promptStepForEvent(event: TraceEvent): WorkflowStep | undefined {
+  const prompt = promptTextForEvent(event);
+  if (!prompt) return undefined;
+  return makeStep(event, {
+    kind: "prompt",
+    title: "Prompt received",
+    description: prompt,
+    branches: [
+      makeBranch(event, {
+        kind: "prompt",
+        label: "User prompt",
+        title: "Prompt received",
+        description: prompt,
+        tone: "decision"
+      }),
+      ...fileMentionsFromText(prompt).map((path) =>
+        makeBranch(event, {
+          kind: "file",
+          label: path,
+          title: "Mentioned a file",
+          description: `The prompt mentioned ${path}.`,
+          tone: "work",
+          detail: "mentioned"
+        })
+      )
+    ]
+  });
 }
 
 function trunkStepForEvent(event: TraceEvent): WorkflowStep | undefined {
@@ -412,6 +492,7 @@ function makeStep(
     title: input.title,
     description: input.description,
     tone: toneForEvent(event),
+    tokens: emptyTokenUsage(),
     branches: input.branches,
     ...(event.agentId || event.agentRole ? { agentLabel: event.agentId ?? event.agentRole } : {})
   };
@@ -467,6 +548,45 @@ function visibleTextForEvent(event: TraceEvent): string | undefined {
   if (event.kind === "git_push") return "Pushed changes";
   if (event.kind === "handoff_generated") return "Prepared a handoff";
   return undefined;
+}
+
+function promptTextForEvent(event: TraceEvent): string | undefined {
+  const role = stringPayloadPath(event, ["properties.role"]) ?? stringPayloadPath(event, ["properties.info.role"]);
+  const text =
+    stringPayloadPath(event, ["properties.text"]) ??
+    stringPayloadPath(event, ["properties.content"]) ??
+    stringPayloadPath(event, ["properties.prompt"]) ??
+    stringPayloadPath(event, ["properties.part.text"]) ??
+    stringPayloadPath(event, ["properties.part.content"]);
+  if (event.kind === "message" && role === "user" && text) {
+    return cleanPromptText(text);
+  }
+
+  const title = stringPayloadPath(event, ["properties.info.title"]);
+  if ((event.kind === "session_created" || event.kind === "session_updated") && title && !isDefaultSessionTitle(title)) {
+    return cleanPromptText(title);
+  }
+  return undefined;
+}
+
+function cleanPromptText(value: string): string | undefined {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length === 0) return undefined;
+  return normalized.length > 1600 ? `${normalized.slice(0, 1597)}...` : normalized;
+}
+
+function isDefaultSessionTitle(value: string): boolean {
+  return /^new session\b/i.test(value.trim());
+}
+
+function fileMentionsFromText(value: string): string[] {
+  const mentions = new Set<string>();
+  for (const match of value.matchAll(/(?:\$PROJECT\/)?(?:[\w.-]+\/)*[\w.-]+\.(?:json|yaml|html|[cm]?[jt]sx?|md|css|py|go|rs|java|kt|swift|rb|php|yml|toml)/g)) {
+    const path = match[0];
+    if (!path.includes("/") && !/^(package\.json|README\.md)$/i.test(path)) continue;
+    mentions.add(path.startsWith("$PROJECT/") ? path : `$PROJECT/${path}`);
+  }
+  return [...mentions].sort((a, b) => a.localeCompare(b));
 }
 
 function describeCommandPurpose(command: string | undefined, description: string | undefined) {
@@ -613,6 +733,123 @@ function stringPayload(event: TraceEvent, key: string): string | undefined {
 function numberPayload(event: TraceEvent, key: string): number | undefined {
   const value = event.payload[key];
   return typeof value === "number" ? value : undefined;
+}
+
+function stringPayloadPath(event: TraceEvent, paths: string[]): string | undefined {
+  for (const path of paths) {
+    const value = payloadPath(event, path);
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function numberPayloadPath(event: TraceEvent, paths: string[]): number | undefined {
+  for (const path of paths) {
+    const value = payloadPath(event, path);
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function payloadPath(event: TraceEvent, path: string): unknown {
+  let current: unknown = event.payload;
+  for (const part of path.split(".")) {
+    if (!isRecord(current)) return undefined;
+    current = current[part];
+  }
+  return current;
+}
+
+function tokenUsageForEvent(event: TraceEvent): TokenUsage | undefined {
+  const hasTokenSnapshot =
+    payloadPath(event, "properties.info.tokens") !== undefined ||
+    payloadPath(event, "tokens") !== undefined ||
+    payloadPath(event, "properties.tokens") !== undefined;
+  if (!hasTokenSnapshot) return undefined;
+
+  const usage = {
+    input: numberPayloadPath(event, ["properties.info.tokens.input", "properties.tokens.input", "tokens.input"]) ?? 0,
+    output: numberPayloadPath(event, ["properties.info.tokens.output", "properties.tokens.output", "tokens.output"]) ?? 0,
+    reasoning:
+      numberPayloadPath(event, ["properties.info.tokens.reasoning", "properties.tokens.reasoning", "tokens.reasoning"]) ?? 0,
+    cacheRead:
+      numberPayloadPath(event, [
+        "properties.info.tokens.cache.read",
+        "properties.tokens.cache.read",
+        "tokens.cache.read",
+        "properties.info.tokens.cacheRead",
+        "properties.tokens.cacheRead",
+        "tokens.cacheRead"
+      ]) ?? 0,
+    cacheWrite:
+      numberPayloadPath(event, [
+        "properties.info.tokens.cache.write",
+        "properties.tokens.cache.write",
+        "tokens.cache.write",
+        "properties.info.tokens.cacheWrite",
+        "properties.tokens.cacheWrite",
+        "tokens.cacheWrite"
+      ]) ?? 0,
+    total: 0
+  };
+  return normalizeTokenUsage(usage);
+}
+
+function emptyTokenUsage(): TokenUsage {
+  return {
+    input: 0,
+    output: 0,
+    reasoning: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    total: 0
+  };
+}
+
+function addTokenUsage(left: TokenUsage, right: TokenUsage): TokenUsage {
+  return normalizeTokenUsage({
+    input: left.input + right.input,
+    output: left.output + right.output,
+    reasoning: left.reasoning + right.reasoning,
+    cacheRead: left.cacheRead + right.cacheRead,
+    cacheWrite: left.cacheWrite + right.cacheWrite,
+    total: 0
+  });
+}
+
+function subtractTokenUsage(current: TokenUsage, previous: TokenUsage): TokenUsage {
+  return normalizeTokenUsage({
+    input: Math.max(0, current.input - previous.input),
+    output: Math.max(0, current.output - previous.output),
+    reasoning: Math.max(0, current.reasoning - previous.reasoning),
+    cacheRead: Math.max(0, current.cacheRead - previous.cacheRead),
+    cacheWrite: Math.max(0, current.cacheWrite - previous.cacheWrite),
+    total: 0
+  });
+}
+
+function normalizeTokenUsage(usage: Omit<TokenUsage, "total"> & { total: number }): TokenUsage {
+  const input = Math.max(0, Math.round(usage.input));
+  const output = Math.max(0, Math.round(usage.output));
+  const reasoning = Math.max(0, Math.round(usage.reasoning));
+  const cacheRead = Math.max(0, Math.round(usage.cacheRead));
+  const cacheWrite = Math.max(0, Math.round(usage.cacheWrite));
+  return {
+    input,
+    output,
+    reasoning,
+    cacheRead,
+    cacheWrite,
+    total: input + output + reasoning + cacheRead + cacheWrite
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function shorten(value: string): string {

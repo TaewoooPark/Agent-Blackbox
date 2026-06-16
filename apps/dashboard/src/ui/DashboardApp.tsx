@@ -4,8 +4,7 @@ import type { CSSProperties } from "react";
 import {
   createTimelineMarks,
   createWorkflowSteps,
-  summarizeGraph,
-  visibleEventsForGraph,
+  type TokenUsage,
   type WorkflowBranch,
   type WorkflowStep
 } from "../graphLayout.js";
@@ -99,13 +98,11 @@ export function DashboardApp() {
   }, [selectedSeq]);
 
   const graph = snapshot?.graph ?? null;
-  const summary = useMemo(() => (graph ? summarizeGraph(graph) : null), [graph]);
   const agentNodes = graph?.nodes.filter((node) => node.type === "AGENT") ?? [];
-  const visibleEvents = useMemo(
-    () => (snapshot && graph ? visibleEventsForGraph(snapshot.events, graph) : []),
-    [snapshot, graph]
-  );
+  const visibleEvents = useMemo(() => snapshot?.events ?? [], [snapshot]);
   const workflowSteps = useMemo(() => createWorkflowSteps(visibleEvents), [visibleEvents]);
+  const tokenTotals = useMemo(() => latestTokenUsage(snapshot?.events ?? []), [snapshot]);
+  const sessionName = useMemo(() => sessionDisplayName(snapshot?.events ?? [], graph?.runId), [snapshot, graph]);
   const selectedStep =
     (selectedEventId
       ? workflowSteps.find(
@@ -120,9 +117,10 @@ export function DashboardApp() {
       : null;
   const inspectedEventId = selectedBranch?.eventId ?? selectedStep?.eventId ?? null;
   const selectedEvent = inspectedEventId ? visibleEvents.find((event) => event.id === inspectedEventId) ?? null : null;
-  const marks = useMemo(() => createTimelineMarks(snapshot?.events ?? []), [snapshot]);
-  const replaySeq = selectedSeq ?? visibleEvents.at(-1)?.seq ?? 0;
-  const maxSeq = snapshot?.events.at(-1)?.seq ?? 0;
+  const orderedEvents = useMemo(() => [...(snapshot?.events ?? [])].sort((a, b) => a.seq - b.seq), [snapshot]);
+  const marks = useMemo(() => createTimelineMarks(orderedEvents), [orderedEvents]);
+  const maxSeq = orderedEvents.at(-1)?.seq ?? 0;
+  const replaySeq = selectedSeq ?? maxSeq;
   const selectWorkflowEvent = (eventId: string) => {
     setSelectedEventId(eventId);
     setSelectedFilePath(null);
@@ -131,18 +129,8 @@ export function DashboardApp() {
   return (
     <main className="shell">
       <header className="topbar">
-        <div>
-          <strong>Agent-Blackbox</strong>
-          <span>{summary?.runId ?? "waiting for daemon"}</span>
-        </div>
-        <div className="stats">
-          <Metric label="events" value={summary?.events ?? 0} />
-          <Metric label="nodes" value={summary?.nodes ?? 0} />
-          <Metric label="edges" value={summary?.edges ?? 0} />
-          <Metric label="decisions" value={summary?.decisions ?? 0} />
-          <Metric label="active" value={summary?.activeAgents ?? 0} />
-          <Metric label="failures" value={summary?.failures ?? 0} tone={summary?.failures ? "risk" : "ok"} />
-        </div>
+        <strong>{sessionName}</strong>
+        <span className="topbarBlock" aria-hidden="true" />
       </header>
 
       {error ? <div className="banner">Daemon unavailable: {error}</div> : null}
@@ -162,6 +150,7 @@ export function DashboardApp() {
               <StatusBadge status={agent.status} />
             </button>
           ))}
+          <TokenPanel usage={tokenTotals} />
           <div className="timeline">
             <h2>Events</h2>
             <div className="replayControls">
@@ -292,7 +281,7 @@ function SessionMap({
       <div className="workflowHeader">
         <div>
           <h2>Session Map</h2>
-          <p>Main actions run downward. Files stay in the right tree and connect back to the exact moments that used them.</p>
+          <p>Main actions run downward. Files stay in the right list and connect back to the exact moments that used them.</p>
         </div>
         <span>{steps.length} moments</span>
       </div>
@@ -373,7 +362,10 @@ function WorkflowColumn({
                 <strong>{shortTitle(step.title)}</strong>
                 <em>{compactDescription(step.description)}</em>
               </span>
-              <span className="stepCount">{fileCount === 0 ? "no files" : `${fileCount} files`}</span>
+              <span className="stepBadges">
+                <span className="stepCount">{fileCount === 0 ? "no files" : `${fileCount} files`}</span>
+                <span className="tokenPill">{formatTokenCount(step.tokens.total)}</span>
+              </span>
             </button>
           </li>
         );
@@ -419,30 +411,60 @@ function FileStructure({
 }) {
   return (
     <aside className="fileStructure" aria-label="Connected file structure">
+      <div className="finderChrome">
+        <span />
+        <span />
+        <span />
+      </div>
       <div className="fileHeader">
         <h2>Files</h2>
-        <span>{rows.filter((row) => row.type === "file").length}</span>
+        <span>{rows.filter((row) => row.type === "file").length} items</span>
+      </div>
+      <div className="finderColumns" aria-hidden="true">
+        <span>Name</span>
+        <span>Kind</span>
+        <span>Links</span>
+        <span>Last</span>
       </div>
       <div className="fileRows">
         {rows.length === 0 ? <p className="muted">No connected files yet.</p> : null}
         {rows.map((row) =>
           row.type === "folder" ? (
-            <div className="fileRow folderRow" key={row.id} style={{ "--level": row.level } as CSSProperties}>
-              <span>{row.name}</span>
+            <div
+              className={`finderRow folderRow ${row.level === 0 ? "rootRow" : ""}`}
+              key={row.id}
+              style={{ "--depth": `${row.level * 14}px` } as CSSProperties}
+            >
+              <span className="finderName">
+                <span className="disclosure" />
+                <span className="folderGlyph" />
+                <strong>{row.name}</strong>
+              </span>
+              <span>Folder</span>
+              <span>-</span>
+              <span>-</span>
             </div>
           ) : (
             <button
-              className={`fileRow fileNode ${row.path === selectedFilePath ? "selected" : ""} ${
+              className={`finderRow fileNode ${row.level === 0 ? "rootRow" : ""} ${
+                row.path === selectedFilePath ? "selected" : ""
+              } ${
                 selectedStepId && row.connections.some((connection) => connection.stepId === selectedStepId) ? "linked" : ""
               }`}
               data-file-path={row.path}
               key={row.id}
               onClick={() => onSelectFile(row.path)}
-              style={{ "--level": row.level } as CSSProperties}
+              style={{ "--depth": `${row.level * 14}px` } as CSSProperties}
               type="button"
             >
-              <span>{row.name}</span>
-              <em>{row.connections.length}</em>
+              <span className="finderName">
+                <span className="disclosure placeholder" />
+                <span className="fileGlyph" />
+                <strong>{row.name}</strong>
+              </span>
+              <span>{fileKindFromName(row.name)}</span>
+              <span>{row.connections.length}</span>
+              <span>seq {latestConnectionSeq(row.connections)}</span>
             </button>
           )
         )}
@@ -477,16 +499,20 @@ function GlassInspector({
     ? `${fileConnections.length} workflow moments are connected to this file.`
     : selectedBranch?.description ?? selectedStep?.description ?? "Click a workflow moment or a file to focus its connection.";
   const seq = selectedFilePath ? latestFileConnection?.seq : selectedBranch?.seq ?? selectedStep?.seq;
+  const showsFullPrompt = !selectedFilePath && (selectedBranch?.kind === "prompt" || selectedStep?.kind === "prompt");
 
   return (
     <aside className="glassInspector" aria-label="Focused detail">
       <span className="glassKicker">{selectedFilePath ? "file focus" : selectedBranch ? selectedBranch.kind : "moment"}</span>
       <strong>{shortTitle(title)}</strong>
-      <p>{compactDescription(description)}</p>
+      <p className={showsFullPrompt ? "glassFullText" : undefined}>
+        {showsFullPrompt ? description : compactDescription(description)}
+      </p>
       <div className="glassMeta">
         {seq ? <span>seq {seq}</span> : null}
         <span>{selectedEvent?.evidence.observed ? "observed" : "mapped"}</span>
         {selectedFilePath ? <span>{fileConnections.length} links</span> : null}
+        {!selectedFilePath && selectedStep ? <span>{formatTokenCount(selectedStep.tokens.total)}</span> : null}
       </div>
       {seq ? (
         <button onClick={() => onSelectSeq(seq)} type="button">
@@ -556,35 +582,38 @@ function createFileRows(connections: FileConnection[]): FileTreeRow[] {
   }
 
   const rows: FileTreeRow[] = [];
+  if (fileMap.size === 0) {
+    return rows;
+  }
+
+  rows.push({
+    id: "folder-project-root",
+    level: 0,
+    name: "project",
+    type: "folder"
+  });
+
   const rootFiles = [...fileMap.entries()]
     .filter(([path]) => pathSegments(path).length === 1)
     .sort(([a], [b]) => a.localeCompare(b));
 
-  if (rootFiles.length > 0) {
+  for (const [path, pathConnections] of rootFiles) {
+    const segments = pathSegments(path);
     rows.push({
-      id: "folder-project-root",
-      level: 0,
-      name: "project",
-      type: "folder"
+      connections: pathConnections,
+      id: `file-${path}`,
+      level: 1,
+      name: segments[0] ?? path,
+      path,
+      type: "file"
     });
-    for (const [path, pathConnections] of rootFiles) {
-      const segments = pathSegments(path);
-      rows.push({
-        connections: pathConnections,
-        id: `file-${path}`,
-        level: 1,
-        name: segments[0] ?? path,
-        path,
-        type: "file"
-      });
-    }
   }
 
   for (const folderPath of [...folderIds].sort((a, b) => a.localeCompare(b))) {
     const segments = folderPath.split("/");
     rows.push({
       id: `folder-${folderPath}`,
-      level: Math.max(0, segments.length - 1),
+      level: segments.length,
       name: segments.at(-1) ?? folderPath,
       type: "folder"
     });
@@ -595,7 +624,7 @@ function createFileRows(connections: FileConnection[]): FileTreeRow[] {
       rows.push({
         connections: pathConnections,
         id: `file-${path}`,
-        level: segments.length,
+        level: segments.length + 1,
         name: segmentsForPath.at(-1) ?? path,
         path,
         type: "file"
@@ -622,6 +651,28 @@ function fileNameFromPath(path: string): string {
   return pathSegments(path).at(-1) ?? path;
 }
 
+function latestConnectionSeq(connections: FileConnection[]): number {
+  return Math.max(...connections.map((connection) => connection.seq));
+}
+
+function fileKindFromName(name: string): string {
+  const extension = name.includes(".") ? name.split(".").at(-1)?.toLowerCase() : undefined;
+  if (!extension) return "Document";
+  const known: Record<string, string> = {
+    css: "Stylesheet",
+    html: "HTML",
+    js: "JavaScript",
+    json: "JSON",
+    jsx: "React",
+    md: "Markdown",
+    ts: "TypeScript",
+    tsx: "React",
+    yaml: "YAML",
+    yml: "YAML"
+  };
+  return known[extension] ?? extension.toUpperCase();
+}
+
 function shortTitle(value: string): string {
   return value.length > 42 ? `${value.slice(0, 39)}...` : value;
 }
@@ -631,13 +682,160 @@ function compactDescription(value: string): string {
   return normalized.length > 88 ? `${normalized.slice(0, 85)}...` : normalized;
 }
 
-function Metric({ label, value, tone }: { label: string; value: number; tone?: "ok" | "risk" }) {
+function TokenPanel({ usage }: { usage: TokenUsage }) {
+  const rows = [
+    ["input", usage.input],
+    ["output", usage.output],
+    ["reasoning", usage.reasoning],
+    ["cache read", usage.cacheRead],
+    ["cache write", usage.cacheWrite]
+  ] as const;
+
   return (
-    <div className={`metric ${tone ?? ""}`}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
+    <section className="tokenPanel" aria-label="Token usage">
+      <h2>Tokens</h2>
+      <strong className="tokenTotal">{formatTokenCount(usage.total)}</strong>
+      <div className="tokenRows">
+        {rows.map(([label, value]) => (
+          <div className="tokenRow" key={label}>
+            <span>{label}</span>
+            <strong>{formatTokenNumber(value)}</strong>
+          </div>
+        ))}
+      </div>
+    </section>
   );
+}
+
+function latestTokenUsage(events: TraceEvent[]): TokenUsage {
+  let usage = emptyTokenUsage();
+  for (const event of events) {
+    const next = tokenUsageFromEvent(event);
+    if (next) {
+      usage = next;
+    }
+  }
+  return usage;
+}
+
+function tokenUsageFromEvent(event: TraceEvent): TokenUsage | undefined {
+  const hasTokens =
+    eventPayloadPath(event, "properties.info.tokens") !== undefined ||
+    eventPayloadPath(event, "properties.tokens") !== undefined ||
+    eventPayloadPath(event, "tokens") !== undefined;
+  if (!hasTokens) return undefined;
+  return normalizeTokenUsage({
+    input: numberAtEventPath(event, ["properties.info.tokens.input", "properties.tokens.input", "tokens.input"]) ?? 0,
+    output: numberAtEventPath(event, ["properties.info.tokens.output", "properties.tokens.output", "tokens.output"]) ?? 0,
+    reasoning:
+      numberAtEventPath(event, ["properties.info.tokens.reasoning", "properties.tokens.reasoning", "tokens.reasoning"]) ?? 0,
+    cacheRead:
+      numberAtEventPath(event, [
+        "properties.info.tokens.cache.read",
+        "properties.tokens.cache.read",
+        "tokens.cache.read",
+        "properties.info.tokens.cacheRead",
+        "properties.tokens.cacheRead",
+        "tokens.cacheRead"
+      ]) ?? 0,
+    cacheWrite:
+      numberAtEventPath(event, [
+        "properties.info.tokens.cache.write",
+        "properties.tokens.cache.write",
+        "tokens.cache.write",
+        "properties.info.tokens.cacheWrite",
+        "properties.tokens.cacheWrite",
+        "tokens.cacheWrite"
+      ]) ?? 0,
+    total: 0
+  });
+}
+
+function sessionDisplayName(events: TraceEvent[], fallback: string | undefined): string {
+  let latestTitle: string | undefined;
+  let latestSlug: string | undefined;
+  for (const event of events) {
+    const title = stringAtEventPath(event, ["properties.info.title"]);
+    const slug = stringAtEventPath(event, ["properties.info.slug"]);
+    if (title && !/^new session\b/i.test(title)) {
+      latestTitle = title;
+    }
+    if (slug) {
+      latestSlug = slug;
+    }
+  }
+  return latestTitle ?? latestSlug ?? fallback ?? "waiting for daemon";
+}
+
+function formatTokenCount(value: number): string {
+  return `${formatTokenNumber(value)} tokens`;
+}
+
+function formatTokenNumber(value: number): string {
+  if (value >= 1_000_000) return `${trimFixed(value / 1_000_000, 1)}M`;
+  if (value >= 10_000) return `${Math.round(value / 1000)}k`;
+  if (value >= 1000) return `${trimFixed(value / 1000, 1)}k`;
+  return String(Math.max(0, Math.round(value)));
+}
+
+function trimFixed(value: number, digits: number): string {
+  return value.toFixed(digits).replace(/\.0$/, "");
+}
+
+function emptyTokenUsage(): TokenUsage {
+  return {
+    input: 0,
+    output: 0,
+    reasoning: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    total: 0
+  };
+}
+
+function normalizeTokenUsage(usage: Omit<TokenUsage, "total"> & { total: number }): TokenUsage {
+  const input = Math.max(0, Math.round(usage.input));
+  const output = Math.max(0, Math.round(usage.output));
+  const reasoning = Math.max(0, Math.round(usage.reasoning));
+  const cacheRead = Math.max(0, Math.round(usage.cacheRead));
+  const cacheWrite = Math.max(0, Math.round(usage.cacheWrite));
+  return {
+    input,
+    output,
+    reasoning,
+    cacheRead,
+    cacheWrite,
+    total: input + output + reasoning + cacheRead + cacheWrite
+  };
+}
+
+function stringAtEventPath(event: TraceEvent, paths: string[]): string | undefined {
+  for (const path of paths) {
+    const value = eventPayloadPath(event, path);
+    if (typeof value === "string" && value.trim().length > 0) return value;
+  }
+  return undefined;
+}
+
+function numberAtEventPath(event: TraceEvent, paths: string[]): number | undefined {
+  for (const path of paths) {
+    const value = eventPayloadPath(event, path);
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return undefined;
+}
+
+function eventPayloadPath(event: TraceEvent, path: string): unknown {
+  let current: unknown = event.payload;
+  for (const segment of path.split(".")) {
+    if (!isRecord(current)) return undefined;
+    current = current[segment];
+  }
+  return current;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function StatusBadge({ status }: { status: WorkflowNode["status"] }) {

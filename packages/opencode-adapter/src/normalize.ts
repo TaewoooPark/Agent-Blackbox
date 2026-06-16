@@ -66,6 +66,8 @@ function minimizeOpenCodeEventPayload(raw: UnknownRecord, type: string): JsonObj
   const info = asRecord(properties.info);
   const part = asRecord(properties.part);
   const state = asRecord(part.state);
+  const role = readString(info, ["role"]) ?? readString(properties, ["role"]);
+  const userText = role === "user" ? shortenOptional(readMessageText(properties, info, part), 2000) : undefined;
   return compactJsonObject({
     id: readString(raw, ["id"]),
     type,
@@ -75,9 +77,10 @@ function minimizeOpenCodeEventPayload(raw: UnknownRecord, type: string): JsonObj
         readString(info, ["sessionID"]) ??
         readString(part, ["sessionID"]),
       messageID: readString(properties, ["messageID"]) ?? readString(info, ["id"]) ?? readString(part, ["messageID"]),
-      role: readString(info, ["role"]),
+      role,
       agent: readString(info, ["agent"]),
       modelID: readString(info, ["modelID", "model.modelID"]),
+      text: userText,
       field: readString(properties, ["field"]),
       deltaLength: readString(properties, ["delta"])?.length,
       part: compactJsonObject({
@@ -219,6 +222,31 @@ function deriveObservedToolResult(
     };
   }
 
+  return undefined;
+}
+
+function readMessageText(...records: UnknownRecord[]): string | undefined {
+  for (const record of records) {
+    const direct = readString(record, ["text", "content", "prompt", "message"]);
+    if (direct) {
+      return direct;
+    }
+
+    const parts = readPath(record, "parts");
+    if (Array.isArray(parts)) {
+      const text = parts
+        .map((part) => {
+          if (!isRecord(part)) return undefined;
+          return readString(part, ["text", "content"]);
+        })
+        .filter((part): part is string => Boolean(part))
+        .join("\n")
+        .trim();
+      if (text.length > 0) {
+        return text;
+      }
+    }
+  }
   return undefined;
 }
 
