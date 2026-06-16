@@ -239,9 +239,17 @@ export function DashboardApp() {
           </span>
           <span className="statusChip">{visibleEvents.length} events</span>
           {riskMomentCount > 0 ? (
-            <span className="statusChip risk">
+            <button
+              className="statusChip risk"
+              onClick={() => {
+                const firstRisk = workflowSteps.find((step) => step.tone === "risk");
+                if (firstRisk) selectWorkflowEvent(firstRisk.eventId);
+              }}
+              title="Jump to the first risk moment"
+              type="button"
+            >
               {riskMomentCount} risk {riskMomentCount === 1 ? "moment" : "moments"}
-            </span>
+            </button>
           ) : null}
           <button
             className="topbarAction"
