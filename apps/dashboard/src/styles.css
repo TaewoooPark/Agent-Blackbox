@@ -9,7 +9,7 @@
   /* Canonical card design, taken from the Files panel and reused everywhere. */
   --card-bg: rgba(255, 255, 255, 0.72);
   --card-border-color: rgba(25, 28, 33, 0.08);
-  --card-radius: 13px;
+  --card-radius: 8px;
   --card-shadow: 0 18px 60px rgba(24, 28, 34, 0.06);
   --card-blur: blur(20px);
 
@@ -559,7 +559,7 @@ h3 {
   justify-content: center;
   min-height: calc(100vh - 104px);
   overflow: hidden;
-  padding-right: calc(var(--files-width, 252px) + 34px);
+  padding: 26px calc(var(--files-width, 252px) + 52px) 26px 26px;
   position: relative;
 }
 
@@ -782,8 +782,8 @@ h3 {
 
 .treeGrid.fit .spineStep {
   grid-template-columns: minmax(0, 1fr);
-  min-height: 24px;
-  padding: 3px 5px;
+  min-height: 34px;
+  padding: 8px 11px;
 }
 
 .mapCanvas.hasFocus .treeNode:not(.selected):not(.agentFocused):not(.manualSelected):not(.fileFocused) {
@@ -905,8 +905,8 @@ h3 {
 
 .treeGrid.fit .agentStartCard {
   grid-template-columns: 9px minmax(0, 1fr);
-  min-height: 24px;
-  padding: 3px 5px;
+  min-height: 34px;
+  padding: 8px 11px;
 }
 
 .treeGrid.fit .agentStemDot {
@@ -1083,10 +1083,10 @@ h3 {
   border: 1px solid var(--card-border-color);
   border-radius: var(--card-radius);
   box-shadow: var(--card-shadow);
-  max-height: calc(100% - 8px);
+  max-height: calc(100% - 52px);
   position: absolute;
-  right: 0;
-  top: 0;
+  right: 26px;
+  top: 26px;
   width: var(--files-width, 252px);
   min-width: 0;
   overflow: hidden;

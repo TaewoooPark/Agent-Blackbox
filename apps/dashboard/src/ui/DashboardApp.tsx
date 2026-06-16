@@ -25,11 +25,11 @@ import { filterEventsForRun, latestRunId, listRuns } from "../runSelection.js";
 
 const daemonUrl = import.meta.env.VITE_AGENT_BLACKBOX_DAEMON_URL ?? "http://127.0.0.1:47831";
 
-const TREE_ROOT_COLUMN_WIDTH = 140;
+const TREE_ROOT_COLUMN_WIDTH = 172;
 const TREE_BRANCH_COLUMN_WIDTH = 104;
 const TREE_COLUMN_GAP = 14;
-const TREE_ROW_HEIGHT = 28;
-const TREE_ROW_GAP = 8;
+const TREE_ROW_HEIGHT = 46;
+const TREE_ROW_GAP = 26;
 const TREE_MIN_SCALE = 0.12;
 // Never upscale: the tree transform multiplies font sizes, so magnifying small
 // runs made the same node title render at different effective sizes per run.
@@ -615,8 +615,10 @@ function SessionMap({
       // itself. Reserve room for the docked file panel and the column gap.
       const canvasRect = container.getBoundingClientRect();
       const reservedHeight = showInspector ? Math.min(inspectorSize.height + 22, canvasRect.height * 0.36) : 0;
-      const availableWidth = Math.max(120, canvasRect.width - filePanelWidth - TREE_COLUMN_GAP - 8);
-      const availableHeight = Math.max(120, canvasRect.height - reservedHeight - 8);
+      // Mirror the .mapCanvas padding (26px inset, plus the file column + 52px
+      // reserve on the right) so the tree fits inside the breathing room.
+      const availableWidth = Math.max(120, canvasRect.width - filePanelWidth - 52 - 26);
+      const availableHeight = Math.max(120, canvasRect.height - reservedHeight - 52);
       const nextScale = clamp(
         Math.min(TREE_MAX_SCALE, availableWidth / treeMetrics.width, availableHeight / treeMetrics.height),
         TREE_MIN_SCALE,
