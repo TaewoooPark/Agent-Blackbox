@@ -76,7 +76,7 @@ describe("trace daemon", () => {
         method: "OPTIONS"
       });
       expect(preflight.status).toBe(204);
-      expect(preflight.headers.get("access-control-allow-origin")).toBe("http://127.0.0.1:5173");
+      expect(preflight.headers.get("access-control-allow-origin")).toBe("*");
 
       const health = await fetch(`http://127.0.0.1:${daemon.port}/health`);
       expect(health.headers.get("access-control-allow-methods")).toContain("POST");

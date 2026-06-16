@@ -133,7 +133,7 @@ function sendJson(response: ServerResponse, statusCode: number, payload: JsonRes
   response.writeHead(statusCode, {
     "access-control-allow-headers": "content-type",
     "access-control-allow-methods": "GET,POST,OPTIONS",
-    "access-control-allow-origin": "http://127.0.0.1:5173",
+    "access-control-allow-origin": "*",
     "content-type": "application/json; charset=utf-8"
   });
   response.end(JSON.stringify(payload));
@@ -143,7 +143,7 @@ function sendEmpty(response: ServerResponse, statusCode: number): void {
   response.writeHead(statusCode, {
     "access-control-allow-headers": "content-type",
     "access-control-allow-methods": "GET,POST,OPTIONS",
-    "access-control-allow-origin": "http://127.0.0.1:5173"
+    "access-control-allow-origin": "*"
   });
   response.end();
 }
