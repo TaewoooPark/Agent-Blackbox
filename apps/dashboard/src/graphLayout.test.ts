@@ -245,6 +245,62 @@ describe("dashboard graph helpers", () => {
     expect(liveSteps[1]?.branches.map((branch) => branch.label)).toContain("src/late.ts");
   });
 
+  it("understands nested file paths from provider watcher events", () => {
+    const events = [
+      createTraceEvent(1, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "file_edit",
+        payload: {
+          properties: {
+            file: "$PROJECT/src/calc.js"
+          }
+        }
+      })
+    ];
+
+    const steps = createWorkflowSteps(events);
+
+    expect(steps).toHaveLength(1);
+    expect(steps[0]?.description).toContain("$PROJECT/src/calc.js");
+  });
+
+  it("merges watcher and tool-after file edits into one workflow moment", () => {
+    const events = [
+      createTraceEvent(1, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "file_edit",
+        summary: "file.edited",
+        payload: {
+          type: "file.edited",
+          properties: {
+            file: "$PROJECT/src/calc.js"
+          }
+        }
+      }),
+      createTraceEvent(4, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "file_edit",
+        summary: "Edited $PROJECT/src/calc.js",
+        payload: {
+          source: "tool.after",
+          path: "$PROJECT/src/calc.js"
+        }
+      })
+    ];
+
+    const steps = createWorkflowSteps(events);
+
+    expect(steps).toHaveLength(1);
+    expect(steps[0]?.title).toBe("Changed a file");
+    expect(steps[0]?.branches.filter((branch) => branch.kind === "file")).toHaveLength(2);
+  });
+
   it("creates genealogical tree lanes for subagents and nested agent branches", () => {
     const events = [
       createTraceEvent(1, {
