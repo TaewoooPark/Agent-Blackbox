@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { normalizeOpenCodeEvent, normalizeToolAfter, normalizeToolBefore } from "./normalize.js";
+import {
+  normalizeOpenCodeEvent,
+  normalizeSyntheticUserPrompt,
+  normalizeToolAfter,
+  normalizeToolBefore
+} from "./normalize.js";
 
 describe("OpenCode event normalization", () => {
   it("maps file edited events to canonical file_edit trace events", () => {
@@ -195,6 +200,55 @@ describe("OpenCode event normalization", () => {
       messageID: "message-1",
       role: "user",
       text: "Please inspect src/calc.js and fix the failing test."
+    });
+  });
+
+  it("marks OpenCode message agents as primary by default", () => {
+    const event = normalizeOpenCodeEvent(
+      {
+        id: "evt-message",
+        type: "message.updated",
+        properties: {
+          sessionID: "session-1",
+          role: "assistant",
+          agent: "build"
+        }
+      },
+      {
+        runId: "run-opencode",
+        seq: 8,
+        defaultSessionId: "fallback-session"
+      }
+    );
+
+    expect(event.agentId).toBe("build");
+    expect(event.agentRole).toBe("primary");
+  });
+
+  it("creates a redacted synthetic prompt from opencode run argv", () => {
+    const session = normalizeOpenCodeEvent(
+      {
+        type: "session.created",
+        sessionID: "session-1"
+      },
+      {
+        runId: "run-opencode",
+        seq: 9,
+        defaultSessionId: "fallback-session",
+        projectDir: "/repo"
+      }
+    );
+    const prompt = normalizeSyntheticUserPrompt("Please edit /repo/src/calc.js", session, {
+      runId: "run-opencode",
+      seq: 10,
+      defaultSessionId: "fallback-session",
+      projectDir: "/repo"
+    });
+
+    expect(prompt.kind).toBe("message");
+    expect(prompt.payload.properties).toMatchObject({
+      role: "user",
+      text: "Please edit $PROJECT/src/calc.js"
     });
   });
 });

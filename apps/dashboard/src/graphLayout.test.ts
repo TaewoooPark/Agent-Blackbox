@@ -83,6 +83,48 @@ describe("dashboard graph helpers", () => {
     ]);
   });
 
+  it("filters noisy OpenCode provider and delta events out of the visible timeline", () => {
+    const events = [
+      createTraceEvent(1, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "session_updated",
+        summary: "plugin.added",
+        payload: { type: "plugin.added" }
+      }),
+      createTraceEvent(2, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "session_updated",
+        summary: "message.part.delta",
+        payload: { type: "message.part.delta" }
+      }),
+      createTraceEvent(3, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "message",
+        payload: {
+          properties: {
+            role: "user",
+            text: "Fix src/calc.ts"
+          }
+        }
+      }),
+      createTraceEvent(4, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "bash",
+        payload: { command: "npm test", exitCode: 0 }
+      })
+    ];
+
+    expect(createTimelineMarks(events).map((mark) => mark.label)).toEqual(["Fix src/calc.ts", "Tests passed"]);
+  });
+
   it("builds workflow steps without exposing raw shell commands", () => {
     const events = [
       createTraceEvent(1, {
@@ -337,5 +379,69 @@ describe("dashboard graph helpers", () => {
       cacheRead: 5,
       total: 140
     });
+  });
+
+  it("does not duplicate a captured prompt with the later OpenCode session title", () => {
+    const events = [
+      createTraceEvent(1, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "session_created",
+        payload: {}
+      }),
+      createTraceEvent(2, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "message",
+        summary: "opencode.run.prompt",
+        payload: {
+          properties: {
+            role: "user",
+            text: "Fix the failing multiply test in src/calc.ts."
+          }
+        }
+      }),
+      createTraceEvent(3, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        agentId: "build",
+        agentRole: "primary",
+        kind: "session_updated",
+        summary: "session.updated",
+        payload: {
+          properties: {
+            info: {
+              title: "Fix failing multiply test in calc",
+              tokens: {
+                input: 120,
+                output: 12,
+                reasoning: 3,
+                cache: {
+                  read: 0,
+                  write: 0
+                }
+              }
+            }
+          }
+        }
+      }),
+      createTraceEvent(4, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "file_edit",
+        payload: { path: "src/calc.ts" }
+      })
+    ];
+
+    const steps = createWorkflowSteps(events);
+    const layout = createAgentTreeLayout(steps);
+
+    expect(steps.map((step) => step.title)).toEqual(["Started a session", "Prompt received", "Changed a file"]);
+    expect(layout.lanes.map((lane) => lane.label)).toEqual(["main"]);
+    expect(steps[1]?.tokens.total).toBe(135);
   });
 });

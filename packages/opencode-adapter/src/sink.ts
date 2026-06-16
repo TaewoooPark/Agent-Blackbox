@@ -47,6 +47,7 @@ export function resolveRecorderOptions(options: OpenCodeRecorderOptions): OpenCo
   const runId = options.runId ?? process.env.AGENT_BLACKBOX_RUN_ID;
   if (daemonUrl) resolved.daemonUrl = daemonUrl;
   if (runId) resolved.runId = runId;
+  if (options.cliPrompt) resolved.cliPrompt = options.cliPrompt;
   if (options.eventsFile) resolved.eventsFile = options.eventsFile;
   if (options.sink) resolved.sink = options.sink;
   if (options.homeDir) resolved.homeDir = options.homeDir;

@@ -21,6 +21,7 @@ export type OpenCodeRecorderOptions = {
   runId?: string;
   daemonUrl?: string;
   eventsFile?: string;
+  cliPrompt?: string;
   sink?: TraceSink;
   homeDir?: string;
   projectDir?: string;
@@ -32,4 +33,3 @@ export type OpenCodeRecorderHooks = {
   "tool.execute.before": (input: OpenCodeHookInput, output: OpenCodeHookOutput) => Promise<void>;
   "tool.execute.after": (input: OpenCodeHookInput, output: OpenCodeHookOutput) => Promise<void>;
 };
-

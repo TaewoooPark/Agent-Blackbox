@@ -29,4 +29,31 @@ describe("OpenCode recorder hooks", () => {
     expect(events.every((event) => event.runId === "run-hooks")).toBe(true);
     expect(events[2]?.payload.path).toBe("README.md");
   });
+
+  it("records the opencode run prompt as a workflow message", async () => {
+    const events: TraceEvent[] = [];
+    const recorder = await createOpenCodeRecorder(
+      { directory: "/repo" },
+      {
+        cliPrompt: "Fix src/calc.js and run npm test.",
+        runId: "run-hooks",
+        sink: {
+          async write(event) {
+            events.push(event);
+          }
+        }
+      }
+    );
+
+    await recorder.event({ event: { type: "session.created", sessionID: "session-hooks" } });
+
+    expect(events.map((event) => event.kind)).toEqual(["session_created", "message"]);
+    expect(events[1]?.summary).toBe("opencode.run.prompt");
+    expect(events[1]?.payload).toMatchObject({
+      properties: {
+        role: "user",
+        text: "Fix src/calc.js and run npm test."
+      }
+    });
+  });
 });

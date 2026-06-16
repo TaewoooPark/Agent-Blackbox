@@ -167,16 +167,20 @@ export function layoutGraphNodes(graph: WorkflowGraph): PositionedNode[] {
 }
 
 export function createTimelineMarks(events: TraceEvent[]): TimelineMark[] {
-  return events.map((event) => ({
-    id: event.id,
-    seq: event.seq,
-    kind: event.kind,
-    label: summarizeTraceEvent(event),
-    tone: toneForEvent(event)
-  }));
+  return events
+    .filter(isWorkflowTimelineEvent)
+    .map((event) => ({
+      id: event.id,
+      seq: event.seq,
+      kind: event.kind,
+      label: summarizeTraceEvent(event),
+      tone: toneForEvent(event)
+    }));
 }
 
 export function summarizeTraceEvent(event: TraceEvent): string {
+  const prompt = promptTextForEvent(event);
+  if (prompt) return shorten(prompt);
   const visible = visibleTextForEvent(event);
   if (visible) return visible;
   if (event.summary && !looksLikeCommand(event.summary)) return cleanSummary(event.summary);
@@ -202,7 +206,8 @@ export function createWorkflowSteps(events: TraceEvent[]): WorkflowStep[] {
     }
 
     const promptStep = promptStepForEvent(event);
-    if (promptStep && !seenPrompts.has(promptStep.description)) {
+    const skipTitlePrompt = promptStep && event.kind !== "message" && seenPrompts.size > 0;
+    if (promptStep && !skipTitlePrompt && !seenPrompts.has(promptStep.description)) {
       seenPrompts.add(promptStep.description);
       promptStep.branches.unshift(...pendingBranches);
       promptStep.tokens = addTokenUsage(promptStep.tokens, addTokenUsage(pendingTokens, tokenDelta));
@@ -731,9 +736,17 @@ function makeStep(
     tone: toneForEvent(event),
     tokens: emptyTokenUsage(),
     branches: input.branches,
-    ...(event.agentId || event.agentRole ? { agentLabel: event.agentId ?? event.agentRole } : {}),
+    ...(event.agentRole !== "primary" && (event.agentId || event.agentRole)
+      ? { agentLabel: event.agentId ?? event.agentRole }
+      : {}),
     ...(event.agentRole ? { agentRole: event.agentRole } : {})
   };
+}
+
+function isWorkflowTimelineEvent(event: TraceEvent): boolean {
+  if (promptTextForEvent(event)) return true;
+  if (visibleTextForEvent(event)) return true;
+  return event.kind === "session_idle" || event.kind === "agent_end";
 }
 
 function makeBranch(

@@ -41,13 +41,46 @@ export function normalizeOpenCodeEvent(rawEvent: unknown, context: OpenCodeNorma
   const payload = normalizePayload(minimizeOpenCodeEventPayload(raw, type), context);
   const sessionId = extractSessionId(raw, context.defaultSessionId);
   const agentId = extractAgentId(raw);
+  const agentRole = extractAgentRole(raw);
   return createTraceEvent(context.seq, {
     host: "opencode",
     runId: context.runId,
     sessionId,
     ...(agentId ? { agentId } : {}),
+    ...(agentId ? { agentRole } : {}),
     kind,
     summary: type,
+    payload: payload.value,
+    redaction: {
+      rawStored: context.rawStored ?? false,
+      rulesApplied: payload.rulesApplied,
+      truncated: payload.truncated
+    }
+  });
+}
+
+export function normalizeSyntheticUserPrompt(
+  prompt: string,
+  sourceEvent: TraceEvent,
+  context: OpenCodeNormalizerContext
+): TraceEvent {
+  const payload = normalizePayload(
+    {
+      type: "opencode.run.prompt",
+      properties: {
+        sessionID: sourceEvent.sessionId,
+        role: "user",
+        text: stripWrappingQuotes(prompt)
+      }
+    },
+    context
+  );
+  return createTraceEvent(context.seq, {
+    host: "opencode",
+    runId: context.runId,
+    sessionId: sourceEvent.sessionId,
+    kind: "message",
+    summary: "opencode.run.prompt",
     payload: payload.value,
     redaction: {
       rawStored: context.rawStored ?? false,
@@ -299,10 +332,35 @@ function extractSessionId(raw: UnknownRecord, fallback: string): string {
 }
 
 function extractAgentId(raw: UnknownRecord): string | undefined {
+  const properties = asRecord(raw.properties);
+  const info = asRecord(properties.info);
   return (
     readString(raw, ["agentID", "agentId", "agent.id", "agent.name"]) ??
-    readString(asRecord(raw.event), ["agentID", "agentId", "agent.id", "agent.name"])
+    readString(properties, ["agentID", "agentId", "agent.id", "agent.name", "agent"]) ??
+    readString(info, ["agentID", "agentId", "agent.id", "agent.name", "agent"]) ??
+    readString(asRecord(raw.event), ["agentID", "agentId", "agent.id", "agent.name", "agent"])
   );
+}
+
+function extractAgentRole(raw: UnknownRecord): "primary" | "subagent" | "system" | "unknown" {
+  const role =
+    readString(raw, ["agentRole", "agent.role"]) ??
+    readString(asRecord(raw.properties), ["agentRole", "agent.role"]) ??
+    readString(asRecord(asRecord(raw.properties).info), ["agentRole", "agent.role"]);
+  if (role === "subagent" || role === "system" || role === "unknown") return role;
+  return "primary";
+}
+
+function stripWrappingQuotes(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length >= 2) {
+    const first = trimmed[0];
+    const last = trimmed[trimmed.length - 1];
+    if ((first === `"` && last === `"`) || (first === "'" && last === "'")) {
+      return trimmed.slice(1, -1).trim();
+    }
+  }
+  return trimmed;
 }
 
 function readString(record: UnknownRecord, keys: string[]): string | undefined {
