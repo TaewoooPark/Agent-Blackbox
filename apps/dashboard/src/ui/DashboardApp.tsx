@@ -1146,7 +1146,6 @@ function FileStructure({
       </div>
       <div className="finderColumns" aria-hidden="true">
         <span>Name</span>
-        <span>Kind</span>
         <span>Links</span>
         <span>Last</span>
       </div>
@@ -1190,7 +1189,6 @@ function FileStructure({
                 <span className="folderGlyph" />
                 <strong>{row.name}</strong>
               </span>
-              <span>Folder</span>
               <span>-</span>
               <span>-</span>
             </button>
@@ -1255,7 +1253,6 @@ function FileRow({
         <span className="fileGlyph" />
         <strong>{row.name}</strong>
       </span>
-      <span>{fileKindFromName(row.name)}</span>
       <span>{row.connections.length}</span>
       <span>seq {latestConnectionSeq(row.connections)}</span>
     </button>
@@ -1667,24 +1664,6 @@ function fileNameFromPath(path: string): string {
 
 function latestConnectionSeq(connections: FileConnection[]): number {
   return Math.max(...connections.map((connection) => connection.seq));
-}
-
-function fileKindFromName(name: string): string {
-  const extension = name.includes(".") ? name.split(".").at(-1)?.toLowerCase() : undefined;
-  if (!extension) return "Document";
-  const known: Record<string, string> = {
-    css: "Stylesheet",
-    html: "HTML",
-    js: "JavaScript",
-    json: "JSON",
-    jsx: "React",
-    md: "Markdown",
-    ts: "TypeScript",
-    tsx: "React",
-    yaml: "YAML",
-    yml: "YAML"
-  };
-  return known[extension] ?? extension.toUpperCase();
 }
 
 function shortTitle(value: string): string {

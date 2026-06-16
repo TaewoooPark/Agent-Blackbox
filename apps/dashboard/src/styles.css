@@ -1119,7 +1119,7 @@ h3 {
   display: grid;
   font-size: 9px;
   font-weight: 800;
-  grid-template-columns: minmax(0, 1fr) 58px 38px 50px;
+  grid-template-columns: minmax(0, 1fr) 40px 52px;
   min-height: 22px;
   padding: 0 7px;
   text-transform: uppercase;
@@ -1155,7 +1155,7 @@ h3 {
   display: grid;
   font-size: 10px;
   gap: 0;
-  grid-template-columns: minmax(0, 1fr) 58px 38px 50px;
+  grid-template-columns: minmax(0, 1fr) 40px 52px;
   min-height: 23px;
   padding: 0 7px;
   position: relative;
