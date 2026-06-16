@@ -23,6 +23,7 @@ const TREE_COLUMN_GAP = 14;
 const TREE_ROW_HEIGHT = 28;
 const TREE_ROW_GAP = 8;
 const TREE_MIN_SCALE = 0.12;
+const TREE_MAX_SCALE = 1.4;
 
 type ApiResponse<T> = {
   ok: boolean;
@@ -473,14 +474,17 @@ function SessionMap({
     if (!treeElement) return undefined;
 
     const fitTree = () => {
-      const viewportRect = treeElement.getBoundingClientRect();
-      const reservedHeight = showInspector ? Math.min(inspectorSize.height + 22, viewportRect.height * 0.36) : 0;
-      const availableWidth = Math.max(120, viewportRect.width - 8);
-      const availableHeight = Math.max(120, viewportRect.height - reservedHeight - 8);
+      // Measure the canvas itself, not the tree column: the column is now sized to
+      // the rendered tree, so reading its width here would feed the scale back into
+      // itself. Reserve room for the docked file panel and the column gap.
+      const canvasRect = container.getBoundingClientRect();
+      const reservedHeight = showInspector ? Math.min(inspectorSize.height + 22, canvasRect.height * 0.36) : 0;
+      const availableWidth = Math.max(120, canvasRect.width - filePanelWidth - TREE_COLUMN_GAP - 8);
+      const availableHeight = Math.max(120, canvasRect.height - reservedHeight - 8);
       const nextScale = clamp(
-        Math.min(1, availableWidth / treeMetrics.width, availableHeight / treeMetrics.height),
+        Math.min(TREE_MAX_SCALE, availableWidth / treeMetrics.width, availableHeight / treeMetrics.height),
         TREE_MIN_SCALE,
-        1
+        TREE_MAX_SCALE
       );
       setTreeFitScale((current) => (Math.abs(current - nextScale) < 0.01 ? current : Number(nextScale.toFixed(3))));
       requestLayoutMeasure();
@@ -495,7 +499,7 @@ function SessionMap({
       observer.disconnect();
       window.removeEventListener("resize", fitTree);
     };
-  }, [inspectorSize, showInspector, treeMetrics.height, treeMetrics.width]);
+  }, [filePanelWidth, inspectorSize, showInspector, treeMetrics.height, treeMetrics.width]);
 
   useLayoutEffect(() => {
     const container = mapRef.current;
@@ -680,7 +684,14 @@ function SessionMap({
         }`}
         onPointerDown={beginSelectionDrag}
         ref={mapRef}
-        style={{ "--files-width": `${filePanelWidth}px`, "--tree-scale": treeFitScale } as CSSProperties}
+        style={
+          {
+            "--files-width": `${filePanelWidth}px`,
+            "--tree-scale": treeFitScale,
+            "--tree-render-width": `${Math.round(treeMetrics.width * treeFitScale)}px`,
+            "--tree-render-height": `${Math.round(treeMetrics.height * treeFitScale)}px`
+          } as CSSProperties
+        }
       >
         <ConnectionLayer
           edges={measuredEdges}
