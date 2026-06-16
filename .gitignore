@@ -12,6 +12,8 @@ screenshots/
 raw-logs/
 .playwright-mcp/
 *.png
+*.jpeg
+*.jpg
 node_modules/
 dist/
 *.tsbuildinfo
