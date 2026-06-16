@@ -13,7 +13,7 @@ import {
   type WorkflowBranch,
   type WorkflowStep
 } from "../graphLayout.js";
-import { filterEventsForRun, latestRunId } from "../runSelection.js";
+import { filterEventsForRun, latestRunId, listRuns } from "../runSelection.js";
 
 const daemonUrl = import.meta.env.VITE_AGENT_BLACKBOX_DAEMON_URL ?? "http://127.0.0.1:47831";
 
@@ -59,6 +59,7 @@ export function DashboardApp() {
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [selectedSeq, setSelectedSeq] = useState<number | null>(null);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -111,10 +112,24 @@ export function DashboardApp() {
     };
   }, [selectedSeq]);
 
-  const activeRunId = useMemo(() => latestRunId(snapshot?.events ?? []), [snapshot]);
+  const runs = useMemo(() => listRuns(snapshot?.events ?? []), [snapshot]);
+  const latestRun = useMemo(() => latestRunId(snapshot?.events ?? []), [snapshot]);
+  const activeRunId = useMemo(() => {
+    if (selectedRunId && runs.some((run) => run.runId === selectedRunId)) return selectedRunId;
+    return latestRun;
+  }, [selectedRunId, runs, latestRun]);
   const visibleEvents = useMemo(
     () => filterEventsForRun(snapshot?.events ?? [], activeRunId),
     [snapshot, activeRunId]
+  );
+  const runOptions = useMemo(
+    () =>
+      runs.map((run) => ({
+        runId: run.runId,
+        eventCount: run.eventCount,
+        label: sessionDisplayName(filterEventsForRun(snapshot?.events ?? [], run.runId), run.runId)
+      })),
+    [runs, snapshot]
   );
   const graph = useMemo(
     () => (visibleEvents.length > 0 ? materializeWorkflowGraph(visibleEvents) : snapshot?.graph ?? null),
@@ -166,6 +181,21 @@ export function DashboardApp() {
       <header className="topbar">
         <strong>{sessionName}</strong>
         <div className="topbarStatus">
+          {runOptions.length > 1 ? (
+            <select
+              aria-label="Select run"
+              className="runPicker"
+              onChange={(event) => setSelectedRunId(event.target.value || null)}
+              value={selectedRunId && runOptions.some((run) => run.runId === selectedRunId) ? selectedRunId : ""}
+            >
+              <option value="">Latest run (auto)</option>
+              {runOptions.map((run) => (
+                <option key={run.runId} value={run.runId}>
+                  {run.label} · {run.eventCount} ev
+                </option>
+              ))}
+            </select>
+          ) : null}
           {runHost ? <span className="statusChip host">{runHost}</span> : null}
           <span className={`statusChip state state-${runStatus}`}>
             <span className="statusDot" aria-hidden="true" />
