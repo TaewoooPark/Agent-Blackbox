@@ -3,6 +3,7 @@ import {
   normalizeSyntheticUserPrompt,
   normalizeToolAfter,
   normalizeToolBefore,
+  shouldRecordOpenCodeEvent,
   type OpenCodeNormalizerContext
 } from "./normalize.js";
 import { createTraceSink, resolveRecorderOptions } from "./sink.js";
@@ -88,6 +89,9 @@ function createOpenCodeEventFactory(options: {
 
   return {
     async writeEvent(rawEvent: unknown): Promise<void> {
+      if (!shouldRecordOpenCodeEvent(rawEvent)) {
+        return;
+      }
       const event = normalizeOpenCodeEvent(rawEvent, nextContext());
       await options.sink.write(event);
       if (options.cliPrompt && event.kind === "session_created" && !promptSessions.has(event.sessionId)) {

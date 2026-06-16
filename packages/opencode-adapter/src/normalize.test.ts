@@ -3,10 +3,44 @@ import {
   normalizeOpenCodeEvent,
   normalizeSyntheticUserPrompt,
   normalizeToolAfter,
-  normalizeToolBefore
+  normalizeToolBefore,
+  shouldRecordOpenCodeEvent
 } from "./normalize.js";
 
 describe("OpenCode event normalization", () => {
+  it("recovers the session id from nested provider properties", () => {
+    const event = normalizeOpenCodeEvent(
+      {
+        type: "message.part.updated",
+        properties: {
+          sessionID: "ses_real",
+          part: { type: "text" }
+        }
+      },
+      {
+        runId: "run-opencode",
+        seq: 1,
+        defaultSessionId: "unknown-session"
+      }
+    );
+
+    expect(event.sessionId).toBe("ses_real");
+  });
+
+  it("drops high-volume streaming and lifecycle bus events", () => {
+    expect(shouldRecordOpenCodeEvent({ type: "message.part.delta" })).toBe(false);
+    expect(shouldRecordOpenCodeEvent({ type: "catalog.updated" })).toBe(false);
+    expect(shouldRecordOpenCodeEvent({ type: "plugin.added" })).toBe(false);
+    expect(shouldRecordOpenCodeEvent({ type: "integration.updated" })).toBe(false);
+  });
+
+  it("keeps operational events and unknown shapes", () => {
+    expect(shouldRecordOpenCodeEvent({ type: "file.edited" })).toBe(true);
+    expect(shouldRecordOpenCodeEvent({ type: "message.updated" })).toBe(true);
+    expect(shouldRecordOpenCodeEvent({ type: "session.created" })).toBe(true);
+    expect(shouldRecordOpenCodeEvent({})).toBe(true);
+  });
+
   it("maps file edited events to canonical file_edit trace events", () => {
     const event = normalizeOpenCodeEvent(
       {
