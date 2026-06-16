@@ -80,6 +80,10 @@ export async function buildReplaySummary(eventsFile: string): Promise<{
 async function handleRequest(request: IncomingMessage, response: ServerResponse, eventsFile: string): Promise<void> {
   try {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    if (request.method === "OPTIONS") {
+      sendEmpty(response, 204);
+      return;
+    }
     if (request.method === "GET" && url.pathname === "/health") {
       sendJson(response, 200, { ok: true, data: { status: "ok", eventsFile } });
       return;
@@ -126,11 +130,24 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
 }
 
 function sendJson(response: ServerResponse, statusCode: number, payload: JsonResponse): void {
-  response.writeHead(statusCode, { "content-type": "application/json; charset=utf-8" });
+  response.writeHead(statusCode, {
+    "access-control-allow-headers": "content-type",
+    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-origin": "http://127.0.0.1:5173",
+    "content-type": "application/json; charset=utf-8"
+  });
   response.end(JSON.stringify(payload));
+}
+
+function sendEmpty(response: ServerResponse, statusCode: number): void {
+  response.writeHead(statusCode, {
+    "access-control-allow-headers": "content-type",
+    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-origin": "http://127.0.0.1:5173"
+  });
+  response.end();
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
 }
-

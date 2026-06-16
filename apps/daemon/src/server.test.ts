@@ -67,5 +67,21 @@ describe("trace daemon", () => {
       await daemon.close();
     }
   });
-});
 
+  it("serves local dashboard CORS headers and preflight", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "agent-blackbox-daemon-"));
+    const daemon = await startTraceDaemon({ projectDir: tempDir, port: 0 });
+    try {
+      const preflight = await fetch(`http://127.0.0.1:${daemon.port}/events`, {
+        method: "OPTIONS"
+      });
+      expect(preflight.status).toBe(204);
+      expect(preflight.headers.get("access-control-allow-origin")).toBe("http://127.0.0.1:5173");
+
+      const health = await fetch(`http://127.0.0.1:${daemon.port}/health`);
+      expect(health.headers.get("access-control-allow-methods")).toContain("POST");
+    } finally {
+      await daemon.close();
+    }
+  });
+});
