@@ -544,7 +544,7 @@ h3 {
 }
 
 .mapCanvas {
-  align-items: center;
+  align-items: flex-start;
   display: flex;
   height: calc(100vh - 104px);
   justify-content: center;
