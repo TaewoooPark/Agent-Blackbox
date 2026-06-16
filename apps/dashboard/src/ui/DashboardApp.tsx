@@ -1,11 +1,13 @@
 import type { PromiseCheck, TraceEvent, WorkflowGraph, WorkflowNode } from "@agent-blackbox/core";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import {
   createTimelineMarks,
-  layoutGraphNodes,
+  createWorkflowSteps,
   summarizeGraph,
-  summarizeTraceEvent,
-  visibleEventsForGraph
+  visibleEventsForGraph,
+  type WorkflowBranch,
+  type WorkflowStep
 } from "../graphLayout.js";
 
 const daemonUrl = import.meta.env.VITE_AGENT_BLACKBOX_DAEMON_URL ?? "http://127.0.0.1:47831";
@@ -40,7 +42,9 @@ type StreamMessage =
 
 export function DashboardApp() {
   const [snapshot, setSnapshot] = useState<TraceSnapshot | null>(null);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [selectedSeq, setSelectedSeq] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -96,16 +100,33 @@ export function DashboardApp() {
 
   const graph = snapshot?.graph ?? null;
   const summary = useMemo(() => (graph ? summarizeGraph(graph) : null), [graph]);
-  const positionedNodes = useMemo(() => (graph ? layoutGraphNodes(graph) : []), [graph]);
-  const selectedNode = graph?.nodes.find((node) => node.id === selectedNodeId) ?? graph?.nodes[0] ?? null;
   const agentNodes = graph?.nodes.filter((node) => node.type === "AGENT") ?? [];
   const visibleEvents = useMemo(
     () => (snapshot && graph ? visibleEventsForGraph(snapshot.events, graph) : []),
     [snapshot, graph]
   );
+  const workflowSteps = useMemo(() => createWorkflowSteps(visibleEvents), [visibleEvents]);
+  const selectedStep =
+    (selectedEventId
+      ? workflowSteps.find(
+          (step) => step.eventId === selectedEventId || step.branches.some((branch) => branch.eventId === selectedEventId)
+        )
+      : undefined) ??
+    workflowSteps.at(-1) ??
+    null;
+  const selectedBranch =
+    selectedStep && selectedEventId && selectedEventId !== selectedStep.eventId
+      ? selectedStep.branches.find((branch) => branch.eventId === selectedEventId) ?? null
+      : null;
+  const inspectedEventId = selectedBranch?.eventId ?? selectedStep?.eventId ?? null;
+  const selectedEvent = inspectedEventId ? visibleEvents.find((event) => event.id === inspectedEventId) ?? null : null;
   const marks = useMemo(() => createTimelineMarks(snapshot?.events ?? []), [snapshot]);
   const replaySeq = selectedSeq ?? visibleEvents.at(-1)?.seq ?? 0;
   const maxSeq = snapshot?.events.at(-1)?.seq ?? 0;
+  const selectWorkflowEvent = (eventId: string) => {
+    setSelectedEventId(eventId);
+    setSelectedFilePath(null);
+  };
 
   return (
     <main className="shell">
@@ -132,9 +153,9 @@ export function DashboardApp() {
           {agentNodes.length === 0 ? <p className="muted">No agent lanes yet.</p> : null}
           {agentNodes.map((agent) => (
             <button
-              className={agent.id === selectedNode?.id ? "lane active" : "lane"}
+              className={agent.id === selectedAgentId ? "lane active" : "lane"}
               key={agent.id}
-              onClick={() => setSelectedNodeId(agent.id)}
+              onClick={() => setSelectedAgentId(agent.id)}
               type="button"
             >
               <span>{agent.label}</span>
@@ -173,52 +194,441 @@ export function DashboardApp() {
           </div>
         </aside>
 
-        <section className="graphPanel" aria-label="Workflow graph">
-          <div className="graphCanvas">
-            {graph?.edges.map((edge) => {
-              const from = positionedNodes.find((node) => node.id === edge.from);
-              const to = positionedNodes.find((node) => node.id === edge.to);
-              if (!from || !to) return null;
-              return (
-                <svg className="edgeLayer" key={edge.id}>
-                  <line
-                    className={edge.inferred ? "edge inferred" : "edge"}
-                    x1={from.x + 76}
-                    x2={to.x + 76}
-                    y1={from.y + 20}
-                    y2={to.y + 20}
-                  />
-                </svg>
-              );
-            })}
-            {positionedNodes.map((node) => (
-              <button
-                className={`node node-${node.type.toLowerCase()} ${node.id === selectedNode?.id ? "selected" : ""}`}
-                key={node.id}
-                onClick={() => setSelectedNodeId(node.id)}
-                style={{ left: node.x, top: node.y }}
-                type="button"
-              >
-                <span className="nodeType">{node.type}</span>
-                <span className="nodeLabel">{node.label}</span>
-                <StatusBadge status={node.status} />
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <Inspector
-          checks={snapshot?.checks ?? []}
-          handoffMarkdown={snapshot?.handoffMarkdown ?? ""}
-          node={selectedNode}
+        <SessionMap
+          onSelectEvent={selectWorkflowEvent}
+          onSelectFile={setSelectedFilePath}
           onSelectSeq={setSelectedSeq}
-          visibleEvents={visibleEvents}
+          replaySeq={replaySeq}
+          selectedBranch={selectedBranch}
+          selectedEvent={selectedEvent}
+          selectedEventId={selectedEventId}
+          selectedFilePath={selectedFilePath}
+          selectedStep={selectedStep}
+          steps={workflowSteps}
         />
       </section>
-
-      <EventConsole events={visibleEvents} onSelectSeq={setSelectedSeq} />
     </main>
   );
+}
+
+function SessionMap({
+  onSelectEvent,
+  onSelectFile,
+  onSelectSeq,
+  replaySeq,
+  selectedBranch,
+  selectedEvent,
+  selectedEventId,
+  selectedFilePath,
+  selectedStep,
+  steps
+}: {
+  onSelectEvent: (eventId: string) => void;
+  onSelectFile: (path: string) => void;
+  onSelectSeq: (seq: number) => void;
+  replaySeq: number;
+  selectedBranch: WorkflowBranch | null;
+  selectedEvent: TraceEvent | null;
+  selectedEventId: string | null;
+  selectedFilePath: string | null;
+  selectedStep: WorkflowStep | null;
+  steps: WorkflowStep[];
+}) {
+  const mapRef = useRef<HTMLDivElement | null>(null);
+  const fileConnections = useMemo(() => createFileConnections(steps), [steps]);
+  const fileRows = useMemo(() => createFileRows(fileConnections), [fileConnections]);
+  const [measuredEdges, setMeasuredEdges] = useState<MeasuredEdge[]>([]);
+
+  useLayoutEffect(() => {
+    const container = mapRef.current;
+    if (!container) return undefined;
+
+    const measure = () => {
+      const containerRect = container.getBoundingClientRect();
+      const stepElements = new Map<string, HTMLElement>();
+      const fileElements = new Map<string, HTMLElement>();
+      container.querySelectorAll<HTMLElement>("[data-step-id]").forEach((element) => {
+        const stepId = element.dataset.stepId;
+        if (stepId) stepElements.set(stepId, element);
+      });
+      container.querySelectorAll<HTMLElement>("[data-file-path]").forEach((element) => {
+        const path = element.dataset.filePath;
+        if (path) fileElements.set(path, element);
+      });
+
+      const nextEdges = fileConnections.flatMap((connection) => {
+        const stepElement = stepElements.get(connection.stepId);
+        const fileElement = fileElements.get(connection.path);
+        if (!stepElement || !fileElement) return [];
+        const stepRect = stepElement.getBoundingClientRect();
+        const fileRect = fileElement.getBoundingClientRect();
+        const startX = stepRect.right - containerRect.left;
+        const startY = stepRect.top + stepRect.height / 2 - containerRect.top;
+        const endX = fileRect.left - containerRect.left;
+        const endY = fileRect.top + fileRect.height / 2 - containerRect.top;
+        const bend = Math.max(42, Math.min(120, (endX - startX) / 2));
+        return [
+          {
+            ...connection,
+            pathD: `M ${startX} ${startY} C ${startX + bend} ${startY}, ${endX - bend} ${endY}, ${endX} ${endY}`
+          }
+        ];
+      });
+      setMeasuredEdges(nextEdges);
+    };
+
+    const frame = window.requestAnimationFrame(measure);
+    window.addEventListener("resize", measure);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", measure);
+    };
+  }, [fileConnections, steps, selectedEventId, selectedFilePath]);
+
+  const focusedStepId = selectedFilePath ? null : selectedStep?.id ?? null;
+
+  return (
+    <section className="sessionMap" aria-label="Session workflow map">
+      <div className="workflowHeader">
+        <div>
+          <h2>Session Map</h2>
+          <p>Main actions run downward. Files stay in the right tree and connect back to the exact moments that used them.</p>
+        </div>
+        <span>{steps.length} moments</span>
+      </div>
+
+      <div className="mapCanvas" ref={mapRef}>
+        <ConnectionLayer
+          edges={measuredEdges}
+          focusedFilePath={selectedFilePath}
+          focusedStepId={focusedStepId}
+          selectedEventId={selectedEventId}
+        />
+        <div className="mapColumn">
+          {steps.length === 0 ? (
+            <div className="emptyWorkflow">
+              <h3>No workflow yet</h3>
+              <p className="muted">Start an agent run and the session map will form here.</p>
+            </div>
+          ) : (
+            <WorkflowColumn
+              onSelectEvent={onSelectEvent}
+              replaySeq={replaySeq}
+              selectedEventId={selectedEventId}
+              selectedFilePath={selectedFilePath}
+              steps={steps}
+            />
+          )}
+        </div>
+        <FileStructure
+          onSelectFile={onSelectFile}
+          rows={fileRows}
+          selectedFilePath={selectedFilePath}
+          selectedStepId={focusedStepId}
+        />
+        <GlassInspector
+          connections={fileConnections}
+          onSelectSeq={onSelectSeq}
+          selectedBranch={selectedBranch}
+          selectedEvent={selectedEvent}
+          selectedFilePath={selectedFilePath}
+          selectedStep={selectedStep}
+        />
+      </div>
+    </section>
+  );
+}
+
+function WorkflowColumn({
+  onSelectEvent,
+  replaySeq,
+  selectedEventId,
+  selectedFilePath,
+  steps
+}: {
+  onSelectEvent: (eventId: string) => void;
+  replaySeq: number;
+  selectedEventId: string | null;
+  selectedFilePath: string | null;
+  steps: WorkflowStep[];
+}) {
+  return (
+    <ol className="spine">
+      {steps.map((step, index) => {
+        const selected = !selectedFilePath && step.eventId === selectedEventId;
+        const fileCount = uniqueFileCount(step);
+        return (
+          <li className="spineItem" key={step.id}>
+            <button
+              className={`spineStep tone-${step.tone} ${selected ? "selected" : ""} ${
+                step.seq <= replaySeq ? "seen" : ""
+              }`}
+              data-step-id={step.id}
+              onClick={() => onSelectEvent(step.eventId)}
+              type="button"
+            >
+              <span className="stepMarker">{index + 1}</span>
+              <span className="stepMain">
+                <span className="stepMeta">seq {step.seq}</span>
+                <strong>{shortTitle(step.title)}</strong>
+                <em>{compactDescription(step.description)}</em>
+              </span>
+              <span className="stepCount">{fileCount === 0 ? "no files" : `${fileCount} files`}</span>
+            </button>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function ConnectionLayer({
+  edges,
+  focusedFilePath,
+  focusedStepId,
+  selectedEventId
+}: {
+  edges: MeasuredEdge[];
+  focusedFilePath: string | null;
+  focusedStepId: string | null;
+  selectedEventId: string | null;
+}) {
+  return (
+    <svg className="connectionLayer" aria-hidden="true">
+      {edges.map((edge) => {
+        const focused =
+          (focusedFilePath !== null && edge.path === focusedFilePath) ||
+          (focusedStepId !== null && edge.stepId === focusedStepId) ||
+          edge.eventId === selectedEventId;
+        return <path className={focused ? "mapEdge focused" : "mapEdge"} d={edge.pathD} key={edge.id} />;
+      })}
+    </svg>
+  );
+}
+
+function FileStructure({
+  onSelectFile,
+  rows,
+  selectedFilePath,
+  selectedStepId
+}: {
+  onSelectFile: (path: string) => void;
+  rows: FileTreeRow[];
+  selectedFilePath: string | null;
+  selectedStepId: string | null;
+}) {
+  return (
+    <aside className="fileStructure" aria-label="Connected file structure">
+      <div className="fileHeader">
+        <h2>Files</h2>
+        <span>{rows.filter((row) => row.type === "file").length}</span>
+      </div>
+      <div className="fileRows">
+        {rows.length === 0 ? <p className="muted">No connected files yet.</p> : null}
+        {rows.map((row) =>
+          row.type === "folder" ? (
+            <div className="fileRow folderRow" key={row.id} style={{ "--level": row.level } as CSSProperties}>
+              <span>{row.name}</span>
+            </div>
+          ) : (
+            <button
+              className={`fileRow fileNode ${row.path === selectedFilePath ? "selected" : ""} ${
+                selectedStepId && row.connections.some((connection) => connection.stepId === selectedStepId) ? "linked" : ""
+              }`}
+              data-file-path={row.path}
+              key={row.id}
+              onClick={() => onSelectFile(row.path)}
+              style={{ "--level": row.level } as CSSProperties}
+              type="button"
+            >
+              <span>{row.name}</span>
+              <em>{row.connections.length}</em>
+            </button>
+          )
+        )}
+      </div>
+    </aside>
+  );
+}
+
+function GlassInspector({
+  connections,
+  onSelectSeq,
+  selectedBranch,
+  selectedEvent,
+  selectedFilePath,
+  selectedStep
+}: {
+  connections: FileConnection[];
+  onSelectSeq: (seq: number) => void;
+  selectedBranch: WorkflowBranch | null;
+  selectedEvent: TraceEvent | null;
+  selectedFilePath: string | null;
+  selectedStep: WorkflowStep | null;
+}) {
+  const fileConnections = selectedFilePath
+    ? connections.filter((connection) => connection.path === selectedFilePath)
+    : [];
+  const latestFileConnection = fileConnections.at(-1);
+  const title = selectedFilePath
+    ? fileNameFromPath(selectedFilePath)
+    : selectedBranch?.title ?? selectedStep?.title ?? "Nothing selected";
+  const description = selectedFilePath
+    ? `${fileConnections.length} workflow moments are connected to this file.`
+    : selectedBranch?.description ?? selectedStep?.description ?? "Click a workflow moment or a file to focus its connection.";
+  const seq = selectedFilePath ? latestFileConnection?.seq : selectedBranch?.seq ?? selectedStep?.seq;
+
+  return (
+    <aside className="glassInspector" aria-label="Focused detail">
+      <span className="glassKicker">{selectedFilePath ? "file focus" : selectedBranch ? selectedBranch.kind : "moment"}</span>
+      <strong>{shortTitle(title)}</strong>
+      <p>{compactDescription(description)}</p>
+      <div className="glassMeta">
+        {seq ? <span>seq {seq}</span> : null}
+        <span>{selectedEvent?.evidence.observed ? "observed" : "mapped"}</span>
+        {selectedFilePath ? <span>{fileConnections.length} links</span> : null}
+      </div>
+      {seq ? (
+        <button onClick={() => onSelectSeq(seq)} type="button">
+          Replay
+        </button>
+      ) : null}
+    </aside>
+  );
+}
+
+type FileConnection = {
+  id: string;
+  stepId: string;
+  eventId: string;
+  path: string;
+  seq: number;
+  tone: WorkflowBranch["tone"];
+};
+
+type MeasuredEdge = FileConnection & {
+  pathD: string;
+};
+
+type FileTreeRow =
+  | {
+      id: string;
+      level: number;
+      name: string;
+      type: "folder";
+    }
+  | {
+      connections: FileConnection[];
+      id: string;
+      level: number;
+      name: string;
+      path: string;
+      type: "file";
+    };
+
+function createFileConnections(steps: WorkflowStep[]): FileConnection[] {
+  return steps.flatMap((step) =>
+    step.branches
+      .filter((branch) => branch.kind === "file")
+      .map((branch) => ({
+        id: `${step.id}-${branch.id}`,
+        stepId: step.id,
+        eventId: branch.eventId,
+        path: branch.label,
+        seq: branch.seq,
+        tone: branch.tone
+      }))
+  );
+}
+
+function createFileRows(connections: FileConnection[]): FileTreeRow[] {
+  const folderIds = new Set<string>();
+  const fileMap = new Map<string, FileConnection[]>();
+
+  for (const connection of connections) {
+    const segments = pathSegments(connection.path);
+    segments.slice(0, -1).forEach((_, index) => {
+      folderIds.add(segments.slice(0, index + 1).join("/"));
+    });
+    const current = fileMap.get(connection.path) ?? [];
+    current.push(connection);
+    fileMap.set(connection.path, current);
+  }
+
+  const rows: FileTreeRow[] = [];
+  const rootFiles = [...fileMap.entries()]
+    .filter(([path]) => pathSegments(path).length === 1)
+    .sort(([a], [b]) => a.localeCompare(b));
+
+  if (rootFiles.length > 0) {
+    rows.push({
+      id: "folder-project-root",
+      level: 0,
+      name: "project",
+      type: "folder"
+    });
+    for (const [path, pathConnections] of rootFiles) {
+      const segments = pathSegments(path);
+      rows.push({
+        connections: pathConnections,
+        id: `file-${path}`,
+        level: 1,
+        name: segments[0] ?? path,
+        path,
+        type: "file"
+      });
+    }
+  }
+
+  for (const folderPath of [...folderIds].sort((a, b) => a.localeCompare(b))) {
+    const segments = folderPath.split("/");
+    rows.push({
+      id: `folder-${folderPath}`,
+      level: Math.max(0, segments.length - 1),
+      name: segments.at(-1) ?? folderPath,
+      type: "folder"
+    });
+    for (const [path, pathConnections] of [...fileMap.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+      const segmentsForPath = pathSegments(path);
+      const parentFolder = segmentsForPath.slice(0, -1).join("/");
+      if (parentFolder !== folderPath) continue;
+      rows.push({
+        connections: pathConnections,
+        id: `file-${path}`,
+        level: segments.length,
+        name: segmentsForPath.at(-1) ?? path,
+        path,
+        type: "file"
+      });
+    }
+  }
+
+  return rows;
+}
+
+function uniqueFileCount(step: WorkflowStep): number {
+  return new Set(step.branches.filter((branch) => branch.kind === "file").map((branch) => branch.label)).size;
+}
+
+function pathSegments(path: string): string[] {
+  return path
+    .replace(/^\$PROJECT\/?/, "")
+    .replace(/^\/+/, "")
+    .split("/")
+    .filter(Boolean);
+}
+
+function fileNameFromPath(path: string): string {
+  return pathSegments(path).at(-1) ?? path;
+}
+
+function shortTitle(value: string): string {
+  return value.length > 42 ? `${value.slice(0, 39)}...` : value;
+}
+
+function compactDescription(value: string): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.length > 88 ? `${normalized.slice(0, 85)}...` : normalized;
 }
 
 function Metric({ label, value, tone }: { label: string; value: number; tone?: "ok" | "risk" }) {
@@ -232,160 +642,6 @@ function Metric({ label, value, tone }: { label: string; value: number; tone?: "
 
 function StatusBadge({ status }: { status: WorkflowNode["status"] }) {
   return <span className={`status status-${status.toLowerCase()}`}>{status}</span>;
-}
-
-function Inspector({
-  checks,
-  handoffMarkdown,
-  node,
-  onSelectSeq,
-  visibleEvents
-}: {
-  checks: PromiseCheck[];
-  handoffMarkdown: string;
-  node: WorkflowNode | null;
-  onSelectSeq: (seq: number) => void;
-  visibleEvents: TraceEvent[];
-}) {
-  if (!node) {
-    return (
-      <aside className="inspector">
-        <h2>Inspector</h2>
-        <p className="muted">No node selected.</p>
-      </aside>
-    );
-  }
-  return (
-    <aside className="inspector">
-      <h2>Inspector</h2>
-      <div className="inspectHeader">
-        <span>{node.type}</span>
-        <StatusBadge status={node.status} />
-      </div>
-      <h3>{node.label}</h3>
-      <dl>
-        <dt>Created</dt>
-        <dd>{node.createdAt}</dd>
-        <dt>Updated</dt>
-        <dd>{node.updatedAt}</dd>
-        <dt>Events</dt>
-        <dd>
-          {node.eventIds.length === 0
-            ? "none"
-            : node.eventIds.map((eventId) => {
-                const event = visibleEvents.find((candidate) => candidate.id === eventId);
-                return event ? (
-                  <button className="eventLink" key={eventId} onClick={() => onSelectSeq(event.seq)} type="button">
-                    {eventId}
-                  </button>
-                ) : (
-                  <span key={eventId}>{eventId}</span>
-                );
-              })}
-        </dd>
-      </dl>
-      <section className="inspectSection">
-        <h2>Evidence</h2>
-        {visibleEvents
-          .filter((event) => node.eventIds.includes(event.id))
-          .map((event) => (
-            <button className="eventRow compact" key={event.id} onClick={() => onSelectSeq(event.seq)} type="button">
-              <span>{event.seq}</span>
-              <strong>{event.kind}</strong>
-              <em>{summarizeTraceEvent(event)}</em>
-            </button>
-          ))}
-      </section>
-      <pre>{JSON.stringify(node.data, null, 2)}</pre>
-      <AuditPanel checks={checks} onSelectSeq={onSelectSeq} visibleEvents={visibleEvents} />
-      <HandoffPanel markdown={handoffMarkdown} />
-    </aside>
-  );
-}
-
-function AuditPanel({
-  checks,
-  onSelectSeq,
-  visibleEvents
-}: {
-  checks: PromiseCheck[];
-  onSelectSeq: (seq: number) => void;
-  visibleEvents: TraceEvent[];
-}) {
-  return (
-    <section className="inspectSection">
-      <h2>Audit</h2>
-      {checks.length === 0 ? <p className="muted">No matching model promises yet.</p> : null}
-      {checks.map((check, index) => (
-        <article className={`check check-${check.status}`} key={`${check.claim}-${index}`}>
-          <div>
-            <strong>{check.status}</strong>
-            <span>{check.severity}</span>
-          </div>
-          <p>{check.claim}</p>
-          {check.evidenceEventIds.length > 0 ? (
-            <div className="evidenceLinks">
-              {check.evidenceEventIds.map((eventId) => {
-                const event = visibleEvents.find((candidate) => candidate.id === eventId);
-                return (
-                  <button
-                    disabled={!event}
-                    key={eventId}
-                    onClick={() => (event ? onSelectSeq(event.seq) : undefined)}
-                    type="button"
-                  >
-                    {eventId}
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
-        </article>
-      ))}
-    </section>
-  );
-}
-
-function HandoffPanel({ markdown }: { markdown: string }) {
-  return (
-    <section className="inspectSection">
-      <div className="sectionHeader">
-        <h2>Handoff</h2>
-        <button disabled={!markdown} onClick={() => downloadMarkdown(markdown)} type="button">
-          Download
-        </button>
-      </div>
-      <textarea readOnly value={markdown || "No handoff available yet."} />
-    </section>
-  );
-}
-
-function EventConsole({ events, onSelectSeq }: { events: TraceEvent[]; onSelectSeq: (seq: number) => void }) {
-  return (
-    <section className="eventConsole" aria-label="Event console">
-      <h2>Natural Log</h2>
-      <div>
-        {events.slice(-14).map((event) => (
-          <button className="eventRow" key={event.id} onClick={() => onSelectSeq(event.seq)} type="button">
-            <span>{event.seq}</span>
-            <strong>{event.kind}</strong>
-            <em>{summarizeTraceEvent(event)}</em>
-          </button>
-        ))}
-        {events.length === 0 ? <p className="muted">No replayed events yet.</p> : null}
-      </div>
-    </section>
-  );
-}
-
-function downloadMarkdown(markdown: string): void {
-  const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = "agent-blackbox-handoff.md";
-  anchor.click();
-  URL.revokeObjectURL(url);
 }
 
 function toStreamUrl(baseUrl: string): string {

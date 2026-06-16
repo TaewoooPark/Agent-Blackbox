@@ -1,7 +1,13 @@
 import type { WorkflowGraph } from "@agent-blackbox/core";
 import { createTraceEvent } from "@agent-blackbox/core";
 import { describe, expect, it } from "vitest";
-import { createTimelineMarks, layoutGraphNodes, summarizeGraph, visibleEventsForGraph } from "./graphLayout.js";
+import {
+  createTimelineMarks,
+  createWorkflowSteps,
+  layoutGraphNodes,
+  summarizeGraph,
+  visibleEventsForGraph
+} from "./graphLayout.js";
 
 const graph: WorkflowGraph = {
   runId: "run-ui",
@@ -68,10 +74,77 @@ describe("dashboard graph helpers", () => {
     ];
 
     const marks = createTimelineMarks(events);
-    expect(marks.map((mark) => mark.label)).toEqual(["Read src/index.ts", "Ran npm test -> exit 1"]);
+    expect(marks.map((mark) => mark.label)).toEqual(["Read src/index.ts", "Tests failed"]);
     expect(marks[1]?.tone).toBe("risk");
     expect(visibleEventsForGraph(events, { ...graph, appliedEventIds: [events[0]!.id] }).map((event) => event.id)).toEqual([
       events[0]!.id
     ]);
+  });
+
+  it("builds workflow steps without exposing raw shell commands", () => {
+    const events = [
+      createTraceEvent(1, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "file_edit",
+        payload: { path: "src/calc.ts" }
+      }),
+      createTraceEvent(2, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "bash",
+        payload: { command: "npm test", exitCode: 0 }
+      })
+    ];
+
+    const steps = createWorkflowSteps(events);
+
+    expect(steps.map((step) => step.title)).toEqual(["Changed a file", "Tests passed"]);
+    expect(steps[0]?.description).toContain("src/calc.ts was modified");
+    expect(JSON.stringify(steps)).not.toContain("npm test");
+    expect(steps[1]?.branches[0]).toMatchObject({
+      kind: "verification",
+      label: "Passed",
+      detail: "tests"
+    });
+  });
+
+  it("attaches reads and subagents as horizontal branches on the next trunk step", () => {
+    const events = [
+      createTraceEvent(1, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "file_read",
+        payload: { path: "src/calc.ts" }
+      }),
+      createTraceEvent(2, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        agentId: "reviewer",
+        kind: "subagent_spawned",
+        payload: {}
+      }),
+      createTraceEvent(3, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "file_edit",
+        payload: { path: "src/calc.ts" }
+      })
+    ];
+
+    const steps = createWorkflowSteps(events);
+
+    expect(steps.map((step) => step.title)).toEqual(["Changed a file"]);
+    expect(steps[0]?.branches.map((branch) => branch.title)).toEqual([
+      "Read a file",
+      "Started a subagent branch",
+      "Changed a file"
+    ]);
+    expect(steps[0]?.branches.map((branch) => branch.kind)).toEqual(["file", "agent", "file"]);
   });
 });
