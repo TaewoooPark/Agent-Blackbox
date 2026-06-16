@@ -920,7 +920,7 @@ h3 {
 
 .treeGrid.fit .stepMain strong,
 .treeGrid.fit .agentStartText strong {
-  font-size: var(--fs-label);
+  font-size: var(--fs-body);
 }
 
 .treeGrid.fit .stepInlineStats {

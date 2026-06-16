@@ -31,7 +31,10 @@ const TREE_COLUMN_GAP = 14;
 const TREE_ROW_HEIGHT = 28;
 const TREE_ROW_GAP = 8;
 const TREE_MIN_SCALE = 0.12;
-const TREE_MAX_SCALE = 1.4;
+// Never upscale: the tree transform multiplies font sizes, so magnifying small
+// runs made the same node title render at different effective sizes per run.
+// Aggregation keeps node counts low enough that 1:1 fits without shrinking.
+const TREE_MAX_SCALE = 1;
 
 type ApiResponse<T> = {
   ok: boolean;
