@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@agent-blackbox/core": "file:../../packages/core",
-    "@agent-blackbox/storage": "file:../../packages/storage"
+    "@agent-blackbox/storage": "file:../../packages/storage",
+    "ws": "^8.21.0"
   }
 }
-

@@ -28,6 +28,16 @@ type TraceSnapshot = {
   };
 };
 
+type StreamMessage =
+  | {
+      type: "snapshot";
+      data: TraceSnapshot;
+    }
+  | {
+      type: "error";
+      error: { message: string };
+    };
+
 export function DashboardApp() {
   const [snapshot, setSnapshot] = useState<TraceSnapshot | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -36,6 +46,7 @@ export function DashboardApp() {
 
   useEffect(() => {
     let active = true;
+    let socket: WebSocket | undefined;
     async function loadSnapshot() {
       try {
         const query = selectedSeq === null ? "" : `?seq=${selectedSeq}`;
@@ -56,11 +67,29 @@ export function DashboardApp() {
     }
 
     void loadSnapshot();
+    if (selectedSeq === null && typeof WebSocket !== "undefined") {
+      socket = new WebSocket(toStreamUrl(daemonUrl));
+      socket.onmessage = (message) => {
+        if (!active) return;
+        try {
+          const payload = JSON.parse(message.data as string) as StreamMessage;
+          if (payload.type === "snapshot") {
+            setSnapshot(payload.data);
+            setError(null);
+          } else {
+            setError(payload.error.message);
+          }
+        } catch (streamError) {
+          setError(streamError instanceof Error ? streamError.message : String(streamError));
+        }
+      };
+    }
     const interval = window.setInterval(() => {
       void loadSnapshot();
-    }, 1500);
+    }, selectedSeq === null ? 5000 : 1500);
     return () => {
       active = false;
+      socket?.close();
       window.clearInterval(interval);
     };
   }, [selectedSeq]);
@@ -357,4 +386,10 @@ function downloadMarkdown(markdown: string): void {
   anchor.download = "agent-blackbox-handoff.md";
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+function toStreamUrl(baseUrl: string): string {
+  const url = new URL("/stream", baseUrl);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return url.toString();
 }

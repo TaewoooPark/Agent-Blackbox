@@ -12,6 +12,7 @@ import {
 import { appendTraceEvent, readTraceEvents } from "@agent-blackbox/storage";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join } from "node:path";
+import { WebSocket, WebSocketServer } from "ws";
 
 export type TraceDaemonOptions = {
   projectDir: string;
@@ -46,8 +47,24 @@ type JsonResponse = {
 
 export async function startTraceDaemon(options: TraceDaemonOptions): Promise<RunningTraceDaemon> {
   const eventsFile = options.eventsFile ?? join(options.projectDir, ".agent-blackbox", "events.ndjson");
+  const clients = new Set<WebSocket>();
   const server = createServer((request, response) => {
-    void handleRequest(request, response, eventsFile);
+    void handleRequest(request, response, eventsFile, clients);
+  });
+  const streamServer = new WebSocketServer({ noServer: true });
+  server.on("upgrade", (request, socket, head) => {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    if (url.pathname !== "/stream") {
+      socket.destroy();
+      return;
+    }
+    streamServer.handleUpgrade(request, socket, head, (client) => {
+      clients.add(client);
+      client.on("close", () => {
+        clients.delete(client);
+      });
+      void sendSnapshot(client, eventsFile);
+    });
   });
   const port = options.port ?? 47831;
   await new Promise<void>((resolve) => {
@@ -62,6 +79,7 @@ export async function startTraceDaemon(options: TraceDaemonOptions): Promise<Run
     close: () =>
       new Promise<void>((resolve, reject) => {
         server.close((error) => {
+          streamServer.close();
           if (error) {
             reject(error);
           } else {
@@ -127,7 +145,12 @@ export async function buildTraceSnapshot(
   };
 }
 
-async function handleRequest(request: IncomingMessage, response: ServerResponse, eventsFile: string): Promise<void> {
+async function handleRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  eventsFile: string,
+  clients: Set<WebSocket>
+): Promise<void> {
   try {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     const replay = parseReplayQuery(url);
@@ -173,6 +196,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
         return;
       }
       await appendTraceEvent(eventsFile, body as TraceEvent);
+      void broadcastSnapshot(clients, eventsFile);
       sendJson(response, 202, { ok: true, data: { accepted: true, id: (body as TraceEvent).id } });
       return;
     }
@@ -182,6 +206,31 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
       ok: false,
       error: { message: error instanceof Error ? error.message : String(error) }
     });
+  }
+}
+
+async function broadcastSnapshot(clients: Set<WebSocket>, eventsFile: string): Promise<void> {
+  if (clients.size === 0) {
+    return;
+  }
+  await Promise.allSettled([...clients].map((client) => sendSnapshot(client, eventsFile)));
+}
+
+async function sendSnapshot(client: WebSocket, eventsFile: string): Promise<void> {
+  if (client.readyState !== WebSocket.OPEN) {
+    return;
+  }
+  try {
+    client.send(JSON.stringify({ type: "snapshot", data: await buildTraceSnapshot(eventsFile) }));
+  } catch (error) {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(
+        JSON.stringify({
+          type: "error",
+          error: { message: error instanceof Error ? error.message : String(error) }
+        })
+      );
+    }
   }
 }
 

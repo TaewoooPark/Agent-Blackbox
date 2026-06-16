@@ -2,6 +2,7 @@ import { createTraceEvent } from "@agent-blackbox/core";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { WebSocket, type RawData } from "ws";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildReplaySummary, buildTraceSnapshot, startTraceDaemon } from "./server.js";
 
@@ -169,4 +170,63 @@ describe("trace daemon", () => {
       await daemon.close();
     }
   });
+
+  it("pushes live snapshots over the stream websocket", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "agent-blackbox-daemon-"));
+    const daemon = await startTraceDaemon({ projectDir: tempDir, port: 0 });
+    const socket = new WebSocket(`ws://127.0.0.1:${daemon.port}/stream`);
+    try {
+      const initial = await nextSocketMessage(socket);
+      expect(initial).toMatchObject({ type: "snapshot", data: { events: [] } });
+
+      const event = createTraceEvent(1, {
+        host: "opencode",
+        runId: "run-stream",
+        sessionId: "session-stream",
+        agentId: "agent-stream",
+        kind: "file_read",
+        payload: { path: "src/live.ts" }
+      });
+      const ingest = await fetch(`http://127.0.0.1:${daemon.port}/events`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(event)
+      });
+      expect(ingest.status).toBe(202);
+
+      const update = await nextSocketMessage(socket);
+      expect(update).toMatchObject({
+        type: "snapshot",
+        data: { graph: { runId: "run-stream" } }
+      });
+      expect(update.data.events).toHaveLength(1);
+    } finally {
+      socket.close();
+      await daemon.close();
+    }
+  });
 });
+
+function nextSocketMessage(socket: WebSocket): Promise<{ type: string; data: { events: unknown[]; graph?: unknown } }> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error("Timed out waiting for websocket message"));
+    }, 2000);
+    const onMessage = (raw: RawData) => {
+      cleanup();
+      resolve(JSON.parse(raw.toString()) as { type: string; data: { events: unknown[]; graph?: unknown } });
+    };
+    const onError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+    const cleanup = () => {
+      clearTimeout(timeout);
+      socket.off("message", onMessage);
+      socket.off("error", onError);
+    };
+    socket.on("message", onMessage);
+    socket.on("error", onError);
+  });
+}
