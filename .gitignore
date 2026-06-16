@@ -10,4 +10,9 @@ trace.db-*
 captures/
 screenshots/
 raw-logs/
-
+node_modules/
+dist/
+*.tsbuildinfo
+.turbo/
+.vite/
+coverage/

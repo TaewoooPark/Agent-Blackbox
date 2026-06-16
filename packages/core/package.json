@@ -1,0 +1,19 @@
+{
+  "name": "@agent-blackbox/core",
+  "version": "0.1.0",
+  "description": "Canonical event and graph core for Agent-Blackbox.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b --pretty false"
+  }
+}
+

@@ -1,0 +1,11 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/core" },
+    { "path": "./packages/storage" },
+    { "path": "./packages/opencode-adapter" },
+    { "path": "./apps/daemon" },
+    { "path": "./apps/dashboard" }
+  ]
+}
+
