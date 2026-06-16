@@ -1,0 +1,13 @@
+# Local planning and private research artifacts.
+# Keep these out of any future Agent-Blackbox repository history.
+local-planning/
+.agent-blackbox-local/
+*.local.md
+*.private.md
+events.ndjson
+trace.db
+trace.db-*
+captures/
+screenshots/
+raw-logs/
+
