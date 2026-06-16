@@ -1,6 +1,6 @@
 import type { PromiseCheck, TraceEvent, WorkflowGraph, WorkflowNode } from "@agent-blackbox/core";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import {
   createAgentTreeLayout,
   createTimelineMarks,
@@ -15,6 +15,13 @@ import {
 } from "../graphLayout.js";
 
 const daemonUrl = import.meta.env.VITE_AGENT_BLACKBOX_DAEMON_URL ?? "http://127.0.0.1:47831";
+
+const TREE_ROOT_COLUMN_WIDTH = 132;
+const TREE_BRANCH_COLUMN_WIDTH = 94;
+const TREE_COLUMN_GAP = 8;
+const TREE_ROW_HEIGHT = 26;
+const TREE_ROW_GAP = 4;
+const TREE_MIN_SCALE = 0.12;
 
 type ApiResponse<T> = {
   ok: boolean;
@@ -103,7 +110,9 @@ export function DashboardApp() {
   }, [selectedSeq]);
 
   const graph = snapshot?.graph ?? null;
-  const agentNodes = graph?.nodes.filter((node) => node.type === "AGENT") ?? [];
+  const agentNodes = graph?.nodes.filter(isRuntimeAgentNode) ?? [];
+  const selectedAgent = agentNodes.find((agent) => agent.id === selectedAgentId) ?? null;
+  const selectedAgentLabel = selectedAgent?.label ?? null;
   const visibleEvents = useMemo(() => snapshot?.events ?? [], [snapshot]);
   const workflowSteps = useMemo(() => createWorkflowSteps(visibleEvents), [visibleEvents]);
   const tokenTotals = useMemo(() => latestTokenUsage(snapshot?.events ?? []), [snapshot]);
@@ -113,14 +122,11 @@ export function DashboardApp() {
   const maxSeq = orderedEvents.at(-1)?.seq ?? 0;
   const replaySeq = selectedSeq ?? maxSeq;
   const replaySteps = useMemo(() => filterWorkflowStepsBySeq(workflowSteps, replaySeq), [workflowSteps, replaySeq]);
-  const selectedStep =
-    (selectedEventId
-      ? replaySteps.find(
-          (step) => step.eventId === selectedEventId || step.branches.some((branch) => branch.eventId === selectedEventId)
-        )
-      : undefined) ??
-    replaySteps.at(-1) ??
-    null;
+  const selectedStep = selectedEventId
+    ? replaySteps.find(
+        (step) => step.eventId === selectedEventId || step.branches.some((branch) => branch.eventId === selectedEventId)
+      ) ?? null
+    : null;
   const selectedBranch =
     selectedStep && selectedEventId && selectedEventId !== selectedStep.eventId
       ? selectedStep.branches.find((branch) => branch.eventId === selectedEventId) ?? null
@@ -129,6 +135,17 @@ export function DashboardApp() {
   const selectedEvent = inspectedEventId ? visibleEvents.find((event) => event.id === inspectedEventId) ?? null : null;
   const selectWorkflowEvent = (eventId: string) => {
     setSelectedEventId(eventId);
+    setSelectedFilePath(null);
+    setSelectedAgentId(null);
+  };
+  const selectFile = (path: string) => {
+    setSelectedFilePath(path);
+    setSelectedEventId(null);
+    setSelectedAgentId(null);
+  };
+  const clearFocus = () => {
+    setSelectedAgentId(null);
+    setSelectedEventId(null);
     setSelectedFilePath(null);
   };
 
@@ -149,11 +166,21 @@ export function DashboardApp() {
             <button
               className={agent.id === selectedAgentId ? "lane active" : "lane"}
               key={agent.id}
-              onClick={() => setSelectedAgentId(agent.id)}
+              onClick={() => {
+                setSelectedAgentId((current) => (current === agent.id ? null : agent.id));
+                setSelectedEventId(null);
+                setSelectedFilePath(null);
+              }}
               type="button"
             >
-              <span>{agent.label}</span>
-              <StatusBadge status={agent.status} />
+              <span className="laneMarker" />
+              <span className="laneMain">
+                <strong>{shortTitle(agent.label)}</strong>
+                <span>{agent.type.toLowerCase()}</span>
+              </span>
+              <span className="laneBadges">
+                <StatusBadge status={agent.status} />
+              </span>
             </button>
           ))}
           <TokenPanel usage={tokenTotals} />
@@ -191,10 +218,12 @@ export function DashboardApp() {
 
         <SessionMap
           agentNodes={agentNodes}
+          onClearFocus={clearFocus}
           onSelectEvent={selectWorkflowEvent}
-          onSelectFile={setSelectedFilePath}
+          onSelectFile={selectFile}
           onSelectSeq={setSelectedSeq}
           replaySeq={replaySeq}
+          selectedAgentLabel={selectedAgentLabel}
           selectedBranch={selectedBranch}
           selectedEvent={selectedEvent}
           selectedEventId={selectedEventId}
@@ -209,10 +238,12 @@ export function DashboardApp() {
 
 function SessionMap({
   agentNodes,
+  onClearFocus,
   onSelectEvent,
   onSelectFile,
   onSelectSeq,
   replaySeq,
+  selectedAgentLabel,
   selectedBranch,
   selectedEvent,
   selectedEventId,
@@ -221,10 +252,12 @@ function SessionMap({
   steps
 }: {
   agentNodes: WorkflowNode[];
+  onClearFocus: () => void;
   onSelectEvent: (eventId: string) => void;
   onSelectFile: (path: string) => void;
   onSelectSeq: (seq: number) => void;
   replaySeq: number;
+  selectedAgentLabel: string | null;
   selectedBranch: WorkflowBranch | null;
   selectedEvent: TraceEvent | null;
   selectedEventId: string | null;
@@ -233,20 +266,43 @@ function SessionMap({
   steps: WorkflowStep[];
 }) {
   const mapRef = useRef<HTMLDivElement | null>(null);
-  const [filePanelWidth, setFilePanelWidth] = useState(286);
+  const [filePanelWidth, setFilePanelWidth] = useState(252);
   const [resizeDrag, setResizeDrag] = useState<{ startWidth: number; startX: number } | null>(null);
+  const [inspectorSize, setInspectorSize] = useState<InspectorSize>({ height: 142, width: 320 });
+  const [inspectorResizeDrag, setInspectorResizeDrag] = useState<InspectorResizeDrag | null>(null);
+  const [nodeOffsets, setNodeOffsets] = useState<NodeOffsetMap>({});
+  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(() => new Set());
+  const [nodeDrag, setNodeDrag] = useState<NodeDrag | null>(null);
+  const [selectionDrag, setSelectionDrag] = useState<SelectionDrag | null>(null);
+  const [autoLayouting, setAutoLayouting] = useState(false);
   const treeLayout = useMemo(() => createAgentTreeLayout(steps), [steps]);
+  const treeMetrics = useMemo(() => createTreeLayoutMetrics(treeLayout), [treeLayout]);
+  const [treeFitScale, setTreeFitScale] = useState(1);
+  const selectedAgentIsRoot =
+    selectedAgentLabel !== null && !treeLayout.lanes.some((lane) => lane.id !== "root" && lane.label === selectedAgentLabel);
   const fileConnections = useMemo(() => createFileConnections(steps), [steps]);
   const fileRows = useMemo(() => createFileRows(fileConnections), [fileConnections]);
   const [measuredEdges, setMeasuredEdges] = useState<MeasuredEdge[]>([]);
   const [measuredTreeEdges, setMeasuredTreeEdges] = useState<MeasuredTreeEdge[]>([]);
+  const treeItemIds = useMemo(() => new Set(treeLayout.items.map((item) => item.id)), [treeLayout.items]);
+  const selectionBox = selectionDrag ? rectFromPoints(selectionDrag.start, selectionDrag.current) : null;
+  const selectedFileStepIds = useMemo(() => {
+    if (!selectedFilePath) return new Set<string>();
+    return new Set(fileConnections.filter((connection) => connection.path === selectedFilePath).map((connection) => connection.stepId));
+  }, [fileConnections, selectedFilePath]);
+  const selectedTreeFocus = useMemo(
+    () => createSelectedTreeFocus(treeLayout.items, selectedNodeIds),
+    [selectedNodeIds, treeLayout.items]
+  );
+  const hasFocus = Boolean(selectedEventId || selectedFilePath || selectedAgentLabel || selectedNodeIds.size > 0);
+  const showInspector = Boolean(selectedEventId || selectedFilePath);
 
   useEffect(() => {
     if (!resizeDrag) return undefined;
 
     const move = (event: PointerEvent) => {
       const delta = resizeDrag.startX - event.clientX;
-      setFilePanelWidth(clamp(resizeDrag.startWidth + delta, 220, 480));
+      setFilePanelWidth(clamp(resizeDrag.startWidth + delta, 210, 440));
     };
     const stop = () => {
       setResizeDrag(null);
@@ -262,6 +318,177 @@ function SessionMap({
     };
   }, [resizeDrag]);
 
+  useEffect(() => {
+    if (!inspectorResizeDrag) return undefined;
+
+    const move = (event: PointerEvent) => {
+      const changesWidth = inspectorResizeDrag.edge === "left" || inspectorResizeDrag.edge === "top-left";
+      const changesHeight = inspectorResizeDrag.edge === "top" || inspectorResizeDrag.edge === "top-left";
+      const widthDelta = changesWidth ? inspectorResizeDrag.startX - event.clientX : 0;
+      const heightDelta = changesHeight ? inspectorResizeDrag.startY - event.clientY : 0;
+      setInspectorSize({
+        width: clamp(inspectorResizeDrag.startWidth + widthDelta, 260, 560),
+        height: clamp(inspectorResizeDrag.startHeight + heightDelta, 122, 420)
+      });
+      requestLayoutMeasure();
+    };
+    const stop = () => {
+      setInspectorResizeDrag(null);
+      document.body.style.cursor = "";
+    };
+    document.body.style.cursor = inspectorResizeCursor(inspectorResizeDrag.edge);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop, { once: true });
+    return () => {
+      document.body.style.cursor = "";
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+    };
+  }, [inspectorResizeDrag]);
+
+  useEffect(() => {
+    if (!nodeDrag) return undefined;
+
+    let moved = false;
+    const move = (event: PointerEvent) => {
+      const dx = event.clientX - nodeDrag.startX;
+      const dy = event.clientY - nodeDrag.startY;
+      moved = moved || Math.abs(dx) > 2 || Math.abs(dy) > 2;
+      if (!moved) return;
+      const scaledDx = dx / treeFitScale;
+      const scaledDy = dy / treeFitScale;
+      setNodeOffsets((current) => {
+        const next = { ...current };
+        for (const id of nodeDrag.nodeIds) {
+          const startOffset = nodeDrag.startOffsets[id] ?? { x: 0, y: 0 };
+          next[id] = {
+            x: Math.round(startOffset.x + scaledDx),
+            y: Math.round(startOffset.y + scaledDy)
+          };
+        }
+        return next;
+      });
+      requestLayoutMeasure();
+    };
+    const stop = () => {
+      if (!moved) {
+        onSelectEvent(nodeDrag.eventId);
+      }
+      setNodeDrag(null);
+      document.body.style.cursor = "";
+    };
+    document.body.style.cursor = "grabbing";
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop, { once: true });
+    return () => {
+      document.body.style.cursor = "";
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+    };
+  }, [nodeDrag, onSelectEvent, treeFitScale]);
+
+  useEffect(() => {
+    if (!selectionDrag) return undefined;
+
+    const move = (event: PointerEvent) => {
+      const container = mapRef.current;
+      if (!container) return;
+      const containerRect = container.getBoundingClientRect();
+      setSelectionDrag((current) =>
+        current
+          ? {
+              ...current,
+              current: {
+                x: event.clientX - containerRect.left,
+                y: event.clientY - containerRect.top
+              }
+            }
+          : current
+      );
+    };
+    const stop = () => {
+      const container = mapRef.current;
+      if (!container) {
+        setSelectionDrag(null);
+        return;
+      }
+      const rect = selectionDrag ? rectFromPoints(selectionDrag.start, selectionDrag.current) : null;
+      if (!rect || rect.width < 6 || rect.height < 6) {
+        if (!selectionDrag.additive) {
+          setSelectedNodeIds(new Set());
+          onClearFocus();
+        }
+        setSelectionDrag(null);
+        return;
+      }
+      const containerRect = container.getBoundingClientRect();
+      const selected = new Set(selectionDrag.additive ? selectedNodeIds : []);
+      container.querySelectorAll<HTMLElement>("[data-tree-node-id]").forEach((element) => {
+        const id = element.dataset.treeNodeId;
+        if (!id) return;
+        const elementRect = element.getBoundingClientRect();
+        const localRect = {
+          height: elementRect.height,
+          left: elementRect.left - containerRect.left,
+          top: elementRect.top - containerRect.top,
+          width: elementRect.width
+        };
+        if (rectsIntersect(rect, localRect)) {
+          selected.add(id);
+        }
+      });
+      setSelectedNodeIds(selected);
+      if (!selectionDrag.additive) {
+        onClearFocus();
+      }
+      setSelectionDrag(null);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop, { once: true });
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+    };
+  }, [onClearFocus, selectionDrag, selectedNodeIds]);
+
+  useEffect(() => {
+    setSelectedNodeIds((current) => {
+      const next = new Set([...current].filter((id) => treeItemIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [treeItemIds]);
+
+  useLayoutEffect(() => {
+    const container = mapRef.current;
+    if (!container) return undefined;
+    const treeElement = container.querySelector<HTMLElement>(".workflowTree");
+    if (!treeElement) return undefined;
+
+    const fitTree = () => {
+      const viewportRect = treeElement.getBoundingClientRect();
+      const reservedHeight = showInspector ? Math.min(inspectorSize.height + 22, viewportRect.height * 0.36) : 0;
+      const availableWidth = Math.max(120, viewportRect.width - 8);
+      const availableHeight = Math.max(120, viewportRect.height - reservedHeight - 8);
+      const nextScale = clamp(
+        Math.min(1, availableWidth / treeMetrics.width, availableHeight / treeMetrics.height),
+        TREE_MIN_SCALE,
+        1
+      );
+      setTreeFitScale((current) => (Math.abs(current - nextScale) < 0.01 ? current : Number(nextScale.toFixed(3))));
+      requestLayoutMeasure();
+    };
+
+    const frame = window.requestAnimationFrame(fitTree);
+    const observer = new ResizeObserver(fitTree);
+    observer.observe(treeElement);
+    window.addEventListener("resize", fitTree);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener("resize", fitTree);
+    };
+  }, [inspectorSize, showInspector, treeMetrics.height, treeMetrics.width]);
+
   useLayoutEffect(() => {
     const container = mapRef.current;
     if (!container) return undefined;
@@ -275,8 +502,8 @@ function SessionMap({
         const stepId = element.dataset.stepId;
         if (stepId) stepElements.set(stepId, element);
       });
-      container.querySelectorAll<HTMLElement>("[data-file-path]").forEach((element) => {
-        const path = element.dataset.filePath;
+      container.querySelectorAll<HTMLElement>("[data-file-anchor-path]").forEach((element) => {
+        const path = element.dataset.fileAnchorPath;
         if (path) fileElements.set(path, element);
       });
       container.querySelectorAll<HTMLElement>("[data-tree-node-id]").forEach((element) => {
@@ -292,7 +519,7 @@ function SessionMap({
         const fileRect = fileElement.getBoundingClientRect();
         const startX = stepRect.right - containerRect.left;
         const startY = stepRect.top + stepRect.height / 2 - containerRect.top;
-        const endX = fileRect.left - containerRect.left;
+        const endX = fileRect.left + fileRect.width / 2 - containerRect.left;
         const endY = fileRect.top + fileRect.height / 2 - containerRect.top;
         const bend = Math.max(42, Math.min(120, (endX - startX) / 2));
         return [
@@ -311,24 +538,118 @@ function SessionMap({
         return [
           {
             ...connection,
-            pathD: treeConnectionPath(fromElement.getBoundingClientRect(), toElement.getBoundingClientRect(), containerRect)
+            pathD: treeConnectionPath(
+              fromElement.getBoundingClientRect(),
+              toElement.getBoundingClientRect(),
+              containerRect,
+              connection.kind
+            )
           }
         ];
       });
       setMeasuredTreeEdges(nextTreeEdges);
     };
 
-    const frame = window.requestAnimationFrame(measure);
-    window.addEventListener("resize", measure);
-    window.addEventListener("agent-blackbox:layout", measure);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.removeEventListener("resize", measure);
-      window.removeEventListener("agent-blackbox:layout", measure);
+    let measureFrame: number | null = null;
+    let burstUntil = 0;
+    const runMeasure = () => {
+      measureFrame = null;
+      measure();
+      if (Date.now() < burstUntil) {
+        measureFrame = window.requestAnimationFrame(runMeasure);
+      }
     };
-  }, [fileConnections, filePanelWidth, steps, selectedEventId, selectedFilePath, treeLayout]);
+    const scheduleMeasure = (duration = 520) => {
+      burstUntil = Math.max(burstUntil, Date.now() + duration);
+      if (measureFrame === null) {
+        measureFrame = window.requestAnimationFrame(runMeasure);
+      }
+    };
+    const observer = new ResizeObserver(() => scheduleMeasure());
+    container.querySelectorAll<HTMLElement>(".treeGrid, .fileStructure, .workflowTree").forEach((element) => {
+      observer.observe(element);
+    });
+    const scheduleMeasureEvent = () => scheduleMeasure();
+
+    scheduleMeasure(620);
+    window.addEventListener("resize", scheduleMeasureEvent);
+    window.addEventListener("agent-blackbox:layout", scheduleMeasureEvent);
+    container.addEventListener("scroll", scheduleMeasureEvent, true);
+    return () => {
+      if (measureFrame !== null) {
+        window.cancelAnimationFrame(measureFrame);
+      }
+      observer.disconnect();
+      window.removeEventListener("resize", scheduleMeasureEvent);
+      window.removeEventListener("agent-blackbox:layout", scheduleMeasureEvent);
+      container.removeEventListener("scroll", scheduleMeasureEvent, true);
+    };
+  }, [
+    fileConnections,
+    filePanelWidth,
+    inspectorSize,
+    nodeOffsets,
+    selectedEventId,
+    selectedFilePath,
+    steps,
+    treeFitScale,
+    treeLayout
+  ]);
 
   const focusedStepId = selectedFilePath ? null : selectedStep?.id ?? null;
+  const beginNodeDrag = (event: ReactPointerEvent<HTMLElement>, item: AgentTreeItem) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const additive = event.shiftKey || event.ctrlKey || event.metaKey;
+    const isSelected = selectedNodeIds.has(item.id);
+    const nextSelection = new Set(additive || isSelected ? selectedNodeIds : []);
+    if (additive && isSelected && nextSelection.size > 1) {
+      nextSelection.delete(item.id);
+    } else {
+      nextSelection.add(item.id);
+    }
+    const nodeIds = [...nextSelection];
+    setSelectedNodeIds(nextSelection);
+    setNodeDrag({
+      eventId: item.type === "step" ? item.step.eventId : item.branch.eventId,
+      moved: false,
+      nodeIds,
+      startOffsets: nodeIds.reduce<NodeOffsetMap>((accumulator, id) => {
+        accumulator[id] = nodeOffsets[id] ?? { x: 0, y: 0 };
+        return accumulator;
+      }, {}),
+      startX: event.clientX,
+      startY: event.clientY
+    });
+  };
+  const beginSelectionDrag = (event: ReactPointerEvent<HTMLElement>) => {
+    if (event.button !== 0) return;
+    const target = event.target as HTMLElement;
+    if (target.closest("[data-tree-node-id], .fileStructure, .glassInspector, .workflowTools")) return;
+    const container = mapRef.current;
+    if (!container) return;
+    const containerRect = container.getBoundingClientRect();
+    const point = {
+      x: event.clientX - containerRect.left,
+      y: event.clientY - containerRect.top
+    };
+    setSelectionDrag({
+      additive: event.shiftKey || event.ctrlKey || event.metaKey,
+      current: point,
+      start: point
+    });
+  };
+  const resetLayout = () => {
+    setAutoLayouting(true);
+    setSelectedNodeIds(new Set());
+    onClearFocus();
+    window.requestAnimationFrame(() => {
+      setNodeOffsets({});
+      requestLayoutMeasure();
+    });
+    window.setTimeout(() => setAutoLayouting(false), 520);
+  };
 
   return (
     <section className="sessionMap" aria-label="Session workflow map">
@@ -337,19 +658,30 @@ function SessionMap({
           <h2>Session Map</h2>
           <p>Main actions form the trunk. Agents fork into branches, then reconnect through files and decisions.</p>
         </div>
-        <span>{steps.length} moments · {Math.max(0, treeLayout.lanes.length - 1)} branches</span>
+        <div className="workflowTools">
+          <span>{steps.length} moments · {Math.max(0, treeLayout.lanes.length - 1)} branches</span>
+          <button onClick={resetLayout} type="button">
+            Auto layout
+          </button>
+        </div>
       </div>
 
       <div
-        className="mapCanvas"
+        className={`mapCanvas ${autoLayouting ? "autoLayouting" : ""} ${hasFocus ? "hasFocus" : ""} ${
+          nodeDrag ? "nodeDragging" : ""
+        }`}
+        onPointerDown={beginSelectionDrag}
         ref={mapRef}
-        style={{ "--files-width": `${filePanelWidth}px` } as CSSProperties}
+        style={{ "--files-width": `${filePanelWidth}px`, "--tree-scale": treeFitScale } as CSSProperties}
       >
         <ConnectionLayer
           edges={measuredEdges}
           focusedFilePath={selectedFilePath}
           focusedStepId={focusedStepId}
+          selectedAgentIsRoot={selectedAgentIsRoot}
+          selectedAgentLabel={selectedAgentLabel}
           selectedEventId={selectedEventId}
+          selectedTreeFocus={selectedTreeFocus}
           treeEdges={measuredTreeEdges}
         />
         <div className="workflowTree">
@@ -361,28 +693,64 @@ function SessionMap({
           ) : (
             <WorkflowTree
               agentNodes={agentNodes}
+              nodeOffsets={nodeOffsets}
               layout={treeLayout}
+              metrics={treeMetrics}
+              onBeginNodeDrag={beginNodeDrag}
               onSelectEvent={onSelectEvent}
+              selectedAgentIsRoot={selectedAgentIsRoot}
+              selectedAgentLabel={selectedAgentLabel}
               selectedEventId={selectedEventId}
+              selectedFileStepIds={selectedFileStepIds}
               selectedFilePath={selectedFilePath}
+              selectedNodeIds={selectedNodeIds}
             />
           )}
         </div>
+        {selectionBox ? (
+          <div
+            className="selectionBox"
+            style={
+              {
+                height: selectionBox.height,
+                left: selectionBox.left,
+                top: selectionBox.top,
+                width: selectionBox.width
+              } as CSSProperties
+            }
+          />
+        ) : null}
         <FileStructure
+          hasFocus={hasFocus}
           onResizeStart={(clientX) => setResizeDrag({ startWidth: filePanelWidth, startX: clientX })}
           onSelectFile={onSelectFile}
           rows={fileRows}
+          selectedAgentIsRoot={selectedAgentIsRoot}
+          selectedAgentLabel={selectedAgentLabel}
+          selectedEventId={selectedEventId}
           selectedFilePath={selectedFilePath}
           selectedStepId={focusedStepId}
         />
-        <GlassInspector
-          connections={fileConnections}
-          onSelectSeq={onSelectSeq}
-          selectedBranch={selectedBranch}
-          selectedEvent={selectedEvent}
-          selectedFilePath={selectedFilePath}
-          selectedStep={selectedStep}
-        />
+        {showInspector ? (
+          <GlassInspector
+            connections={fileConnections}
+            inspectorSize={inspectorSize}
+            onResizeStart={(edge, clientX, clientY) =>
+              setInspectorResizeDrag({
+                edge,
+                startHeight: inspectorSize.height,
+                startWidth: inspectorSize.width,
+                startX: clientX,
+                startY: clientY
+              })
+            }
+            onSelectSeq={onSelectSeq}
+            selectedBranch={selectedBranch}
+            selectedEvent={selectedEvent}
+            selectedFilePath={selectedFilePath}
+            selectedStep={selectedStep}
+          />
+        ) : null}
       </div>
     </section>
   );
@@ -391,15 +759,29 @@ function SessionMap({
 function WorkflowTree({
   agentNodes,
   layout,
+  metrics,
+  nodeOffsets,
+  onBeginNodeDrag,
   onSelectEvent,
+  selectedAgentIsRoot,
+  selectedAgentLabel,
   selectedEventId,
-  selectedFilePath
+  selectedFileStepIds,
+  selectedFilePath,
+  selectedNodeIds
 }: {
   agentNodes: WorkflowNode[];
   layout: AgentTreeLayout;
+  metrics: TreeLayoutMetrics;
+  nodeOffsets: NodeOffsetMap;
+  onBeginNodeDrag: (event: ReactPointerEvent<HTMLElement>, item: AgentTreeItem) => void;
   onSelectEvent: (eventId: string) => void;
+  selectedAgentIsRoot: boolean;
+  selectedAgentLabel: string | null;
   selectedEventId: string | null;
+  selectedFileStepIds: Set<string>;
   selectedFilePath: string | null;
+  selectedNodeIds: Set<string>;
 }) {
   const agentStatusByLabel = useMemo(() => {
     const statuses = new Map<string, WorkflowNode["status"]>();
@@ -415,17 +797,15 @@ function WorkflowTree({
       .forEach((item, index) => indexes.set(item.step.id, index + 1));
     return indexes;
   }, [layout]);
-  const branchColumnCount = Math.max(0, layout.columnCount - 1);
-  const gridTemplateColumns =
-    branchColumnCount === 0 ? "minmax(190px, 286px)" : `minmax(190px, 286px) repeat(${branchColumnCount}, minmax(0, 1fr))`;
 
   return (
     <div
-      className={`treeGrid ${layout.columnCount > 4 ? "dense" : ""}`}
+      className="treeGrid fit"
       style={
         {
           "--tree-rows": layout.rowCount,
-          gridTemplateColumns
+          height: metrics.height,
+          width: metrics.width
         } as CSSProperties
       }
     >
@@ -435,9 +815,16 @@ function WorkflowTree({
           item={item}
           key={item.id}
           markerLabel={item.type === "step" && item.laneId === "root" ? String(rootIndexByStepId.get(item.step.id) ?? "") : ""}
+          metrics={metrics}
+          nodeOffset={nodeOffsets[item.id] ?? { x: 0, y: 0 }}
+          onBeginNodeDrag={onBeginNodeDrag}
           onSelectEvent={onSelectEvent}
+          selectedAgentIsRoot={selectedAgentIsRoot}
+          selectedAgentLabel={selectedAgentLabel}
           selectedEventId={selectedEventId}
+          selectedFileStepIds={selectedFileStepIds}
           selectedFilePath={selectedFilePath}
+          selectedNodeIds={selectedNodeIds}
         />
       ))}
     </div>
@@ -448,26 +835,54 @@ function TreeItemCard({
   agentStatus,
   item,
   markerLabel,
+  metrics,
+  nodeOffset,
+  onBeginNodeDrag,
   onSelectEvent,
+  selectedAgentIsRoot,
+  selectedAgentLabel,
   selectedEventId,
-  selectedFilePath
+  selectedFileStepIds,
+  selectedFilePath,
+  selectedNodeIds
 }: {
   agentStatus: WorkflowNode["status"] | undefined;
   item: AgentTreeItem;
   markerLabel: string;
+  metrics: TreeLayoutMetrics;
+  nodeOffset: Point;
+  onBeginNodeDrag: (event: ReactPointerEvent<HTMLElement>, item: AgentTreeItem) => void;
   onSelectEvent: (eventId: string) => void;
+  selectedAgentIsRoot: boolean;
+  selectedAgentLabel: string | null;
   selectedEventId: string | null;
+  selectedFileStepIds: Set<string>;
   selectedFilePath: string | null;
+  selectedNodeIds: Set<string>;
 }) {
-  const style = { gridColumn: item.column, gridRow: item.row } as CSSProperties;
+  const position = treeItemPosition(item, metrics);
+  const style = {
+    transform: `translate3d(${position.x + nodeOffset.x}px, ${position.y + nodeOffset.y}px, 0)`,
+    "--node-width": `${position.width}px`
+  } as CSSProperties;
+  const manuallySelected = selectedNodeIds.has(item.id);
+  const agentLabel = item.type === "step" ? item.step.agentLabel : item.branch.label;
+  const agentFocused = Boolean(
+    selectedAgentLabel && ((selectedAgentIsRoot && item.laneId === "root") || agentLabel === selectedAgentLabel)
+  );
+  const fileFocused = item.type === "step" && selectedFileStepIds.has(item.step.id);
   if (item.type === "agent-start") {
     const selected = !selectedFilePath && item.branch.eventId === selectedEventId;
     return (
       <button
         aria-label={`${item.branch.title}. ${item.branch.label}.`}
-        className={`treeNode agentStartCard tone-${item.branch.tone} ${selected ? "selected" : ""}`}
+        className={`treeNode agentStartCard tone-${item.branch.tone} ${selected ? "selected" : ""} ${
+          manuallySelected ? "manualSelected" : ""
+        } ${agentFocused ? "agentFocused" : ""} ${fileFocused ? "fileFocused" : ""} ${selected ? "expanded" : ""}`}
+        data-agent-label={item.branch.label}
         data-tree-node-id={item.id}
         onClick={() => onSelectEvent(item.branch.eventId)}
+        onPointerDown={(event) => onBeginNodeDrag(event, item)}
         style={style}
         type="button"
       >
@@ -475,23 +890,29 @@ function TreeItemCard({
         <span className="agentStartText">
           <span>{item.branch.detail ?? "agent"}</span>
           <strong>{shortTitle(item.branch.label)}</strong>
+          {selected ? <span className="agentStartDetail">{compactDescription(item.branch.description)}</span> : null}
         </span>
       </button>
     );
   }
 
   const step = item.step;
-  const selected = !selectedFilePath && step.eventId === selectedEventId;
+  const selected =
+    !selectedFilePath && (step.eventId === selectedEventId || step.branches.some((branch) => branch.eventId === selectedEventId));
   const fileCount = uniqueFileCount(step);
   return (
     <button
       aria-label={`${step.title}. ${formatTokenCount(step.tokens.total)}. ${fileCount} connected files.`}
       className={`treeNode spineStep treeStep tone-${step.tone} ${step.agentLabel ? "agentStep" : "rootStep"} ${
         selected ? "selected" : ""
-      }`}
+      } ${manuallySelected ? "manualSelected" : ""} ${agentFocused ? "agentFocused" : ""} ${
+        fileFocused ? "fileFocused" : ""
+      } ${selected ? "expanded" : ""}`}
+      data-agent-label={step.agentLabel ?? "main"}
       data-step-id={step.id}
       data-tree-node-id={item.id}
       onClick={() => onSelectEvent(step.eventId)}
+      onPointerDown={(event) => onBeginNodeDrag(event, item)}
       style={style}
       type="button"
     >
@@ -504,10 +925,14 @@ function TreeItemCard({
           </span>
         ) : null}
         <strong>{shortTitle(step.title)}</strong>
+        <span className="stepInlineStats">
+          {formatTokenNumber(step.tokens.total)} · {fileCount} {fileCount === 1 ? "file" : "files"}
+        </span>
+        {selected ? <span className="stepSummary">{compactDescription(step.description)}</span> : null}
       </span>
       <span className="stepBadges">
-        <span className="tokenPill">{formatTokenCount(step.tokens.total)}</span>
-        <span className="stepCount">{fileCount === 0 ? "no files" : `${fileCount} files`}</span>
+        <span className="tokenPill">{formatTokenNumber(step.tokens.total)}</span>
+        <span className="stepCount">{fileCount}</span>
       </span>
     </button>
   );
@@ -517,20 +942,32 @@ function ConnectionLayer({
   edges,
   focusedFilePath,
   focusedStepId,
+  selectedAgentIsRoot,
+  selectedAgentLabel,
   selectedEventId,
+  selectedTreeFocus,
   treeEdges
 }: {
   edges: MeasuredEdge[];
   focusedFilePath: string | null;
   focusedStepId: string | null;
+  selectedAgentIsRoot: boolean;
+  selectedAgentLabel: string | null;
   selectedEventId: string | null;
+  selectedTreeFocus: SelectedTreeFocus;
   treeEdges: MeasuredTreeEdge[];
 }) {
+  const selectedLaneId = selectedAgentLabel ? agentLaneIdForLabel(selectedAgentLabel) : null;
   return (
     <svg className="connectionLayer" aria-hidden="true">
       {treeEdges.map((edge) => {
         const focused =
+          selectedTreeFocus.nodeIds.has(edge.fromNodeId) ||
+          selectedTreeFocus.nodeIds.has(edge.toNodeId) ||
+          selectedTreeFocus.eventIds.has(edge.eventId) ||
           (focusedStepId !== null && (edge.fromNodeId.includes(focusedStepId) || edge.toNodeId.includes(focusedStepId))) ||
+          (selectedAgentIsRoot && edge.laneId === "root") ||
+          (selectedLaneId !== null && edge.laneId === selectedLaneId) ||
           edge.eventId === selectedEventId;
         return (
           <path
@@ -542,8 +979,12 @@ function ConnectionLayer({
       })}
       {edges.map((edge) => {
         const focused =
+          selectedTreeFocus.stepIds.has(edge.stepId) ||
+          selectedTreeFocus.eventIds.has(edge.eventId) ||
           (focusedFilePath !== null && edge.path === focusedFilePath) ||
           (focusedStepId !== null && edge.stepId === focusedStepId) ||
+          (selectedAgentIsRoot && !edge.agentLabel) ||
+          (selectedAgentLabel !== null && edge.agentLabel === selectedAgentLabel) ||
           edge.eventId === selectedEventId;
         return <path className={focused ? "mapEdge focused" : "mapEdge"} d={edge.pathD} key={edge.id} />;
       })}
@@ -551,9 +992,13 @@ function ConnectionLayer({
   );
 }
 
-function treeConnectionPath(fromRect: DOMRect, toRect: DOMRect, containerRect: DOMRect): string {
-  const sameColumn = Math.abs(fromRect.left - toRect.left) < 12;
-  if (sameColumn) {
+function treeConnectionPath(
+  fromRect: DOMRect,
+  toRect: DOMRect,
+  containerRect: DOMRect,
+  kind: AgentTreeConnection["kind"]
+): string {
+  if (kind !== "branch") {
     const startX = fromRect.left + fromRect.width / 2 - containerRect.left;
     const startY = fromRect.bottom - containerRect.top;
     const endX = toRect.left + toRect.width / 2 - containerRect.left;
@@ -562,29 +1007,43 @@ function treeConnectionPath(fromRect: DOMRect, toRect: DOMRect, containerRect: D
     return `M ${startX} ${startY} C ${startX} ${midY}, ${endX} ${midY}, ${endX} ${endY}`;
   }
 
-  const startX = fromRect.right - containerRect.left;
+  const targetIsRight = toRect.left + toRect.width / 2 >= fromRect.left + fromRect.width / 2;
+  const startX = (targetIsRight ? fromRect.right : fromRect.left) - containerRect.left;
   const startY = fromRect.top + fromRect.height / 2 - containerRect.top;
-  const endX = toRect.left - containerRect.left;
+  const endX = (targetIsRight ? toRect.left : toRect.right) - containerRect.left;
   const endY = toRect.top + toRect.height / 2 - containerRect.top;
+  const direction = targetIsRight ? 1 : -1;
   const bend = Math.max(28, Math.min(92, Math.abs(endX - startX) / 2));
-  return `M ${startX} ${startY} C ${startX + bend} ${startY}, ${endX - bend} ${endY}, ${endX} ${endY}`;
+  return `M ${startX} ${startY} C ${startX + bend * direction} ${startY}, ${endX - bend * direction} ${endY}, ${endX} ${endY}`;
 }
 
 function FileStructure({
+  hasFocus,
   onResizeStart,
   onSelectFile,
   rows,
+  selectedAgentIsRoot,
+  selectedAgentLabel,
+  selectedEventId,
   selectedFilePath,
   selectedStepId
 }: {
+  hasFocus: boolean;
   onResizeStart: (clientX: number) => void;
   onSelectFile: (path: string) => void;
   rows: FileTreeRow[];
+  selectedAgentIsRoot: boolean;
+  selectedAgentLabel: string | null;
+  selectedEventId: string | null;
   selectedFilePath: string | null;
   selectedStepId: string | null;
 }) {
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(() => new Set());
   const visibleRows = useMemo(() => visibleFileRows(rows, collapsedFolders), [rows, collapsedFolders]);
+  const fileAnchors = useMemo(
+    () => rows.filter((row): row is Extract<FileTreeRow, { type: "file" }> => row.type === "file"),
+    [rows]
+  );
   const itemCount = rows.filter((row) => row.type === "file").length;
   const toggleFolder = (path: string) => {
     setCollapsedFolders((current) => {
@@ -602,7 +1061,7 @@ function FileStructure({
   };
 
   return (
-    <aside className="fileStructure" aria-label="Connected file structure">
+    <aside className={`fileStructure ${hasFocus ? "hasFocus" : ""}`} aria-label="Connected file structure">
       <button
         aria-label="Resize file list"
         className="resizeHandle"
@@ -627,6 +1086,29 @@ function FileStructure({
         <span>Links</span>
         <span>Last</span>
       </div>
+      <div className="fileAnchorRail" aria-hidden="true">
+        {fileAnchors.map((row, index) => {
+          const focus = fileFocusState({
+            connections: row.connections,
+            path: row.path,
+            selectedAgentIsRoot,
+            selectedAgentLabel,
+            selectedEventId,
+            selectedFilePath,
+            selectedStepId
+          });
+          return (
+            <span
+              className={`fileAnchorTick ${focus.selected ? "selected" : ""} ${focus.linked ? "linked" : ""} ${
+                focus.agentLinked ? "agentLinked" : ""
+              } ${focus.eventLinked ? "eventLinked" : ""}`}
+              data-file-anchor-path={row.path}
+              key={row.path}
+              style={{ top: `${fileAnchorTop(index, fileAnchors.length)}%` } as CSSProperties}
+            />
+          );
+        })}
+      </div>
       <div className="fileRows">
         {rows.length === 0 ? <p className="muted">No connected files yet.</p> : null}
         {visibleRows.map((row) =>
@@ -649,27 +1131,16 @@ function FileStructure({
               <span>-</span>
             </button>
           ) : (
-            <button
-              className={`finderRow fileNode ${row.level === 0 ? "rootRow" : ""} ${
-                row.path === selectedFilePath ? "selected" : ""
-              } ${
-                selectedStepId && row.connections.some((connection) => connection.stepId === selectedStepId) ? "linked" : ""
-              }`}
-              data-file-path={row.path}
+            <FileRow
               key={row.id}
-              onClick={() => onSelectFile(row.path)}
-              style={{ "--depth": `${row.level * 14}px` } as CSSProperties}
-              type="button"
-            >
-              <span className="finderName">
-                <span className="disclosure placeholder" />
-                <span className="fileGlyph" />
-                <strong>{row.name}</strong>
-              </span>
-              <span>{fileKindFromName(row.name)}</span>
-              <span>{row.connections.length}</span>
-              <span>seq {latestConnectionSeq(row.connections)}</span>
-            </button>
+              onSelectFile={onSelectFile}
+              row={row}
+              selectedAgentIsRoot={selectedAgentIsRoot}
+              selectedAgentLabel={selectedAgentLabel}
+              selectedEventId={selectedEventId}
+              selectedFilePath={selectedFilePath}
+              selectedStepId={selectedStepId}
+            />
           )
         )}
       </div>
@@ -677,8 +1148,102 @@ function FileStructure({
   );
 }
 
+function FileRow({
+  onSelectFile,
+  row,
+  selectedAgentIsRoot,
+  selectedAgentLabel,
+  selectedEventId,
+  selectedFilePath,
+  selectedStepId
+}: {
+  onSelectFile: (path: string) => void;
+  row: Extract<FileTreeRow, { type: "file" }>;
+  selectedAgentIsRoot: boolean;
+  selectedAgentLabel: string | null;
+  selectedEventId: string | null;
+  selectedFilePath: string | null;
+  selectedStepId: string | null;
+}) {
+  const focus = fileFocusState({
+    connections: row.connections,
+    path: row.path,
+    selectedAgentIsRoot,
+    selectedAgentLabel,
+    selectedEventId,
+    selectedFilePath,
+    selectedStepId
+  });
+  return (
+    <button
+      className={`finderRow fileNode ${row.level === 0 ? "rootRow" : ""} ${
+        focus.selected ? "selected" : ""
+      } ${focus.linked ? "linked" : ""} ${focus.agentLinked ? "agentLinked" : ""} ${
+        focus.eventLinked ? "eventLinked" : ""
+      }`}
+      data-file-path={row.path}
+      onClick={() => onSelectFile(row.path)}
+      style={{ "--depth": `${row.level * 14}px` } as CSSProperties}
+      type="button"
+    >
+      <span className="finderName">
+        <span className="disclosure placeholder" />
+        <span className="fileGlyph" />
+        <strong>{row.name}</strong>
+      </span>
+      <span>{fileKindFromName(row.name)}</span>
+      <span>{row.connections.length}</span>
+      <span>seq {latestConnectionSeq(row.connections)}</span>
+    </button>
+  );
+}
+
+type FileFocusState = {
+  selected: boolean;
+  linked: boolean;
+  agentLinked: boolean;
+  eventLinked: boolean;
+};
+
+function fileFocusState({
+  connections,
+  path,
+  selectedAgentIsRoot,
+  selectedAgentLabel,
+  selectedEventId,
+  selectedFilePath,
+  selectedStepId
+}: {
+  connections: FileConnection[];
+  path: string;
+  selectedAgentIsRoot: boolean;
+  selectedAgentLabel: string | null;
+  selectedEventId: string | null;
+  selectedFilePath: string | null;
+  selectedStepId: string | null;
+}): FileFocusState {
+  return {
+    selected: path === selectedFilePath,
+    linked: Boolean(selectedStepId && connections.some((connection) => connection.stepId === selectedStepId)),
+    agentLinked: Boolean(
+      selectedAgentLabel &&
+        connections.some((connection) =>
+          selectedAgentIsRoot ? connection.agentLabel === undefined : connection.agentLabel === selectedAgentLabel
+        )
+    ),
+    eventLinked: Boolean(selectedEventId && connections.some((connection) => connection.eventId === selectedEventId))
+  };
+}
+
+function fileAnchorTop(index: number, count: number): number {
+  if (count <= 1) return 50;
+  return 8 + (index / (count - 1)) * 84;
+}
+
 function GlassInspector({
   connections,
+  inspectorSize,
+  onResizeStart,
   onSelectSeq,
   selectedBranch,
   selectedEvent,
@@ -686,6 +1251,8 @@ function GlassInspector({
   selectedStep
 }: {
   connections: FileConnection[];
+  inspectorSize: InspectorSize;
+  onResizeStart: (edge: InspectorResizeEdge, clientX: number, clientY: number) => void;
   onSelectSeq: (seq: number) => void;
   selectedBranch: WorkflowBranch | null;
   selectedEvent: TraceEvent | null;
@@ -706,7 +1273,11 @@ function GlassInspector({
   const showsFullPrompt = !selectedFilePath && (selectedBranch?.kind === "prompt" || selectedStep?.kind === "prompt");
 
   return (
-    <aside className="glassInspector" aria-label="Focused detail">
+    <aside
+      className="glassInspector"
+      aria-label="Focused detail"
+      style={{ height: inspectorSize.height, width: inspectorSize.width } as CSSProperties}
+    >
       <span className="glassKicker">{selectedFilePath ? "file focus" : selectedBranch ? selectedBranch.kind : "moment"}</span>
       <strong>{shortTitle(title)}</strong>
       <p className={showsFullPrompt ? "glassFullText" : undefined}>
@@ -723,11 +1294,42 @@ function GlassInspector({
           Replay
         </button>
       ) : null}
+      <button
+        aria-label="Resize focused detail from left"
+        className="inspectorResizeHandle inspectorResizeHandle-left"
+        onPointerDown={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onResizeStart("left", event.clientX, event.clientY);
+        }}
+        type="button"
+      />
+      <button
+        aria-label="Resize focused detail from top"
+        className="inspectorResizeHandle inspectorResizeHandle-top"
+        onPointerDown={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onResizeStart("top", event.clientX, event.clientY);
+        }}
+        type="button"
+      />
+      <button
+        aria-label="Resize focused detail from top left"
+        className="inspectorResizeHandle inspectorResizeHandle-topLeft"
+        onPointerDown={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onResizeStart("top-left", event.clientX, event.clientY);
+        }}
+        type="button"
+      />
     </aside>
   );
 }
 
 type FileConnection = {
+  agentLabel?: string;
   id: string;
   stepId: string;
   eventId: string;
@@ -742,6 +1344,72 @@ type MeasuredEdge = FileConnection & {
 
 type MeasuredTreeEdge = AgentTreeConnection & {
   pathD: string;
+};
+
+type Point = {
+  x: number;
+  y: number;
+};
+
+type RectLike = {
+  height: number;
+  left: number;
+  top: number;
+  width: number;
+};
+
+type TreeLayoutMetrics = {
+  branchColumnWidth: number;
+  columnGap: number;
+  height: number;
+  rootColumnWidth: number;
+  rowGap: number;
+  rowHeight: number;
+  width: number;
+};
+
+type TreeItemPosition = {
+  width: number;
+  x: number;
+  y: number;
+};
+
+type SelectedTreeFocus = {
+  eventIds: Set<string>;
+  nodeIds: Set<string>;
+  stepIds: Set<string>;
+};
+
+type NodeOffsetMap = Record<string, Point>;
+
+type NodeDrag = {
+  eventId: string;
+  moved: boolean;
+  nodeIds: string[];
+  startOffsets: NodeOffsetMap;
+  startX: number;
+  startY: number;
+};
+
+type SelectionDrag = {
+  additive: boolean;
+  current: Point;
+  start: Point;
+};
+
+type InspectorSize = {
+  height: number;
+  width: number;
+};
+
+type InspectorResizeEdge = "left" | "top" | "top-left";
+
+type InspectorResizeDrag = {
+  edge: InspectorResizeEdge;
+  startHeight: number;
+  startWidth: number;
+  startX: number;
+  startY: number;
 };
 
 type FileTreeRow =
@@ -761,11 +1429,62 @@ type FileTreeRow =
       type: "file";
     };
 
+function createTreeLayoutMetrics(layout: AgentTreeLayout): TreeLayoutMetrics {
+  const branchCount = Math.max(0, layout.columnCount - 1);
+  const width =
+    TREE_ROOT_COLUMN_WIDTH +
+    (branchCount === 0 ? 0 : TREE_COLUMN_GAP + branchCount * TREE_BRANCH_COLUMN_WIDTH + (branchCount - 1) * TREE_COLUMN_GAP);
+  const height = Math.max(TREE_ROW_HEIGHT, layout.rowCount * TREE_ROW_HEIGHT + Math.max(0, layout.rowCount - 1) * TREE_ROW_GAP);
+  return {
+    branchColumnWidth: TREE_BRANCH_COLUMN_WIDTH,
+    columnGap: TREE_COLUMN_GAP,
+    height,
+    rootColumnWidth: TREE_ROOT_COLUMN_WIDTH,
+    rowGap: TREE_ROW_GAP,
+    rowHeight: TREE_ROW_HEIGHT,
+    width
+  };
+}
+
+function treeItemPosition(item: AgentTreeItem, metrics: TreeLayoutMetrics): TreeItemPosition {
+  const branchIndex = Math.max(0, item.column - 2);
+  const x =
+    item.column === 1
+      ? 0
+      : metrics.rootColumnWidth + metrics.columnGap + branchIndex * (metrics.branchColumnWidth + metrics.columnGap);
+  return {
+    width: item.column === 1 ? metrics.rootColumnWidth : metrics.branchColumnWidth,
+    x,
+    y: (item.row - 1) * (metrics.rowHeight + metrics.rowGap)
+  };
+}
+
+function createSelectedTreeFocus(items: AgentTreeItem[], selectedNodeIds: Set<string>): SelectedTreeFocus {
+  const eventIds = new Set<string>();
+  const stepIds = new Set<string>();
+  for (const item of items) {
+    if (!selectedNodeIds.has(item.id)) continue;
+    if (item.type === "step") {
+      stepIds.add(item.step.id);
+      eventIds.add(item.step.eventId);
+      item.step.branches.forEach((branch) => eventIds.add(branch.eventId));
+    } else {
+      eventIds.add(item.branch.eventId);
+    }
+  }
+  return {
+    eventIds,
+    nodeIds: new Set(selectedNodeIds),
+    stepIds
+  };
+}
+
 function createFileConnections(steps: WorkflowStep[]): FileConnection[] {
   return steps.flatMap((step) =>
     step.branches
       .filter((branch) => branch.kind === "file")
       .map((branch) => ({
+        ...(step.agentLabel ? { agentLabel: step.agentLabel } : {}),
         id: `${step.id}-${branch.id}`,
         stepId: step.id,
         eventId: branch.eventId,
@@ -913,6 +1632,37 @@ function compactDescription(value: string): string {
   return normalized.length > 88 ? `${normalized.slice(0, 85)}...` : normalized;
 }
 
+function rectFromPoints(start: Point, current: Point): RectLike {
+  const left = Math.min(start.x, current.x);
+  const top = Math.min(start.y, current.y);
+  return {
+    height: Math.abs(current.y - start.y),
+    left,
+    top,
+    width: Math.abs(current.x - start.x)
+  };
+}
+
+function rectsIntersect(a: RectLike, b: RectLike): boolean {
+  return a.left < b.left + b.width && a.left + a.width > b.left && a.top < b.top + b.height && a.top + a.height > b.top;
+}
+
+function requestLayoutMeasure() {
+  window.requestAnimationFrame(() => {
+    window.dispatchEvent(new Event("agent-blackbox:layout"));
+  });
+}
+
+function inspectorResizeCursor(edge: InspectorResizeEdge): string {
+  if (edge === "left") return "ew-resize";
+  if (edge === "top") return "ns-resize";
+  return "nwse-resize";
+}
+
+function agentLaneIdForLabel(label: string): string {
+  return `agent:${label}`;
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -951,6 +1701,10 @@ function latestTokenUsage(events: TraceEvent[]): TokenUsage {
     }
   }
   return usage;
+}
+
+function isRuntimeAgentNode(node: WorkflowNode): boolean {
+  return node.type === "AGENT" && typeof node.data.agentId === "string";
 }
 
 function tokenUsageFromEvent(event: TraceEvent): TokenUsage | undefined {

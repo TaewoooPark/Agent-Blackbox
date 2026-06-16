@@ -159,9 +159,9 @@ h3 {
   border-radius: 12px;
   color: #1f2328;
   cursor: pointer;
-  display: flex;
-  gap: 8px;
-  justify-content: space-between;
+  display: grid;
+  gap: 7px;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
   margin-bottom: 7px;
   min-height: 36px;
   padding: 7px;
@@ -172,6 +172,45 @@ h3 {
 .lane.active,
 .lane:hover {
   border-color: rgba(26, 30, 36, 0.3);
+  box-shadow: 0 8px 28px rgba(22, 25, 30, 0.08);
+}
+
+.laneMarker {
+  background: #24282e;
+  border: 3px solid rgba(255, 255, 255, 0.88);
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(25, 28, 33, 0.14);
+  display: block;
+  height: 12px;
+  width: 12px;
+}
+
+.laneMain {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.laneMain strong {
+  color: #17191c;
+  font-size: 11px;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.laneMain span {
+  color: #727983;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.laneBadges {
+  align-items: center;
+  display: flex;
+  justify-content: end;
 }
 
 .timeline {
@@ -313,7 +352,14 @@ h3 {
   margin: 0;
 }
 
-.workflowHeader > span {
+.workflowTools {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 7px;
+}
+
+.workflowTools > span {
   background: rgba(255, 255, 255, 0.74);
   border: 1px solid rgba(24, 28, 34, 0.08);
   border-radius: 999px;
@@ -324,10 +370,23 @@ h3 {
   padding: 5px 9px;
 }
 
+.workflowTools button {
+  background: #111317;
+  border: 1px solid rgba(17, 19, 23, 0.1);
+  border-radius: 8px;
+  box-shadow: 0 8px 22px rgba(17, 19, 23, 0.14);
+  color: #fff;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  min-height: 28px;
+  padding: 4px 9px;
+}
+
 .mapCanvas {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, var(--files-width, 286px));
-  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) minmax(210px, var(--files-width, 252px));
+  gap: 12px;
   height: calc(100vh - 104px);
   min-height: calc(100vh - 104px);
   overflow: hidden;
@@ -342,6 +401,14 @@ h3 {
   z-index: 2;
 }
 
+.workflowTree {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: contain;
+  padding: 0;
+  scrollbar-gutter: auto;
+}
+
 .connectionLayer {
   height: 100%;
   inset: 0;
@@ -354,47 +421,52 @@ h3 {
 
 .mapEdge {
   fill: none;
-  opacity: 0.34;
+  opacity: 0.32;
   stroke: #1d2127;
   stroke-linecap: round;
-  stroke-width: 1.2;
+  stroke-width: 1.25;
   transition:
     opacity 140ms ease,
     stroke-width 140ms ease;
 }
 
+.mapCanvas.hasFocus .mapEdge:not(.focused),
+.mapCanvas.hasFocus .treeEdge:not(.focused) {
+  filter: blur(0.2px);
+  opacity: 0.09;
+}
+
 .mapEdge.focused {
-  opacity: 0.92;
-  stroke-width: 2.4;
+  opacity: 1;
+  stroke-width: 2.05;
 }
 
 .treeEdge {
   fill: none;
-  opacity: 0.34;
+  opacity: 0.32;
   stroke: #1d2127;
   stroke-linecap: round;
-  stroke-width: 1.15;
+  stroke-width: 1.25;
   transition:
     opacity 140ms ease,
     stroke-width 140ms ease;
 }
 
 .treeEdge-trunk {
-  opacity: 0.28;
+  opacity: 0.32;
 }
 
 .treeEdge-branch {
-  opacity: 0.42;
-  stroke-dasharray: 4 5;
+  opacity: 0.32;
 }
 
 .treeEdge-lane {
-  opacity: 0.24;
+  opacity: 0.32;
 }
 
 .treeEdge.focused {
-  opacity: 0.92;
-  stroke-width: 2;
+  opacity: 1;
+  stroke-width: 2.05;
 }
 
 .emptyWorkflow {
@@ -408,8 +480,7 @@ h3 {
 
 .spine,
 .treeGrid {
-  display: grid;
-  gap: 7px;
+  display: block;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -417,9 +488,14 @@ h3 {
 }
 
 .treeGrid {
-  align-items: start;
-  gap: 5px 10px;
-  grid-auto-rows: minmax(34px, auto);
+  min-width: 0;
+  transform: scale(var(--tree-scale, 1));
+  transform-origin: 0 0;
+  transition: transform 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.treeGrid.fit {
+  min-width: 0;
 }
 
 .spine::before {
@@ -441,31 +517,82 @@ h3 {
   align-items: center;
   background: rgba(255, 255, 255, 0.7);
   border: 1px solid rgba(255, 255, 255, 0.72);
-  border-radius: 14px;
+  border-radius: 10px;
   box-shadow:
     0 8px 24px rgba(22, 25, 30, 0.045),
     inset 0 0 0 1px rgba(26, 30, 36, 0.045);
   color: #17191c;
   cursor: pointer;
   display: grid;
-  gap: 6px;
-  grid-template-columns: 26px minmax(0, 1fr) auto;
-  min-height: 36px;
-  padding: 5px 6px;
+  gap: 4px;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  min-height: 29px;
+  padding: 4px 5px;
   position: relative;
   text-align: left;
+  overflow: hidden;
   width: 100%;
   -webkit-backdrop-filter: blur(22px) saturate(1.25);
   backdrop-filter: blur(22px) saturate(1.25);
 }
 
 .treeNode {
+  cursor: grab;
   min-width: 0;
+  position: absolute;
+  touch-action: none;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    filter 140ms ease,
+    opacity 140ms ease,
+    transform 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  will-change: transform;
+  width: var(--node-width, 132px);
   z-index: 2;
 }
 
+.treeNode:active {
+  cursor: grabbing;
+}
+
+.autoLayouting .treeNode {
+  transition:
+    transform 420ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 160ms ease,
+    border-color 160ms ease;
+}
+
+.mapCanvas.nodeDragging .treeNode {
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    filter 140ms ease,
+    opacity 140ms ease;
+}
+
 .treeStep {
-  min-height: 36px;
+  min-height: 29px;
+}
+
+.treeGrid.fit .spineStep {
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 24px;
+  padding: 3px 5px;
+}
+
+.mapCanvas.hasFocus .treeNode:not(.selected):not(.agentFocused):not(.manualSelected):not(.fileFocused) {
+  filter: blur(0.8px) grayscale(1);
+  opacity: 0.16;
+}
+
+.mapCanvas.hasFocus .treeNode.selected,
+.mapCanvas.hasFocus .treeNode.agentFocused,
+.mapCanvas.hasFocus .treeNode.manualSelected,
+.mapCanvas.hasFocus .treeNode.fileFocused {
+  filter: none;
+  opacity: 1;
+  z-index: 7;
 }
 
 .agentStep {
@@ -477,24 +604,27 @@ h3 {
   align-items: center;
   background: rgba(255, 255, 255, 0.54);
   border: 1px solid rgba(25, 28, 33, 0.1);
-  border-radius: 14px;
+  border-radius: 10px;
   box-shadow:
     0 8px 24px rgba(22, 25, 30, 0.035),
     inset 0 0 0 1px rgba(255, 255, 255, 0.52);
   color: #20242a;
   cursor: pointer;
   display: grid;
-  gap: 6px;
-  grid-template-columns: 18px minmax(0, 1fr);
-  min-height: 31px;
-  padding: 5px 7px;
+  gap: 4px;
+  grid-template-columns: 13px minmax(0, 1fr);
+  min-height: 26px;
+  padding: 4px 5px;
+  overflow: hidden;
   text-align: left;
   -webkit-backdrop-filter: blur(18px) saturate(1.2);
   backdrop-filter: blur(18px) saturate(1.2);
 }
 
 .agentStartCard:hover,
-.agentStartCard.selected {
+.agentStartCard.selected,
+.agentStartCard.manualSelected,
+.agentStartCard.agentFocused {
   border-color: rgba(23, 25, 28, 0.34);
   box-shadow: 0 8px 28px rgba(22, 25, 30, 0.08);
 }
@@ -505,8 +635,8 @@ h3 {
   border-radius: 999px;
   box-shadow: 0 0 0 1px rgba(25, 28, 33, 0.14);
   display: block;
-  height: 12px;
-  width: 12px;
+  height: 9px;
+  width: 9px;
 }
 
 .agentStartText {
@@ -525,7 +655,7 @@ h3 {
 
 .agentStartText strong {
   color: #17191c;
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1.15;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -565,18 +695,79 @@ h3 {
   text-transform: uppercase;
 }
 
-.treeGrid.dense .spineStep {
-  grid-template-columns: 20px minmax(0, 1fr);
-}
-
-.treeGrid.dense .stepBadges {
+.treeGrid.fit .stepBadges,
+.treeGrid.fit .stepMarker {
   display: none;
 }
 
+.treeGrid.fit .agentStartCard {
+  grid-template-columns: 9px minmax(0, 1fr);
+  min-height: 24px;
+  padding: 3px 5px;
+}
+
+.treeGrid.fit .agentStemDot {
+  height: 7px;
+  width: 7px;
+}
+
+.treeGrid.fit .agentPill span {
+  display: none;
+}
+
+.treeGrid.fit .stepMain strong,
+.treeGrid.fit .agentStartText strong {
+  font-size: 9px;
+}
+
+.treeGrid.fit .stepInlineStats {
+  font-size: 7.5px;
+}
+
 .spineStep:hover,
-.spineStep.selected {
+.spineStep.selected,
+.spineStep.manualSelected,
+.spineStep.agentFocused {
   border-color: rgba(23, 25, 28, 0.36);
   box-shadow: 0 8px 28px rgba(22, 25, 30, 0.08);
+}
+
+.treeNode.manualSelected {
+  outline: 1px solid rgba(17, 19, 23, 0.42);
+  outline-offset: 2px;
+}
+
+.treeNode.agentFocused {
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.treeNode.selected,
+.treeNode.agentFocused,
+.treeNode.fileFocused {
+  outline: 1px solid rgba(17, 19, 23, 0.28);
+  outline-offset: 2px;
+}
+
+.treeNode.expanded {
+  box-shadow:
+    0 18px 52px rgba(18, 22, 28, 0.13),
+    inset 0 0 0 1px rgba(26, 30, 36, 0.06);
+  min-height: 62px;
+  width: 238px;
+  z-index: 8;
+}
+
+.treeGrid.fit .treeNode.expanded {
+  width: 228px;
+}
+
+.selectionBox {
+  background: rgba(17, 19, 23, 0.055);
+  border: 1px solid rgba(17, 19, 23, 0.32);
+  border-radius: 8px;
+  pointer-events: none;
+  position: absolute;
+  z-index: 5;
 }
 
 .stepMarker {
@@ -586,12 +777,12 @@ h3 {
   border-radius: 999px;
   color: #272b31;
   display: flex;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
-  height: 18px;
+  height: 16px;
   justify-content: center;
   position: relative;
-  width: 18px;
+  width: 16px;
   z-index: 1;
 }
 
@@ -609,7 +800,7 @@ h3 {
 
 .stepMain strong {
   color: #17191c;
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1.15;
   overflow: hidden;
   overflow-wrap: anywhere;
@@ -621,15 +812,47 @@ h3 {
   display: none;
 }
 
+.stepInlineStats,
+.stepSummary,
+.agentStartDetail {
+  display: none;
+}
+
+.treeGrid.fit .stepInlineStats,
+.spineStep.expanded .stepInlineStats {
+  color: #777e87;
+  display: block;
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 1.1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spineStep.expanded .stepSummary,
+.agentStartCard.expanded .agentStartDetail {
+  color: #555c66;
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.22;
+  margin-top: 3px;
+  max-height: 28px;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  text-transform: none;
+}
+
 .stepCount {
   align-self: start;
   background: rgba(245, 246, 247, 0.72);
   border: 1px solid rgba(25, 28, 33, 0.08);
   border-radius: 999px;
   color: #6d737c;
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 700;
-  padding: 3px 6px;
+  padding: 2px 5px;
   white-space: nowrap;
 }
 
@@ -646,9 +869,9 @@ h3 {
   border: 1px solid rgba(25, 28, 33, 0.08);
   border-radius: 999px;
   color: #4d535c;
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 800;
-  padding: 3px 6px;
+  padding: 2px 5px;
   white-space: nowrap;
 }
 
@@ -667,6 +890,54 @@ h3 {
   z-index: 2;
   -webkit-backdrop-filter: blur(20px);
   backdrop-filter: blur(20px);
+}
+
+.fileAnchorRail {
+  bottom: 10px;
+  left: -8px;
+  pointer-events: none;
+  position: absolute;
+  top: 74px;
+  width: 12px;
+  z-index: 6;
+}
+
+.fileAnchorTick {
+  background: rgba(31, 35, 40, 0.28);
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(25, 28, 33, 0.08);
+  display: block;
+  height: 8px;
+  left: 2px;
+  position: absolute;
+  transform: translateY(-50%);
+  transition:
+    background 140ms ease,
+    box-shadow 140ms ease,
+    opacity 140ms ease;
+  width: 8px;
+}
+
+.fileAnchorTick.selected,
+.fileAnchorTick.linked,
+.fileAnchorTick.agentLinked,
+.fileAnchorTick.eventLinked {
+  background: #111317;
+  box-shadow:
+    0 0 0 2px rgba(17, 19, 23, 0.13),
+    0 8px 18px rgba(17, 19, 23, 0.16);
+}
+
+.fileStructure.hasFocus .fileAnchorTick {
+  opacity: 0.18;
+}
+
+.fileStructure.hasFocus .fileAnchorTick.selected,
+.fileStructure.hasFocus .fileAnchorTick.linked,
+.fileStructure.hasFocus .fileAnchorTick.agentLinked,
+.fileStructure.hasFocus .fileAnchorTick.eventLinked {
+  opacity: 1;
 }
 
 .resizeHandle {
@@ -759,9 +1030,11 @@ h3 {
 
 .fileRows {
   display: block;
-  max-height: calc(100vh - 192px);
-  overflow: hidden;
+  max-height: min(430px, calc(100vh - 194px));
+  overflow: auto;
+  overscroll-behavior: contain;
   position: relative;
+  scrollbar-gutter: stable;
 }
 
 .finderRow {
@@ -820,12 +1093,35 @@ h3 {
 
 .fileNode:hover,
 .fileNode.selected,
-.fileNode.linked {
+.fileNode.linked,
+.fileNode.agentLinked,
+.fileNode.eventLinked {
   background: rgba(29, 33, 39, 0.08);
 }
 
-.fileNode.selected {
+.fileNode.selected,
+.fileNode.linked,
+.fileNode.agentLinked,
+.fileNode.eventLinked {
   box-shadow: inset 0 0 0 1px rgba(24, 28, 34, 0.22);
+}
+
+.fileStructure.hasFocus .finderRow {
+  opacity: 0.24;
+  transition:
+    background 140ms ease,
+    opacity 140ms ease;
+}
+
+.fileStructure.hasFocus .folderRow {
+  opacity: 0.38;
+}
+
+.fileStructure.hasFocus .fileNode.selected,
+.fileStructure.hasFocus .fileNode.linked,
+.fileStructure.hasFocus .fileNode.agentLinked,
+.fileStructure.hasFocus .fileNode.eventLinked {
+  opacity: 1;
 }
 
 .finderName {
@@ -911,7 +1207,11 @@ h3 {
     inset 0 0 0 1px rgba(28, 32, 38, 0.04);
   display: grid;
   gap: 5px;
-  max-width: min(320px, 34vw);
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  max-width: min(560px, 44vw);
+  min-height: 122px;
+  min-width: 260px;
+  overflow: hidden;
   padding: 10px;
   position: absolute;
   right: 0;
@@ -942,7 +1242,7 @@ h3 {
 }
 
 .glassInspector .glassFullText {
-  max-height: 150px;
+  max-height: none;
   overflow: auto;
   padding-right: 4px;
   white-space: pre-wrap;
@@ -966,6 +1266,87 @@ h3 {
 
 .glassInspector button {
   justify-self: start;
+}
+
+.inspectorResizeHandle {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  justify-self: auto !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  position: absolute;
+  z-index: 2;
+}
+
+.glassInspector .inspectorResizeHandle-left {
+  bottom: 18px;
+  cursor: ew-resize;
+  left: -5px;
+  top: 18px;
+  width: 10px;
+}
+
+.glassInspector .inspectorResizeHandle-top {
+  cursor: ns-resize;
+  height: 10px;
+  left: 18px;
+  right: 18px;
+  top: -5px;
+  width: auto;
+}
+
+.glassInspector .inspectorResizeHandle-topLeft {
+  cursor: nwse-resize;
+  height: 20px;
+  left: -6px;
+  top: -6px;
+  width: 20px;
+}
+
+.inspectorResizeHandle-left::after,
+.inspectorResizeHandle-top::after,
+.inspectorResizeHandle-topLeft::before,
+.inspectorResizeHandle-topLeft::after {
+  background: rgba(25, 28, 33, 0.26);
+  border-radius: 999px;
+  content: "";
+  opacity: 0;
+  position: absolute;
+  transition: opacity 140ms ease;
+}
+
+.inspectorResizeHandle-left::after {
+  bottom: 18px;
+  right: 4px;
+  top: 18px;
+  width: 2px;
+}
+
+.inspectorResizeHandle-top::after {
+  bottom: 4px;
+  height: 2px;
+  left: 18px;
+  right: 18px;
+}
+
+.inspectorResizeHandle-topLeft::before {
+  height: 2px;
+  left: 8px;
+  top: 8px;
+  width: 10px;
+}
+
+.inspectorResizeHandle-topLeft::after {
+  height: 10px;
+  left: 8px;
+  top: 8px;
+  width: 2px;
+}
+
+.inspectorResizeHandle:hover::after,
+.inspectorResizeHandle:hover::before {
+  opacity: 1;
 }
 
 .status {

@@ -372,6 +372,7 @@ describe("dashboard graph helpers", () => {
     expect(steps[0]?.description).toContain("Please update src/calc.ts");
     expect(steps[0]?.branches.map((branch) => branch.label)).toContain("$PROJECT/src/calc.ts");
     expect(steps[0]?.branches.map((branch) => branch.label)).toContain("$PROJECT/package.json");
+    expect(new Set(steps[0]?.branches.map((branch) => branch.id)).size).toBe(steps[0]?.branches.length);
     expect(steps[0]?.tokens).toMatchObject({
       input: 120,
       output: 12,

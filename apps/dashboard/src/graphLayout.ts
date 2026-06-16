@@ -336,9 +336,7 @@ export function createAgentTreeLayout(steps: WorkflowStep[]): AgentTreeLayout {
     lane.parentLaneId = anchor?.agentLabel ? agentLaneId(anchor.agentLabel) : "root";
   }
 
-  const branchLanes = [...lanes.values()]
-    .filter((lane) => lane.id !== "root")
-    .sort((a, b) => laneStartSeq(a) - laneStartSeq(b) || a.label.localeCompare(b.label));
+  const branchLanes = orderBranchLanesByGenealogy(lanes);
   branchLanes.forEach((lane, index) => {
     lane.column = index + 2;
   });
@@ -427,6 +425,37 @@ function latestStepBefore(steps: WorkflowStep[], seq: number, excludedAgentLabel
 
 function laneStartSeq(lane: AgentTreeLane): number {
   return lane.startBranch?.seq ?? lane.steps[0]?.seq ?? Number.MAX_SAFE_INTEGER;
+}
+
+function orderBranchLanesByGenealogy(lanes: Map<string, AgentTreeLane>): AgentTreeLane[] {
+  const childrenByParent = new Map<string, AgentTreeLane[]>();
+  for (const lane of lanes.values()) {
+    if (lane.id === "root") continue;
+    const parent = lane.parentLaneId ?? "root";
+    const siblings = childrenByParent.get(parent) ?? [];
+    siblings.push(lane);
+    childrenByParent.set(parent, siblings);
+  }
+  for (const siblings of childrenByParent.values()) {
+    siblings.sort((a, b) => laneStartSeq(a) - laneStartSeq(b) || a.label.localeCompare(b.label));
+  }
+
+  const ordered: AgentTreeLane[] = [];
+  const visit = (parentId: string) => {
+    for (const child of childrenByParent.get(parentId) ?? []) {
+      ordered.push(child);
+      visit(child.id);
+    }
+  };
+  visit("root");
+
+  const included = new Set(ordered.map((lane) => lane.id));
+  for (const lane of [...lanes.values()]
+    .filter((candidate) => candidate.id !== "root" && !included.has(candidate.id))
+    .sort((a, b) => laneStartSeq(a) - laneStartSeq(b) || a.label.localeCompare(b.label))) {
+    ordered.push(lane);
+  }
+  return ordered;
 }
 
 function sequentialTreeConnections(
@@ -761,7 +790,7 @@ function makeBranch(
   }
 ): WorkflowBranch {
   return {
-    id: `branch-${event.id}-${input.kind}`,
+    id: `branch-${event.id}-${input.kind}-${stableIdPart(input.label)}${input.detail ? `-${stableIdPart(input.detail)}` : ""}`,
     eventId: event.id,
     seq: event.seq,
     ts: event.ts,
@@ -772,6 +801,18 @@ function makeBranch(
     tone: input.tone,
     ...(input.detail ? { detail: input.detail } : {})
   };
+}
+
+function stableIdPart(value: string): string {
+  return (
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/^\$project\/?/, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 48) || "item"
+  );
 }
 
 function visibleTextForEvent(event: TraceEvent): string | undefined {
