@@ -22,7 +22,9 @@ button {
 }
 
 .shell {
-  background: #f4f5f6;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.74), rgba(245, 246, 248, 0.96)),
+    #f4f5f6;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
   min-height: 100vh;
@@ -111,15 +113,17 @@ button {
 }
 
 .lanes {
-  background: rgba(255, 255, 255, 0.62);
-  border: 1px solid rgba(25, 28, 33, 0.08);
-  border-radius: 18px;
-  box-shadow: 0 18px 64px rgba(23, 26, 31, 0.06);
+  background: rgba(255, 255, 255, 0.68);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 20px;
+  box-shadow:
+    0 18px 64px rgba(23, 26, 31, 0.06),
+    inset 0 0 0 1px rgba(28, 32, 38, 0.04);
   min-height: calc(100vh - 64px);
   overflow: hidden;
   padding: 14px;
-  -webkit-backdrop-filter: blur(16px);
-  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(24px) saturate(1.35);
+  backdrop-filter: blur(24px) saturate(1.35);
 }
 
 h2 {
@@ -144,9 +148,9 @@ h3 {
 
 .lane {
   align-items: center;
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(28, 32, 38, 0.09);
-  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.58);
+  border: 1px solid rgba(28, 32, 38, 0.07);
+  border-radius: 12px;
   color: #1f2328;
   cursor: pointer;
   display: flex;
@@ -169,13 +173,14 @@ h3 {
 }
 
 .tokenPanel {
-  background: rgba(255, 255, 255, 0.58);
-  border: 1px solid rgba(25, 28, 33, 0.08);
-  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 16px;
+  box-shadow: inset 0 0 0 1px rgba(28, 32, 38, 0.04);
   margin-top: 16px;
   padding: 10px;
-  -webkit-backdrop-filter: blur(18px);
-  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(22px) saturate(1.25);
+  backdrop-filter: blur(22px) saturate(1.25);
 }
 
 .tokenTotal {
@@ -314,7 +319,7 @@ h3 {
 
 .mapCanvas {
   display: grid;
-  grid-template-columns: 252px minmax(44px, 1fr) 286px;
+  grid-template-columns: minmax(224px, 286px) minmax(28px, 1fr) minmax(220px, var(--files-width, 286px));
   min-height: calc(100vh - 104px);
   overflow: hidden;
   position: relative;
@@ -364,7 +369,7 @@ h3 {
 
 .spine {
   display: grid;
-  gap: 8px;
+  gap: 7px;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -382,27 +387,30 @@ h3 {
 }
 
 .spineItem {
-  min-height: 56px;
+  min-height: 42px;
   position: relative;
 }
 
 .spineStep {
   align-items: center;
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(25, 28, 33, 0.1);
-  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 14px;
+  box-shadow:
+    0 8px 24px rgba(22, 25, 30, 0.045),
+    inset 0 0 0 1px rgba(26, 30, 36, 0.045);
   color: #17191c;
   cursor: pointer;
   display: grid;
-  gap: 8px;
-  grid-template-columns: 32px minmax(0, 1fr) auto;
-  min-height: 56px;
-  padding: 8px;
+  gap: 7px;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  min-height: 42px;
+  padding: 6px 7px;
   position: relative;
   text-align: left;
   width: 100%;
-  -webkit-backdrop-filter: blur(16px);
-  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(22px) saturate(1.25);
+  backdrop-filter: blur(22px) saturate(1.25);
 }
 
 .spineStep:hover,
@@ -411,23 +419,19 @@ h3 {
   box-shadow: 0 8px 28px rgba(22, 25, 30, 0.08);
 }
 
-.spineStep:not(.seen) {
-  opacity: 0.56;
-}
-
 .stepMarker {
   align-items: center;
-  background: rgba(255, 255, 255, 0.88);
+  background: rgba(255, 255, 255, 0.82);
   border: 1px solid rgba(25, 28, 33, 0.14);
   border-radius: 999px;
   color: #272b31;
   display: flex;
   font-size: 11px;
   font-weight: 800;
-  height: 24px;
+  height: 20px;
   justify-content: center;
   position: relative;
-  width: 24px;
+  width: 20px;
   z-index: 1;
 }
 
@@ -445,22 +449,21 @@ h3 {
 
 .stepMain strong {
   color: #17191c;
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.15;
+  overflow: hidden;
   overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .stepMain em {
-  color: #5c636d;
-  font-size: 10px;
-  font-style: normal;
-  line-height: 1.2;
-  overflow-wrap: anywhere;
+  display: none;
 }
 
 .stepCount {
   align-self: start;
-  background: rgba(245, 246, 247, 0.86);
+  background: rgba(245, 246, 247, 0.72);
   border: 1px solid rgba(25, 28, 33, 0.08);
   border-radius: 999px;
   color: #6d737c;
@@ -471,10 +474,11 @@ h3 {
 }
 
 .stepBadges {
-  align-self: start;
-  display: grid;
+  align-items: center;
+  align-self: center;
+  display: flex;
   gap: 4px;
-  justify-items: end;
+  justify-content: end;
 }
 
 .tokenPill {
@@ -503,6 +507,34 @@ h3 {
   z-index: 2;
   -webkit-backdrop-filter: blur(20px);
   backdrop-filter: blur(20px);
+}
+
+.resizeHandle {
+  background: transparent;
+  border: 0;
+  bottom: 10px;
+  cursor: col-resize;
+  left: -6px;
+  padding: 0;
+  position: absolute;
+  top: 10px;
+  width: 12px;
+  z-index: 4;
+}
+
+.resizeHandle::after {
+  background: rgba(25, 28, 33, 0.18);
+  border-radius: 999px;
+  content: "";
+  height: 44px;
+  left: 5px;
+  position: absolute;
+  top: calc(50% - 22px);
+  width: 2px;
+}
+
+.resizeHandle:hover::after {
+  background: rgba(25, 28, 33, 0.36);
 }
 
 .finderChrome {
@@ -574,6 +606,8 @@ h3 {
 
 .finderRow {
   align-items: center;
+  border: 0;
+  color: #20242a;
   display: grid;
   font-size: 10px;
   gap: 0;
@@ -604,8 +638,15 @@ h3 {
 }
 
 .folderRow {
+  background: transparent;
   color: #20242a;
+  cursor: pointer;
   font-weight: 700;
+  text-align: left;
+}
+
+.folderRow:hover {
+  background: rgba(29, 33, 39, 0.055);
 }
 
 .fileNode {
@@ -655,6 +696,10 @@ h3 {
   width: 0;
 }
 
+.disclosure.collapsed {
+  transform: rotate(0deg);
+}
+
 .disclosure.placeholder {
   border-left-color: transparent;
 }
@@ -697,20 +742,22 @@ h3 {
 }
 
 .glassInspector {
-  background: rgba(255, 255, 255, 0.62);
-  border: 1px solid rgba(25, 28, 33, 0.1);
-  border-radius: 16px;
-  box-shadow: 0 20px 80px rgba(18, 22, 28, 0.12);
+  background: rgba(255, 255, 255, 0.68);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 20px;
+  bottom: 14px;
+  box-shadow:
+    0 20px 80px rgba(18, 22, 28, 0.12),
+    inset 0 0 0 1px rgba(28, 32, 38, 0.04);
   display: grid;
   gap: 6px;
-  left: 0;
-  max-width: min(360px, 44vw);
+  max-width: min(390px, 42vw);
   padding: 12px;
   position: absolute;
-  top: clamp(292px, 48vh, 380px);
+  right: 0;
   z-index: 4;
-  -webkit-backdrop-filter: blur(22px);
-  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(28px) saturate(1.35);
+  backdrop-filter: blur(28px) saturate(1.35);
 }
 
 .glassKicker {
@@ -812,10 +859,15 @@ h3 {
   }
 
   .glassInspector {
-    bottom: auto;
+    bottom: 12px;
     left: 12px;
-    max-width: calc(100% - 24px);
-    top: 420px;
+    max-width: none;
+    right: 12px;
+    top: auto;
+  }
+
+  .resizeHandle {
+    display: none;
   }
 
   .connectionLayer {

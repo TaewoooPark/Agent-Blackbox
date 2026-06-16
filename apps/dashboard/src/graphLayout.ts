@@ -219,6 +219,15 @@ export function createWorkflowSteps(events: TraceEvent[]): WorkflowStep[] {
   return steps;
 }
 
+export function filterWorkflowStepsBySeq(steps: WorkflowStep[], replaySeq: number): WorkflowStep[] {
+  return steps
+    .filter((step) => step.seq <= replaySeq)
+    .map((step) => ({
+      ...step,
+      branches: step.branches.filter((branch) => branch.seq <= replaySeq)
+    }));
+}
+
 function promptStepForEvent(event: TraceEvent): WorkflowStep | undefined {
   const prompt = promptTextForEvent(event);
   if (!prompt) return undefined;

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   createTimelineMarks,
   createWorkflowSteps,
+  filterWorkflowStepsBySeq,
   layoutGraphNodes,
   summarizeGraph,
   visibleEventsForGraph
@@ -146,6 +147,59 @@ describe("dashboard graph helpers", () => {
       "Changed a file"
     ]);
     expect(steps[0]?.branches.map((branch) => branch.kind)).toEqual(["file", "agent", "file"]);
+  });
+
+  it("removes future workflow steps and branches during replay", () => {
+    const events = [
+      createTraceEvent(1, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "file_read",
+        payload: { path: "src/calc.ts" }
+      }),
+      createTraceEvent(2, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "file_edit",
+        payload: { path: "src/calc.ts" }
+      }),
+      createTraceEvent(3, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        agentId: "reviewer",
+        kind: "subagent_spawned",
+        payload: {}
+      }),
+      createTraceEvent(4, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "file_read",
+        payload: { path: "src/late.ts" }
+      }),
+      createTraceEvent(5, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "bash",
+        payload: { command: "npm test", exitCode: 0 }
+      })
+    ];
+
+    const steps = createWorkflowSteps(events);
+    const seqTwoSteps = filterWorkflowStepsBySeq(steps, 2);
+    const seqThreeSteps = filterWorkflowStepsBySeq(steps, 3);
+    const liveSteps = filterWorkflowStepsBySeq(steps, 5);
+
+    expect(seqTwoSteps.map((step) => step.title)).toEqual(["Changed a file"]);
+    expect(seqTwoSteps[0]?.branches.map((branch) => branch.label)).toEqual(["src/calc.ts", "src/calc.ts"]);
+    expect(seqThreeSteps.map((step) => step.title)).toEqual(["Changed a file"]);
+    expect(seqThreeSteps[0]?.branches.map((branch) => branch.label)).toContain("reviewer");
+    expect(liveSteps.map((step) => step.title)).toEqual(["Changed a file", "Tests passed"]);
+    expect(liveSteps[1]?.branches.map((branch) => branch.label)).toContain("src/late.ts");
   });
 
   it("shows user prompts with file mentions and token deltas", () => {

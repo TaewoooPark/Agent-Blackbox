@@ -4,6 +4,7 @@ import type { CSSProperties } from "react";
 import {
   createTimelineMarks,
   createWorkflowSteps,
+  filterWorkflowStepsBySeq,
   type TokenUsage,
   type WorkflowBranch,
   type WorkflowStep
@@ -103,13 +104,18 @@ export function DashboardApp() {
   const workflowSteps = useMemo(() => createWorkflowSteps(visibleEvents), [visibleEvents]);
   const tokenTotals = useMemo(() => latestTokenUsage(snapshot?.events ?? []), [snapshot]);
   const sessionName = useMemo(() => sessionDisplayName(snapshot?.events ?? [], graph?.runId), [snapshot, graph]);
+  const orderedEvents = useMemo(() => [...(snapshot?.events ?? [])].sort((a, b) => a.seq - b.seq), [snapshot]);
+  const marks = useMemo(() => createTimelineMarks(orderedEvents), [orderedEvents]);
+  const maxSeq = orderedEvents.at(-1)?.seq ?? 0;
+  const replaySeq = selectedSeq ?? maxSeq;
+  const replaySteps = useMemo(() => filterWorkflowStepsBySeq(workflowSteps, replaySeq), [workflowSteps, replaySeq]);
   const selectedStep =
     (selectedEventId
-      ? workflowSteps.find(
+      ? replaySteps.find(
           (step) => step.eventId === selectedEventId || step.branches.some((branch) => branch.eventId === selectedEventId)
         )
       : undefined) ??
-    workflowSteps.at(-1) ??
+    replaySteps.at(-1) ??
     null;
   const selectedBranch =
     selectedStep && selectedEventId && selectedEventId !== selectedStep.eventId
@@ -117,10 +123,6 @@ export function DashboardApp() {
       : null;
   const inspectedEventId = selectedBranch?.eventId ?? selectedStep?.eventId ?? null;
   const selectedEvent = inspectedEventId ? visibleEvents.find((event) => event.id === inspectedEventId) ?? null : null;
-  const orderedEvents = useMemo(() => [...(snapshot?.events ?? [])].sort((a, b) => a.seq - b.seq), [snapshot]);
-  const marks = useMemo(() => createTimelineMarks(orderedEvents), [orderedEvents]);
-  const maxSeq = orderedEvents.at(-1)?.seq ?? 0;
-  const replaySeq = selectedSeq ?? maxSeq;
   const selectWorkflowEvent = (eventId: string) => {
     setSelectedEventId(eventId);
     setSelectedFilePath(null);
@@ -193,7 +195,7 @@ export function DashboardApp() {
           selectedEventId={selectedEventId}
           selectedFilePath={selectedFilePath}
           selectedStep={selectedStep}
-          steps={workflowSteps}
+          steps={replaySteps}
         />
       </section>
     </main>
@@ -224,9 +226,32 @@ function SessionMap({
   steps: WorkflowStep[];
 }) {
   const mapRef = useRef<HTMLDivElement | null>(null);
+  const [filePanelWidth, setFilePanelWidth] = useState(286);
+  const [resizeDrag, setResizeDrag] = useState<{ startWidth: number; startX: number } | null>(null);
   const fileConnections = useMemo(() => createFileConnections(steps), [steps]);
   const fileRows = useMemo(() => createFileRows(fileConnections), [fileConnections]);
   const [measuredEdges, setMeasuredEdges] = useState<MeasuredEdge[]>([]);
+
+  useEffect(() => {
+    if (!resizeDrag) return undefined;
+
+    const move = (event: PointerEvent) => {
+      const delta = resizeDrag.startX - event.clientX;
+      setFilePanelWidth(clamp(resizeDrag.startWidth + delta, 220, 480));
+    };
+    const stop = () => {
+      setResizeDrag(null);
+      document.body.style.cursor = "";
+    };
+    document.body.style.cursor = "col-resize";
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop, { once: true });
+    return () => {
+      document.body.style.cursor = "";
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+    };
+  }, [resizeDrag]);
 
   useLayoutEffect(() => {
     const container = mapRef.current;
@@ -268,11 +293,13 @@ function SessionMap({
 
     const frame = window.requestAnimationFrame(measure);
     window.addEventListener("resize", measure);
+    window.addEventListener("agent-blackbox:layout", measure);
     return () => {
       window.cancelAnimationFrame(frame);
       window.removeEventListener("resize", measure);
+      window.removeEventListener("agent-blackbox:layout", measure);
     };
-  }, [fileConnections, steps, selectedEventId, selectedFilePath]);
+  }, [fileConnections, filePanelWidth, steps, selectedEventId, selectedFilePath]);
 
   const focusedStepId = selectedFilePath ? null : selectedStep?.id ?? null;
 
@@ -286,7 +313,11 @@ function SessionMap({
         <span>{steps.length} moments</span>
       </div>
 
-      <div className="mapCanvas" ref={mapRef}>
+      <div
+        className="mapCanvas"
+        ref={mapRef}
+        style={{ "--files-width": `${filePanelWidth}px` } as CSSProperties}
+      >
         <ConnectionLayer
           edges={measuredEdges}
           focusedFilePath={selectedFilePath}
@@ -302,7 +333,6 @@ function SessionMap({
           ) : (
             <WorkflowColumn
               onSelectEvent={onSelectEvent}
-              replaySeq={replaySeq}
               selectedEventId={selectedEventId}
               selectedFilePath={selectedFilePath}
               steps={steps}
@@ -310,6 +340,7 @@ function SessionMap({
           )}
         </div>
         <FileStructure
+          onResizeStart={(clientX) => setResizeDrag({ startWidth: filePanelWidth, startX: clientX })}
           onSelectFile={onSelectFile}
           rows={fileRows}
           selectedFilePath={selectedFilePath}
@@ -330,13 +361,11 @@ function SessionMap({
 
 function WorkflowColumn({
   onSelectEvent,
-  replaySeq,
   selectedEventId,
   selectedFilePath,
   steps
 }: {
   onSelectEvent: (eventId: string) => void;
-  replaySeq: number;
   selectedEventId: string | null;
   selectedFilePath: string | null;
   steps: WorkflowStep[];
@@ -349,22 +378,19 @@ function WorkflowColumn({
         return (
           <li className="spineItem" key={step.id}>
             <button
-              className={`spineStep tone-${step.tone} ${selected ? "selected" : ""} ${
-                step.seq <= replaySeq ? "seen" : ""
-              }`}
+              aria-label={`${step.title}. ${formatTokenCount(step.tokens.total)}. ${fileCount} connected files.`}
+              className={`spineStep tone-${step.tone} ${selected ? "selected" : ""}`}
               data-step-id={step.id}
               onClick={() => onSelectEvent(step.eventId)}
               type="button"
             >
               <span className="stepMarker">{index + 1}</span>
               <span className="stepMain">
-                <span className="stepMeta">seq {step.seq}</span>
                 <strong>{shortTitle(step.title)}</strong>
-                <em>{compactDescription(step.description)}</em>
               </span>
               <span className="stepBadges">
-                <span className="stepCount">{fileCount === 0 ? "no files" : `${fileCount} files`}</span>
                 <span className="tokenPill">{formatTokenCount(step.tokens.total)}</span>
+                <span className="stepCount">{fileCount === 0 ? "no files" : `${fileCount} files`}</span>
               </span>
             </button>
           </li>
@@ -399,18 +425,47 @@ function ConnectionLayer({
 }
 
 function FileStructure({
+  onResizeStart,
   onSelectFile,
   rows,
   selectedFilePath,
   selectedStepId
 }: {
+  onResizeStart: (clientX: number) => void;
   onSelectFile: (path: string) => void;
   rows: FileTreeRow[];
   selectedFilePath: string | null;
   selectedStepId: string | null;
 }) {
+  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(() => new Set());
+  const visibleRows = useMemo(() => visibleFileRows(rows, collapsedFolders), [rows, collapsedFolders]);
+  const itemCount = rows.filter((row) => row.type === "file").length;
+  const toggleFolder = (path: string) => {
+    setCollapsedFolders((current) => {
+      const next = new Set(current);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+    window.requestAnimationFrame(() => {
+      window.dispatchEvent(new Event("agent-blackbox:layout"));
+    });
+  };
+
   return (
     <aside className="fileStructure" aria-label="Connected file structure">
+      <button
+        aria-label="Resize file list"
+        className="resizeHandle"
+        onPointerDown={(event) => {
+          event.preventDefault();
+          onResizeStart(event.clientX);
+        }}
+        type="button"
+      />
       <div className="finderChrome">
         <span />
         <span />
@@ -418,7 +473,7 @@ function FileStructure({
       </div>
       <div className="fileHeader">
         <h2>Files</h2>
-        <span>{rows.filter((row) => row.type === "file").length} items</span>
+        <span>{itemCount} items</span>
       </div>
       <div className="finderColumns" aria-hidden="true">
         <span>Name</span>
@@ -428,22 +483,25 @@ function FileStructure({
       </div>
       <div className="fileRows">
         {rows.length === 0 ? <p className="muted">No connected files yet.</p> : null}
-        {rows.map((row) =>
+        {visibleRows.map((row) =>
           row.type === "folder" ? (
-            <div
+            <button
+              aria-expanded={!collapsedFolders.has(row.path)}
               className={`finderRow folderRow ${row.level === 0 ? "rootRow" : ""}`}
               key={row.id}
+              onClick={() => toggleFolder(row.path)}
               style={{ "--depth": `${row.level * 14}px` } as CSSProperties}
+              type="button"
             >
               <span className="finderName">
-                <span className="disclosure" />
+                <span className={collapsedFolders.has(row.path) ? "disclosure collapsed" : "disclosure"} />
                 <span className="folderGlyph" />
                 <strong>{row.name}</strong>
               </span>
               <span>Folder</span>
               <span>-</span>
               <span>-</span>
-            </div>
+            </button>
           ) : (
             <button
               className={`finderRow fileNode ${row.level === 0 ? "rootRow" : ""} ${
@@ -541,6 +599,7 @@ type FileTreeRow =
       id: string;
       level: number;
       name: string;
+      path: string;
       type: "folder";
     }
   | {
@@ -590,6 +649,7 @@ function createFileRows(connections: FileConnection[]): FileTreeRow[] {
     id: "folder-project-root",
     level: 0,
     name: "project",
+    path: "",
     type: "folder"
   });
 
@@ -615,6 +675,7 @@ function createFileRows(connections: FileConnection[]): FileTreeRow[] {
       id: `folder-${folderPath}`,
       level: segments.length,
       name: segments.at(-1) ?? folderPath,
+      path: folderPath,
       type: "folder"
     });
     for (const [path, pathConnections] of [...fileMap.entries()].sort(([a], [b]) => a.localeCompare(b))) {
@@ -633,6 +694,26 @@ function createFileRows(connections: FileConnection[]): FileTreeRow[] {
   }
 
   return rows;
+}
+
+function visibleFileRows(rows: FileTreeRow[], collapsedFolders: Set<string>): FileTreeRow[] {
+  return rows.filter((row) => {
+    if (row.type === "folder") {
+      return !folderAncestors(row.path).some((path) => collapsedFolders.has(path));
+    }
+    return !fileFolderAncestors(row.path).some((path) => collapsedFolders.has(path));
+  });
+}
+
+function folderAncestors(path: string): string[] {
+  if (path.length === 0) return [];
+  const segments = pathSegments(path);
+  return ["", ...segments.slice(0, -1).map((_, index) => segments.slice(0, index + 1).join("/"))];
+}
+
+function fileFolderAncestors(path: string): string[] {
+  const segments = pathSegments(path);
+  return ["", ...segments.slice(0, -1).map((_, index) => segments.slice(0, index + 1).join("/"))];
 }
 
 function uniqueFileCount(step: WorkflowStep): number {
@@ -680,6 +761,10 @@ function shortTitle(value: string): string {
 function compactDescription(value: string): string {
   const normalized = value.replace(/\s+/g, " ").trim();
   return normalized.length > 88 ? `${normalized.slice(0, 85)}...` : normalized;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 function TokenPanel({ usage }: { usage: TokenUsage }) {
