@@ -516,7 +516,10 @@ function SessionMap({
       requestLayoutMeasure();
     };
     const stop = () => {
-      if (!moved) {
+      // A plain click (no drag, no modifier) focuses the node and opens the
+      // inspector. A modifier-click only toggles multi-selection, and any drag
+      // suppresses the popup entirely.
+      if (!moved && !nodeDrag.additive) {
         onSelectEvent(nodeDrag.eventId);
       }
       setNodeDrag(null);
@@ -762,6 +765,7 @@ function SessionMap({
     const nodeIds = [...nextSelection];
     setSelectedNodeIds(nextSelection);
     setNodeDrag({
+      additive,
       eventId: item.type === "step" ? item.step.eventId : item.branch.eventId,
       moved: false,
       nodeIds,
@@ -1038,7 +1042,6 @@ function TreeItemCard({
         } ${agentFocused ? "agentFocused" : ""} ${fileFocused ? "fileFocused" : ""} ${selected ? "expanded" : ""}`}
         data-agent-label={item.branch.label}
         data-tree-node-id={item.id}
-        onClick={() => onSelectEvent(item.branch.eventId)}
         onPointerDown={(event) => onBeginNodeDrag(event, item)}
         style={style}
         type="button"
@@ -1068,7 +1071,6 @@ function TreeItemCard({
       data-agent-label={step.agentLabel ?? "main"}
       data-step-id={step.id}
       data-tree-node-id={item.id}
-      onClick={() => onSelectEvent(step.eventId)}
       onPointerDown={(event) => onBeginNodeDrag(event, item)}
       style={style}
       type="button"
@@ -1544,6 +1546,7 @@ type SelectedTreeFocus = {
 type NodeOffsetMap = Record<string, Point>;
 
 type NodeDrag = {
+  additive: boolean;
   eventId: string;
   moved: boolean;
   nodeIds: string[];
