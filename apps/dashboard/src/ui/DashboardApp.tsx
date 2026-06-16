@@ -989,10 +989,13 @@ function TreeItemCard({
           </span>
         ) : null}
         <strong>{shortTitle(stepDisplayTitle(step, fileCount))}</strong>
-        <span className="stepInlineStats">
-          {formatTokenNumber(step.tokens.total)}
-          {fileCount > 0 ? ` · ${fileCount} ${fileCount === 1 ? "file" : "files"}` : ""}
-        </span>
+        {step.tokens.total > 0 || fileCount > 0 ? (
+          <span className="stepInlineStats">
+            {step.tokens.total > 0 ? formatTokenNumber(step.tokens.total) : null}
+            {step.tokens.total > 0 && fileCount > 0 ? " · " : null}
+            {fileCount > 0 ? `${fileCount} ${fileCount === 1 ? "file" : "files"}` : null}
+          </span>
+        ) : null}
         {selected ? <span className="stepSummary">{compactDescription(step.description)}</span> : null}
       </span>
       <span className="stepBadges">
