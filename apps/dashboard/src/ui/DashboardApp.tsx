@@ -1,4 +1,12 @@
-import { materializeWorkflowGraph, type PromiseCheck, type TraceEvent, type WorkflowGraph, type WorkflowNode } from "@agent-blackbox/core";
+import {
+  evaluatePromiseChecks,
+  generateHandoffMarkdown,
+  materializeWorkflowGraph,
+  type PromiseCheck,
+  type TraceEvent,
+  type WorkflowGraph,
+  type WorkflowNode
+} from "@agent-blackbox/core";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import {
@@ -60,6 +68,8 @@ export function DashboardApp() {
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [selectedSeq, setSelectedSeq] = useState<number | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [showHandoff, setShowHandoff] = useState(false);
+  const [handoffCopied, setHandoffCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -144,6 +154,10 @@ export function DashboardApp() {
   const runHost = visibleEvents[0]?.host ?? null;
   const runStatus = useMemo(() => deriveRunStatus(visibleEvents), [visibleEvents]);
   const riskMomentCount = useMemo(() => workflowSteps.filter((step) => step.tone === "risk").length, [workflowSteps]);
+  const handoffMarkdown = useMemo(
+    () => (graph ? generateHandoffMarkdown(graph, evaluatePromiseChecks(visibleEvents)) : ""),
+    [graph, visibleEvents]
+  );
   const orderedEvents = useMemo(() => [...visibleEvents].sort((a, b) => a.seq - b.seq), [visibleEvents]);
   const marks = useMemo(() => createTimelineMarks(orderedEvents), [orderedEvents]);
   const maxSeq = orderedEvents.at(-1)?.seq ?? 0;
@@ -207,8 +221,52 @@ export function DashboardApp() {
               {riskMomentCount} risk {riskMomentCount === 1 ? "moment" : "moments"}
             </span>
           ) : null}
+          <button
+            className="topbarAction"
+            disabled={visibleEvents.length === 0}
+            onClick={() => {
+              setHandoffCopied(false);
+              setShowHandoff(true);
+            }}
+            type="button"
+          >
+            Handoff
+          </button>
         </div>
       </header>
+
+      {showHandoff ? (
+        <div
+          className="handoffOverlay"
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) setShowHandoff(false);
+          }}
+          role="presentation"
+        >
+          <aside className="handoffPanel" aria-label="Handoff summary">
+            <div className="handoffHeader">
+              <h2>Handoff summary</h2>
+              <div className="handoffActions">
+                <button
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(handoffMarkdown).then(
+                      () => setHandoffCopied(true),
+                      () => setHandoffCopied(false)
+                    );
+                  }}
+                  type="button"
+                >
+                  {handoffCopied ? "Copied" : "Copy markdown"}
+                </button>
+                <button onClick={() => setShowHandoff(false)} type="button">
+                  Close
+                </button>
+              </div>
+            </div>
+            <pre className="handoffBody">{handoffMarkdown}</pre>
+          </aside>
+        </div>
+      ) : null}
 
       {error ? <div className="banner">Daemon unavailable: {error}</div> : null}
 
