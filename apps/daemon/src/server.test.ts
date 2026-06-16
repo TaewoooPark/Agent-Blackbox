@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildReplaySummary, startTraceDaemon } from "./server.js";
+import { buildReplaySummary, buildTraceSnapshot, startTraceDaemon } from "./server.js";
 
 let tempDir: string | undefined;
 
@@ -80,6 +80,91 @@ describe("trace daemon", () => {
 
       const health = await fetch(`http://127.0.0.1:${daemon.port}/health`);
       expect(health.headers.get("access-control-allow-methods")).toContain("POST");
+    } finally {
+      await daemon.close();
+    }
+  });
+
+  it("serves replay snapshots, audit checks, and handoff markdown", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "agent-blackbox-daemon-"));
+    const daemon = await startTraceDaemon({ projectDir: tempDir, port: 0 });
+    try {
+      const events = [
+        createTraceEvent(1, {
+          host: "opencode",
+          runId: "run-snapshot",
+          sessionId: "session-snapshot",
+          agentId: "agent-primary",
+          kind: "message",
+          payload: { role: "assistant", text: "I ran the tests and updated the implementation." }
+        }),
+        createTraceEvent(2, {
+          host: "opencode",
+          runId: "run-snapshot",
+          sessionId: "session-snapshot",
+          agentId: "agent-primary",
+          kind: "file_edit",
+          payload: { path: "src/index.ts" }
+        }),
+        createTraceEvent(3, {
+          host: "opencode",
+          runId: "run-snapshot",
+          sessionId: "session-snapshot",
+          agentId: "agent-primary",
+          kind: "bash",
+          payload: { command: "npm test", exitCode: 0 }
+        })
+      ];
+
+      for (const event of events) {
+        const ingest = await fetch(`http://127.0.0.1:${daemon.port}/events`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(event)
+        });
+        expect(ingest.status).toBe(202);
+      }
+
+      const replayResponse = await fetch(`http://127.0.0.1:${daemon.port}/snapshot?seq=1`);
+      const replayPayload = (await replayResponse.json()) as {
+        ok: boolean;
+        data: { graph: { appliedEventIds: string[] }; checks: { status: string }[] };
+      };
+      expect(replayPayload.ok).toBe(true);
+      expect(replayPayload.data.graph.appliedEventIds).toEqual(["evt_run-snapshot_000001"]);
+      expect(replayPayload.data.checks.map((check) => check.status)).toEqual(["unverified", "unverified"]);
+
+      const auditResponse = await fetch(`http://127.0.0.1:${daemon.port}/audit`);
+      const auditPayload = (await auditResponse.json()) as {
+        ok: boolean;
+        data: { status: string; evidenceEventIds: string[] }[];
+      };
+      expect(auditPayload.data.map((check) => check.status)).toEqual(["verified", "verified"]);
+      expect(auditPayload.data.flatMap((check) => check.evidenceEventIds)).toContain("evt_run-snapshot_000003");
+
+      const handoffResponse = await fetch(`http://127.0.0.1:${daemon.port}/handoff`);
+      const handoffPayload = (await handoffResponse.json()) as { ok: boolean; data: { markdown: string } };
+      expect(handoffPayload.data.markdown).toContain("## Promise Checks");
+
+      await expect(buildTraceSnapshot(daemon.eventsFile, { seq: 2 })).resolves.toMatchObject({
+        replay: { mode: "seq", seq: 2 },
+        graph: { runId: "run-snapshot" }
+      });
+    } finally {
+      await daemon.close();
+    }
+  });
+
+  it("rejects invalid replay queries as bad requests", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "agent-blackbox-daemon-"));
+    const daemon = await startTraceDaemon({ projectDir: tempDir, port: 0 });
+    try {
+      const response = await fetch(`http://127.0.0.1:${daemon.port}/snapshot?seq=nope`);
+      const payload = (await response.json()) as { ok: boolean; error: { message: string } };
+
+      expect(response.status).toBe(400);
+      expect(payload.ok).toBe(false);
+      expect(payload.error.message).toContain("seq");
     } finally {
       await daemon.close();
     }

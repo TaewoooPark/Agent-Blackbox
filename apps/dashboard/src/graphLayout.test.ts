@@ -1,6 +1,7 @@
 import type { WorkflowGraph } from "@agent-blackbox/core";
+import { createTraceEvent } from "@agent-blackbox/core";
 import { describe, expect, it } from "vitest";
-import { layoutGraphNodes, summarizeGraph } from "./graphLayout.js";
+import { createTimelineMarks, layoutGraphNodes, summarizeGraph, visibleEventsForGraph } from "./graphLayout.js";
 
 const graph: WorkflowGraph = {
   runId: "run-ui",
@@ -47,5 +48,30 @@ describe("dashboard graph helpers", () => {
     expect(decision?.type).toBe("DECISION");
     expect(agent?.y).toBeLessThan(decision?.y ?? 0);
   });
-});
 
+  it("derives replay logs and visible events from observed trace state", () => {
+    const events = [
+      createTraceEvent(1, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "file_read",
+        payload: { path: "src/index.ts" }
+      }),
+      createTraceEvent(2, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "bash",
+        payload: { command: "npm test", exitCode: 1 }
+      })
+    ];
+
+    const marks = createTimelineMarks(events);
+    expect(marks.map((mark) => mark.label)).toEqual(["Read src/index.ts", "Ran npm test -> exit 1"]);
+    expect(marks[1]?.tone).toBe("risk");
+    expect(visibleEventsForGraph(events, { ...graph, appliedEventIds: [events[0]!.id] }).map((event) => event.id)).toEqual([
+      events[0]!.id
+    ]);
+  });
+});

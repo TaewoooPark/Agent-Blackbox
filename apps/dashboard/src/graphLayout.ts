@@ -1,4 +1,4 @@
-import type { WorkflowGraph, WorkflowNode } from "@agent-blackbox/core";
+import type { TraceEvent, WorkflowGraph, WorkflowNode } from "@agent-blackbox/core";
 
 export type PositionedNode = WorkflowNode & {
   x: number;
@@ -13,6 +13,16 @@ export type DashboardSummary = {
   activeAgents: number;
   failures: number;
   decisions: number;
+};
+
+export type TimelineTone = "neutral" | "work" | "decision" | "risk" | "claim";
+
+export type TimelineMark = {
+  id: string;
+  seq: number;
+  kind: string;
+  label: string;
+  tone: TimelineTone;
 };
 
 const laneByType: Record<string, number> = {
@@ -64,4 +74,79 @@ export function layoutGraphNodes(graph: WorkflowGraph): PositionedNode[] {
       y: 24 + lane * 82
     };
   });
+}
+
+export function createTimelineMarks(events: TraceEvent[]): TimelineMark[] {
+  return events.map((event) => ({
+    id: event.id,
+    seq: event.seq,
+    kind: event.kind,
+    label: summarizeTraceEvent(event),
+    tone: toneForEvent(event)
+  }));
+}
+
+export function summarizeTraceEvent(event: TraceEvent): string {
+  if (event.summary) {
+    return event.summary;
+  }
+  const path = stringPayload(event, "path") ?? stringPayload(event, "file");
+  if (path && event.kind === "file_read") return `Read ${path}`;
+  if (path && event.kind === "file_edit") return `Edited ${path}`;
+  if (path && event.kind === "file_created") return `Created ${path}`;
+  if (path && event.kind === "file_deleted") return `Deleted ${path}`;
+  const command = stringPayload(event, "command");
+  if (command && event.kind === "bash") {
+    const exitCode = numberPayload(event, "exitCode");
+    return exitCode === undefined ? `Ran ${command}` : `Ran ${command} -> exit ${exitCode}`;
+  }
+  const statement = stringPayload(event, "statement");
+  if (statement && event.kind === "decision_extracted") return `Decided: ${statement}`;
+  const text = stringPayload(event, "text") ?? stringPayload(event, "content");
+  if (text && event.kind === "message") return `Claim/message: ${shorten(text)}`;
+  return event.kind.replace(/_/g, " ");
+}
+
+export function visibleEventsForGraph(events: TraceEvent[], graph: WorkflowGraph): TraceEvent[] {
+  const visibleIds = new Set(graph.appliedEventIds);
+  return events.filter((event) => visibleIds.has(event.id));
+}
+
+function toneForEvent(event: TraceEvent): TimelineTone {
+  if (event.kind === "decision_extracted" || event.kind === "handoff_generated") return "decision";
+  if (event.kind === "message" && event.evidence.claimedByModel) return "claim";
+  if (
+    event.kind === "session_error" ||
+    event.kind === "blocker_detected" ||
+    event.kind === "permission_asked" ||
+    (event.kind === "bash" && numberPayload(event, "exitCode") !== undefined && numberPayload(event, "exitCode") !== 0)
+  ) {
+    return "risk";
+  }
+  if (
+    event.kind === "tool_call" ||
+    event.kind === "tool_result" ||
+    event.kind === "file_read" ||
+    event.kind === "file_edit" ||
+    event.kind === "bash" ||
+    event.kind === "search"
+  ) {
+    return "work";
+  }
+  return "neutral";
+}
+
+function stringPayload(event: TraceEvent, key: string): string | undefined {
+  const value = event.payload[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+function numberPayload(event: TraceEvent, key: string): number | undefined {
+  const value = event.payload[key];
+  return typeof value === "number" ? value : undefined;
+}
+
+function shorten(value: string): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.length > 96 ? `${normalized.slice(0, 93)}...` : normalized;
 }

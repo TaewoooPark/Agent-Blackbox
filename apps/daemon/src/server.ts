@@ -1,4 +1,14 @@
-import { materializeWorkflowGraph, type TraceEvent, validateTraceEvent } from "@agent-blackbox/core";
+import {
+  evaluatePromiseChecks,
+  generateHandoffMarkdown,
+  materializeWorkflowGraph,
+  replayWorkflowGraphAtSeq,
+  replayWorkflowGraphAtTime,
+  type PromiseCheck,
+  type TraceEvent,
+  type WorkflowGraph,
+  validateTraceEvent
+} from "@agent-blackbox/core";
 import { appendTraceEvent, readTraceEvents } from "@agent-blackbox/storage";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join } from "node:path";
@@ -14,6 +24,18 @@ export type RunningTraceDaemon = {
   port: number;
   eventsFile: string;
   close: () => Promise<void>;
+};
+
+export type TraceSnapshot = {
+  events: TraceEvent[];
+  graph: WorkflowGraph;
+  checks: PromiseCheck[];
+  handoffMarkdown: string;
+  replay: {
+    mode: "live" | "seq" | "time";
+    seq?: number;
+    at?: string;
+  };
 };
 
 type JsonResponse = {
@@ -77,9 +99,38 @@ export async function buildReplaySummary(eventsFile: string): Promise<{
   };
 }
 
+export async function buildTraceSnapshot(
+  eventsFile: string,
+  replay: { seq?: number; at?: string } = {}
+): Promise<TraceSnapshot> {
+  const events = await loadTraceEvents(eventsFile);
+  const graph =
+    replay.seq !== undefined
+      ? replayWorkflowGraphAtSeq(events, replay.seq)
+      : replay.at !== undefined
+        ? replayWorkflowGraphAtTime(events, replay.at)
+        : materializeWorkflowGraph(events);
+  const replayedEvents = new Set(graph.appliedEventIds);
+  const visibleEvents = events.filter((event) => replayedEvents.has(event.id));
+  const checks = evaluatePromiseChecks(visibleEvents);
+  const handoffMarkdown = generateHandoffMarkdown(graph, checks);
+  return {
+    events,
+    graph,
+    checks,
+    handoffMarkdown,
+    replay: {
+      mode: replay.seq !== undefined ? "seq" : replay.at !== undefined ? "time" : "live",
+      ...(replay.seq !== undefined ? { seq: replay.seq } : {}),
+      ...(replay.at !== undefined ? { at: replay.at } : {})
+    }
+  };
+}
+
 async function handleRequest(request: IncomingMessage, response: ServerResponse, eventsFile: string): Promise<void> {
   try {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    const replay = parseReplayQuery(url);
     if (request.method === "OPTIONS") {
       sendEmpty(response, 204);
       return;
@@ -93,8 +144,22 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
       return;
     }
     if (request.method === "GET" && url.pathname === "/graph") {
-      const events = await loadTraceEvents(eventsFile);
-      sendJson(response, 200, { ok: true, data: materializeWorkflowGraph(events) });
+      sendJson(response, 200, { ok: true, data: (await buildTraceSnapshot(eventsFile, replay)).graph });
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/snapshot") {
+      sendJson(response, 200, { ok: true, data: await buildTraceSnapshot(eventsFile, replay) });
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/audit") {
+      sendJson(response, 200, { ok: true, data: (await buildTraceSnapshot(eventsFile, replay)).checks });
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/handoff") {
+      sendJson(response, 200, {
+        ok: true,
+        data: { markdown: (await buildTraceSnapshot(eventsFile, replay)).handoffMarkdown }
+      });
       return;
     }
     if (request.method === "POST" && url.pathname === "/events") {
@@ -113,7 +178,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
     }
     sendJson(response, 404, { ok: false, error: { message: "Not found" } });
   } catch (error) {
-    sendJson(response, 500, {
+    sendJson(response, error instanceof BadRequestError ? 400 : 500, {
       ok: false,
       error: { message: error instanceof Error ? error.message : String(error) }
     });
@@ -147,6 +212,27 @@ function sendEmpty(response: ServerResponse, statusCode: number): void {
   });
   response.end();
 }
+
+function parseReplayQuery(url: URL): { seq?: number; at?: string } {
+  const seq = url.searchParams.get("seq");
+  if (seq !== null && seq !== "") {
+    const parsed = Number(seq);
+    if (!Number.isInteger(parsed) || parsed < 0) {
+      throw new BadRequestError("seq must be a non-negative integer");
+    }
+    return { seq: parsed };
+  }
+  const at = url.searchParams.get("at");
+  if (at !== null && at !== "") {
+    if (Number.isNaN(Date.parse(at))) {
+      throw new BadRequestError("at must be an ISO-compatible timestamp");
+    }
+    return { at };
+  }
+  return {};
+}
+
+class BadRequestError extends Error {}
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
