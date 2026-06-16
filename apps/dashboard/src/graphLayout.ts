@@ -234,7 +234,8 @@ export function createWorkflowSteps(events: TraceEvent[]): WorkflowStep[] {
     if (step) {
       const previousStep = steps.at(-1);
       if (shouldMergeSequentialStep(previousStep, step, event)) {
-        previousStep.branches.push(...step.branches);
+        previousStep.branches.push(...pendingBranches);
+        mergeFileStepInto(previousStep, step);
         previousStep.tokens = addTokenUsage(previousStep.tokens, addTokenUsage(pendingTokens, tokenDelta));
         pendingBranches = [];
         pendingTokens = emptyTokenUsage();
@@ -1062,16 +1063,60 @@ function shouldMergeSequentialStep(
 ): previousStep is WorkflowStep {
   if (!previousStep) return false;
   if (previousStep.kind !== "change" || nextStep.kind !== "change") return false;
-  if (previousStep.title !== nextStep.title || previousStep.description !== nextStep.description) return false;
   if (previousStep.agentLabel !== nextStep.agentLabel) return false;
   if (event.kind !== "file_edit" && event.kind !== "file_created" && event.kind !== "file_deleted") return false;
   if (nextStep.seq - previousStep.seq > 5) return false;
 
-  const previousFileKey = changedFileKey(previousStep);
-  const nextFileKey = changedFileKey(nextStep);
+  // Match on the file path(s) alone, ignoring detail: a write produces both a
+  // filesystem-watcher "file.edited" (Changed a file) and a tool.after
+  // "file_created" (Created a file) for the same path. They must collapse into
+  // one moment even though their titles differ.
+  const previousPaths = changedFilePaths(previousStep);
+  const nextPaths = changedFilePaths(nextStep);
+  if (previousPaths.length === 0 || previousPaths !== nextPaths) return false;
 
-  if (previousFileKey.length === 0 || previousFileKey !== nextFileKey) return false;
-  return isToolAfterFileEvent(event) || isFileWatcherFileEvent(event);
+  // Merge only when the redundant watcher event is involved on either side, or
+  // when the same tool action repeats for the same file.
+  if (isFileWatcherFileEvent(event)) return true;
+  if (isToolAfterFileEvent(event)) {
+    return previousStep.title === nextStep.title || previousStep.title === "Changed a file";
+  }
+  return false;
+}
+
+// Fold nextStep's file branches into previousStep, deduped by path, and promote
+// the moment's title to the most specific action (Created/Deleted beats Changed).
+function mergeFileStepInto(previousStep: WorkflowStep, nextStep: WorkflowStep): void {
+  if (changeTitleRank(nextStep.title) > changeTitleRank(previousStep.title)) {
+    previousStep.title = nextStep.title;
+    previousStep.description = nextStep.description;
+  }
+  for (const branch of nextStep.branches) {
+    if (branch.kind === "file") {
+      const existing = previousStep.branches.find((entry) => entry.kind === "file" && entry.label === branch.label);
+      if (existing) {
+        if (branch.detail !== undefined && fileDetailStrength(branch.detail) > fileDetailStrength(existing.detail)) {
+          existing.detail = branch.detail;
+          existing.title = branch.title;
+          existing.description = branch.description;
+        }
+        continue;
+      }
+    }
+    previousStep.branches.push(branch);
+  }
+}
+
+function changeTitleRank(title: string): number {
+  if (title === "Created a file" || title === "Deleted a file") return 2;
+  if (title === "Changed a file") return 1;
+  return 0;
+}
+
+function fileDetailStrength(detail: string | undefined): number {
+  if (detail === "created" || detail === "removed") return 2;
+  if (detail === "modified") return 1;
+  return 0;
 }
 
 function isToolAfterFileEvent(event: TraceEvent): boolean {
@@ -1082,14 +1127,14 @@ function isFileWatcherFileEvent(event: TraceEvent): boolean {
   return stringPayloadPath(event, ["type"]) === "file.edited";
 }
 
-function changedFileKey(step: WorkflowStep): string {
+function changedFilePaths(step: WorkflowStep): string {
   return step.branches
     .filter(
       (branch) =>
         branch.kind === "file" &&
         (branch.detail === "modified" || branch.detail === "created" || branch.detail === "removed")
     )
-    .map((branch) => `${branch.label}:${branch.detail ?? ""}`)
+    .map((branch) => branch.label)
     .sort()
     .join("|");
 }

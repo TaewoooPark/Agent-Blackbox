@@ -323,7 +323,52 @@ describe("dashboard graph helpers", () => {
 
     expect(steps).toHaveLength(1);
     expect(steps[0]?.title).toBe("Changed a file");
-    expect(steps[0]?.branches.filter((branch) => branch.kind === "file")).toHaveLength(2);
+    // The watcher event and the tool.after edit are the same file, so the file
+    // appears exactly once, not duplicated.
+    expect(steps[0]?.branches.filter((branch) => branch.kind === "file")).toHaveLength(1);
+  });
+
+  it("collapses a created file's watcher edit into one 'Created a file' moment", () => {
+    const events = [
+      createTraceEvent(1, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "file_edit",
+        summary: "file.edited",
+        payload: { type: "file.edited", properties: { file: "$PROJECT/src/new.js" } }
+      }),
+      createTraceEvent(3, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "file_created",
+        summary: "Edited $PROJECT/src/new.js",
+        payload: { source: "tool.after", path: "$PROJECT/src/new.js" }
+      })
+    ];
+
+    const steps = createWorkflowSteps(events);
+
+    expect(steps).toHaveLength(1);
+    expect(steps[0]?.title).toBe("Created a file");
+    const fileBranches = steps[0]?.branches.filter((branch) => branch.kind === "file") ?? [];
+    expect(fileBranches).toHaveLength(1);
+    expect(fileBranches[0]?.detail).toBe("created");
+  });
+
+  it("keeps distinct sequential file creations as separate moments", () => {
+    const mk = (seq: number, file: string) =>
+      createTraceEvent(seq, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "file_created",
+        summary: `Edited ${file}`,
+        payload: { source: "tool.after", path: file }
+      });
+    const steps = createWorkflowSteps([mk(1, "$PROJECT/a.js"), mk(2, "$PROJECT/b.js")]);
+    expect(steps).toHaveLength(2);
   });
 
   it("creates genealogical tree lanes for subagents and nested agent branches", () => {
