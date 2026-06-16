@@ -48,3 +48,5 @@ export {
   workflowNodeTypes,
   workflowStatuses
 } from "./graph.js";
+export type { PromiseCheck, PromiseCheckSeverity, PromiseCheckStatus } from "./audit.js";
+export { evaluatePromiseChecks, generateHandoffMarkdown } from "./audit.js";

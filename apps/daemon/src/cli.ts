@@ -1,7 +1,8 @@
 #!/usr/bin/env node
+import { evaluatePromiseChecks, generateHandoffMarkdown, materializeWorkflowGraph } from "@agent-blackbox/core";
 import { AGENT_BLACKBOX_DAEMON_VERSION, describeDaemon } from "./index.js";
 import { initOpenCodeProject } from "./initOpenCode.js";
-import { buildReplaySummary, startTraceDaemon } from "./server.js";
+import { buildReplaySummary, loadTraceEvents, startTraceDaemon } from "./server.js";
 
 const args = process.argv.slice(2);
 
@@ -32,6 +33,16 @@ async function main(argv: string[]): Promise<void> {
     return;
   }
 
+  if (command === "handoff") {
+    const eventsFile = argv[1];
+    if (!eventsFile) {
+      throw new Error("Usage: agent-blackbox handoff <events.ndjson>");
+    }
+    const events = await loadTraceEvents(eventsFile);
+    console.log(generateHandoffMarkdown(materializeWorkflowGraph(events), evaluatePromiseChecks(events)));
+    return;
+  }
+
   if (command === "init-opencode") {
     const projectDir = readFlag(argv, "--project") ?? process.cwd();
     const daemonUrl = readFlag(argv, "--daemon-url");
@@ -56,6 +67,7 @@ function printHelp(): void {
   console.log("Usage:");
   console.log("  agent-blackbox daemon [--project <dir>] [--port <port>]");
   console.log("  agent-blackbox init-opencode [--project <dir>] [--daemon-url <url>] [--adapter-package <specifier>] [--force]");
+  console.log("  agent-blackbox handoff <events.ndjson>");
   console.log("  agent-blackbox replay <events.ndjson>");
   console.log("  agent-blackbox --version");
 }
