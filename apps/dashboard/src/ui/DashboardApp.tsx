@@ -1,4 +1,4 @@
-import type { PromiseCheck, TraceEvent, WorkflowGraph, WorkflowNode } from "@agent-blackbox/core";
+import { materializeWorkflowGraph, type PromiseCheck, type TraceEvent, type WorkflowGraph, type WorkflowNode } from "@agent-blackbox/core";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import {
@@ -13,14 +13,15 @@ import {
   type WorkflowBranch,
   type WorkflowStep
 } from "../graphLayout.js";
+import { filterEventsForRun, latestRunId } from "../runSelection.js";
 
 const daemonUrl = import.meta.env.VITE_AGENT_BLACKBOX_DAEMON_URL ?? "http://127.0.0.1:47831";
 
-const TREE_ROOT_COLUMN_WIDTH = 132;
-const TREE_BRANCH_COLUMN_WIDTH = 94;
-const TREE_COLUMN_GAP = 8;
-const TREE_ROW_HEIGHT = 26;
-const TREE_ROW_GAP = 4;
+const TREE_ROOT_COLUMN_WIDTH = 140;
+const TREE_BRANCH_COLUMN_WIDTH = 104;
+const TREE_COLUMN_GAP = 14;
+const TREE_ROW_HEIGHT = 28;
+const TREE_ROW_GAP = 8;
 const TREE_MIN_SCALE = 0.12;
 
 type ApiResponse<T> = {
@@ -109,15 +110,22 @@ export function DashboardApp() {
     };
   }, [selectedSeq]);
 
-  const graph = snapshot?.graph ?? null;
+  const activeRunId = useMemo(() => latestRunId(snapshot?.events ?? []), [snapshot]);
+  const visibleEvents = useMemo(
+    () => filterEventsForRun(snapshot?.events ?? [], activeRunId),
+    [snapshot, activeRunId]
+  );
+  const graph = useMemo(
+    () => (visibleEvents.length > 0 ? materializeWorkflowGraph(visibleEvents) : snapshot?.graph ?? null),
+    [snapshot, visibleEvents]
+  );
   const agentNodes = graph?.nodes.filter(isRuntimeAgentNode) ?? [];
   const selectedAgent = agentNodes.find((agent) => agent.id === selectedAgentId) ?? null;
   const selectedAgentLabel = selectedAgent?.label ?? null;
-  const visibleEvents = useMemo(() => snapshot?.events ?? [], [snapshot]);
   const workflowSteps = useMemo(() => createWorkflowSteps(visibleEvents), [visibleEvents]);
-  const tokenTotals = useMemo(() => latestTokenUsage(snapshot?.events ?? []), [snapshot]);
-  const sessionName = useMemo(() => sessionDisplayName(snapshot?.events ?? [], graph?.runId), [snapshot, graph]);
-  const orderedEvents = useMemo(() => [...(snapshot?.events ?? [])].sort((a, b) => a.seq - b.seq), [snapshot]);
+  const tokenTotals = useMemo(() => latestTokenUsage(visibleEvents), [visibleEvents]);
+  const sessionName = useMemo(() => sessionDisplayName(visibleEvents, graph?.runId), [visibleEvents, graph]);
+  const orderedEvents = useMemo(() => [...visibleEvents].sort((a, b) => a.seq - b.seq), [visibleEvents]);
   const marks = useMemo(() => createTimelineMarks(orderedEvents), [orderedEvents]);
   const maxSeq = orderedEvents.at(-1)?.seq ?? 0;
   const replaySeq = selectedSeq ?? maxSeq;
