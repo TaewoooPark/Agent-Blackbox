@@ -223,6 +223,15 @@ button {
   color: #a8322e;
 }
 
+button.statusChip {
+  cursor: pointer;
+  font: inherit;
+}
+
+button.statusChip:hover {
+  border-color: rgba(196, 64, 60, 0.5);
+}
+
 .stats {
   display: flex;
   flex-wrap: wrap;
