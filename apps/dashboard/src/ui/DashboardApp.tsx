@@ -1754,6 +1754,10 @@ function deriveRunStatus(events: TraceEvent[]): "active" | "idle" | "error" {
   }
   if (latest.kind === "session_error") return "error";
   if (latest.kind === "session_idle") return "idle";
+  // A run with no fresh events is no longer active even if it never emitted an
+  // explicit idle event (e.g. it was interrupted). Treat a quiet run as idle.
+  const lastStamp = Date.parse(latest.ts);
+  if (!Number.isNaN(lastStamp) && Date.now() - lastStamp > 20_000) return "idle";
   return "active";
 }
 
