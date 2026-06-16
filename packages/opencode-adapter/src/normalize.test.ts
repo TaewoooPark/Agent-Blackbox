@@ -124,4 +124,47 @@ describe("OpenCode event normalization", () => {
     expect(event.payload.exitCode).toBe(0);
     expect(event.payload.outputPreview).toBe("pass");
   });
+
+  it("does not store raw OpenCode message text in default event payloads", () => {
+    const event = normalizeOpenCodeEvent(
+      {
+        id: "evt-message",
+        type: "message.part.updated",
+        properties: {
+          sessionID: "session-1",
+          part: {
+            id: "part-1",
+            type: "text",
+            text: "SECRET_PROMPT_OR_REASONING",
+            messageID: "message-1",
+            state: {
+              status: "completed",
+              output: "SECRET_TOOL_OUTPUT"
+            }
+          },
+          delta: "SECRET_DELTA"
+        }
+      },
+      {
+        runId: "run-opencode",
+        seq: 6,
+        defaultSessionId: "fallback-session"
+      }
+    );
+
+    const serialized = JSON.stringify(event.payload);
+    expect(serialized).not.toContain("SECRET_PROMPT_OR_REASONING");
+    expect(serialized).not.toContain("SECRET_TOOL_OUTPUT");
+    expect(serialized).not.toContain("SECRET_DELTA");
+    expect(event.payload.properties).toMatchObject({
+      sessionID: "session-1",
+      messageID: "message-1",
+      deltaLength: 12,
+      part: {
+        id: "part-1",
+        type: "text",
+        stateStatus: "completed"
+      }
+    });
+  });
 });

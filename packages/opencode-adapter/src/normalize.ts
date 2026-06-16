@@ -38,7 +38,7 @@ export function normalizeOpenCodeEvent(rawEvent: unknown, context: OpenCodeNorma
   const raw = asRecord(rawEvent);
   const type = readString(raw, ["type"]) ?? "unknown";
   const kind = eventKindMap[type] ?? "session_updated";
-  const payload = normalizePayload(raw, context);
+  const payload = normalizePayload(minimizeOpenCodeEventPayload(raw, type), context);
   const sessionId = extractSessionId(raw, context.defaultSessionId);
   const agentId = extractAgentId(raw);
   return createTraceEvent(context.seq, {
@@ -54,6 +54,40 @@ export function normalizeOpenCodeEvent(rawEvent: unknown, context: OpenCodeNorma
       rulesApplied: payload.rulesApplied,
       truncated: payload.truncated
     }
+  });
+}
+
+function minimizeOpenCodeEventPayload(raw: UnknownRecord, type: string): JsonObject {
+  if (!type.startsWith("message.")) {
+    return toJsonObject(raw);
+  }
+
+  const properties = asRecord(raw.properties);
+  const info = asRecord(properties.info);
+  const part = asRecord(properties.part);
+  const state = asRecord(part.state);
+  return compactJsonObject({
+    id: readString(raw, ["id"]),
+    type,
+    properties: compactJsonObject({
+      sessionID:
+        readString(properties, ["sessionID"]) ??
+        readString(info, ["sessionID"]) ??
+        readString(part, ["sessionID"]),
+      messageID: readString(properties, ["messageID"]) ?? readString(info, ["id"]) ?? readString(part, ["messageID"]),
+      role: readString(info, ["role"]),
+      agent: readString(info, ["agent"]),
+      modelID: readString(info, ["modelID", "model.modelID"]),
+      field: readString(properties, ["field"]),
+      deltaLength: readString(properties, ["delta"])?.length,
+      part: compactJsonObject({
+        id: readString(part, ["id"]),
+        type: readString(part, ["type"]),
+        tool: readString(part, ["tool"]),
+        callID: readString(part, ["callID"]),
+        stateStatus: readString(state, ["status"])
+      })
+    })
   });
 }
 
