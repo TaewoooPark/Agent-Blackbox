@@ -16,7 +16,7 @@
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
-    "@agent-blackbox/core": "file:../core"
+    "@agent-blackbox/core": "file:../core",
+    "@agent-blackbox/storage": "file:../storage"
   }
 }
-

@@ -6,8 +6,8 @@
     "outDir": "dist"
   },
   "references": [
-    { "path": "../core" }
+    { "path": "../core" },
+    { "path": "../storage" }
   ],
   "include": ["src/**/*.ts", "src/**/*.test.ts"]
 }
-
