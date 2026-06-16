@@ -30,3 +30,21 @@ export {
 } from "./events.js";
 export type { RedactionOptions, RedactionResult, RedactionRule } from "./redaction.js";
 export { defaultRedactionRules, redactJsonObject, redactJsonValue } from "./redaction.js";
+export type {
+  GraphDiff,
+  WorkflowEdge,
+  WorkflowEdgeType,
+  WorkflowGraph,
+  WorkflowNode,
+  WorkflowNodeType,
+  WorkflowStatus
+} from "./graph.js";
+export {
+  diffWorkflowGraphs,
+  materializeWorkflowGraph,
+  replayWorkflowGraphAtSeq,
+  replayWorkflowGraphAtTime,
+  workflowEdgeTypes,
+  workflowNodeTypes,
+  workflowStatuses
+} from "./graph.js";
