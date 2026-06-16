@@ -77,6 +77,22 @@ button {
   white-space: nowrap;
 }
 
+.runPicker {
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid rgba(24, 28, 34, 0.12);
+  border-radius: 999px;
+  color: #2b2f36;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  max-width: 240px;
+  padding: 4px 9px;
+}
+
+.runPicker:hover {
+  border-color: rgba(24, 28, 34, 0.22);
+}
+
 .statusChip.host {
   color: #2b2f36;
   text-transform: lowercase;
