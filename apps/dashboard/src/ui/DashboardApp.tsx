@@ -988,9 +988,10 @@ function TreeItemCard({
             {agentStatus ? <span>{agentStatus.toLowerCase()}</span> : null}
           </span>
         ) : null}
-        <strong>{shortTitle(step.title)}</strong>
+        <strong>{shortTitle(stepDisplayTitle(step, fileCount))}</strong>
         <span className="stepInlineStats">
-          {formatTokenNumber(step.tokens.total)} · {fileCount} {fileCount === 1 ? "file" : "files"}
+          {formatTokenNumber(step.tokens.total)}
+          {fileCount > 0 ? ` · ${fileCount} ${fileCount === 1 ? "file" : "files"}` : ""}
         </span>
         {selected ? <span className="stepSummary">{compactDescription(step.description)}</span> : null}
       </span>
@@ -1648,6 +1649,24 @@ function fileFolderAncestors(path: string): string[] {
 
 function uniqueFileCount(step: WorkflowStep): number {
   return new Set(step.branches.filter((branch) => branch.kind === "file").map((branch) => branch.label)).size;
+}
+
+// When consecutive identical moments are aggregated into one node, surface the
+// count in the title so "Created a file" x6 reads as "Created 6 files".
+function stepDisplayTitle(step: WorkflowStep, fileCount: number): string {
+  if (step.kind === "change" && fileCount > 1) {
+    const verb = step.title.startsWith("Created")
+      ? "Created"
+      : step.title.startsWith("Deleted")
+        ? "Deleted"
+        : "Changed";
+    return `${verb} ${fileCount} files`;
+  }
+  if (step.kind === "verification" || step.kind === "risk") {
+    const runs = step.branches.filter((branch) => branch.kind === "verification").length;
+    if (runs > 1) return `${step.title} ×${runs}`;
+  }
+  return step.title;
 }
 
 function pathSegments(path: string): string[] {

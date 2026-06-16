@@ -357,7 +357,7 @@ describe("dashboard graph helpers", () => {
     expect(fileBranches[0]?.detail).toBe("created");
   });
 
-  it("keeps distinct sequential file creations as separate moments", () => {
+  it("aggregates consecutive file creations into one moment listing every file", () => {
     const mk = (seq: number, file: string) =>
       createTraceEvent(seq, {
         host: "opencode",
@@ -368,6 +368,24 @@ describe("dashboard graph helpers", () => {
         payload: { source: "tool.after", path: file }
       });
     const steps = createWorkflowSteps([mk(1, "$PROJECT/a.js"), mk(2, "$PROJECT/b.js")]);
+    expect(steps).toHaveLength(1);
+    const files = steps[0]?.branches.filter((branch) => branch.kind === "file").map((branch) => branch.label) ?? [];
+    expect(files.sort()).toEqual(["$PROJECT/a.js", "$PROJECT/b.js"]);
+    // the first event's seq is retained so replay still reveals it at the right point
+    expect(steps[0]?.seq).toBe(1);
+  });
+
+  it("does not aggregate a passed test run with a failed one", () => {
+    const bash = (seq: number, exit: number) =>
+      createTraceEvent(seq, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "bash",
+        summary: "Ran node test.js",
+        payload: { source: "tool.after", command: "node test.js", exitCode: exit }
+      });
+    const steps = createWorkflowSteps([bash(1, 0), bash(2, 1)]);
     expect(steps).toHaveLength(2);
   });
 
