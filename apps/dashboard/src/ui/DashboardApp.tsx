@@ -189,6 +189,28 @@ export function DashboardApp() {
     setSelectedEventId(null);
     setSelectedFilePath(null);
   };
+  const chooseRun = (runId: string | null) => {
+    setSelectedRunId(runId);
+    // A selection or replay position from the previous run is meaningless in the
+    // next one, so reset focus and return to live.
+    setSelectedAgentId(null);
+    setSelectedEventId(null);
+    setSelectedFilePath(null);
+    setSelectedSeq(null);
+  };
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (showHandoff) {
+        setShowHandoff(false);
+      } else {
+        clearFocus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [showHandoff]);
 
   return (
     <main className="shell">
@@ -199,7 +221,7 @@ export function DashboardApp() {
             <select
               aria-label="Select run"
               className="runPicker"
-              onChange={(event) => setSelectedRunId(event.target.value || null)}
+              onChange={(event) => chooseRun(event.target.value || null)}
               value={selectedRunId && runOptions.some((run) => run.runId === selectedRunId) ? selectedRunId : ""}
             >
               <option value="">Latest run (auto)</option>
