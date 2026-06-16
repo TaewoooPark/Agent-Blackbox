@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { AGENT_BLACKBOX_DAEMON_VERSION, describeDaemon } from "./index.js";
+import { initOpenCodeProject } from "./initOpenCode.js";
 import { buildReplaySummary, startTraceDaemon } from "./server.js";
 
 const args = process.argv.slice(2);
@@ -31,6 +32,21 @@ async function main(argv: string[]): Promise<void> {
     return;
   }
 
+  if (command === "init-opencode") {
+    const projectDir = readFlag(argv, "--project") ?? process.cwd();
+    const daemonUrl = readFlag(argv, "--daemon-url");
+    const adapterPackage = readFlag(argv, "--adapter-package");
+    const result = await initOpenCodeProject({
+      projectDir,
+      ...(daemonUrl ? { daemonUrl } : {}),
+      ...(adapterPackage ? { adapterPackage } : {}),
+      force: argv.includes("--force")
+    });
+    console.log(`OpenCode plugin written: ${result.pluginPath}`);
+    console.log(`OpenCode package config written: ${result.packageJsonPath}`);
+    return;
+  }
+
   printHelp();
 }
 
@@ -39,6 +55,7 @@ function printHelp(): void {
   console.log("");
   console.log("Usage:");
   console.log("  agent-blackbox daemon [--project <dir>] [--port <port>]");
+  console.log("  agent-blackbox init-opencode [--project <dir>] [--daemon-url <url>] [--adapter-package <specifier>] [--force]");
   console.log("  agent-blackbox replay <events.ndjson>");
   console.log("  agent-blackbox --version");
 }
@@ -50,4 +67,3 @@ function readFlag(argv: string[], flag: string): string | undefined {
   }
   return argv[index + 1];
 }
-

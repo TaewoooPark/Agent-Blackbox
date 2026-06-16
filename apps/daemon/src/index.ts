@@ -6,3 +6,5 @@ export function describeDaemon(): string {
 
 export type { RunningTraceDaemon, TraceDaemonOptions } from "./server.js";
 export { buildReplaySummary, loadTraceEvents, startTraceDaemon } from "./server.js";
+export type { InitOpenCodeOptions, InitOpenCodeResult } from "./initOpenCode.js";
+export { initOpenCodeProject, renderOpenCodePlugin } from "./initOpenCode.js";
