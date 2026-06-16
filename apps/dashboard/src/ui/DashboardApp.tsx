@@ -1748,13 +1748,17 @@ function uniqueFileCount(step: WorkflowStep): number {
 // Inspector body for a moment: when it aggregates several files, list them so
 // the operator can see exactly what "Created 12 files" covered.
 function aggregatedStepDescription(step: WorkflowStep): string {
-  const files = [...new Set(step.branches.filter((branch) => branch.kind === "file").map((branch) => branch.label))];
-  if (files.length > 1) {
-    return `${files.length} files: ${files.map(fileNameFromPath).join(", ")}`;
+  if (step.kind === "change") {
+    const files = [...new Set(step.branches.filter((branch) => branch.kind === "file").map((branch) => branch.label))];
+    if (files.length > 1) {
+      return `${files.length} files: ${files.map(fileNameFromPath).join(", ")}`;
+    }
   }
-  const runs = step.branches.filter((branch) => branch.kind === "verification").length;
-  if (runs > 1) {
-    return `${step.description} (${runs} runs)`;
+  if (step.kind === "verification" || step.kind === "risk") {
+    const runs = step.branches.filter((branch) => branch.kind === "verification").length;
+    if (runs > 1) {
+      return `${step.description} (${runs} runs)`;
+    }
   }
   return step.description;
 }
