@@ -34,6 +34,30 @@ const eventKindMap: Record<string, TraceEventKind> = {
   "todo.updated": "todo_updated"
 };
 
+/**
+ * OpenCode publishes a broad internal event bus. These types carry no
+ * operational signal for the trace graph and arrive in high volume, so the
+ * recorder drops them before they consume a sequence number:
+ *  - `message.part.delta`: per-token streaming chunks (the resulting message is
+ *    still captured via `message.updated` / `message.part.updated`).
+ *  - registry/lifecycle chatter emitted mostly at startup.
+ */
+const ignoredEventTypes = new Set<string>([
+  "message.part.delta",
+  "catalog.updated",
+  "plugin.added",
+  "plugin.removed",
+  "integration.updated",
+  "installation.updated",
+  "reference.updated"
+]);
+
+export function shouldRecordOpenCodeEvent(rawEvent: unknown): boolean {
+  const type = readString(asRecord(rawEvent), ["type"]);
+  if (!type) return true;
+  return !ignoredEventTypes.has(type);
+}
+
 export function normalizeOpenCodeEvent(rawEvent: unknown, context: OpenCodeNormalizerContext): TraceEvent {
   const raw = asRecord(rawEvent);
   const type = readString(raw, ["type"]) ?? "unknown";
@@ -324,8 +348,12 @@ function sanitizeJson(value: unknown, seen: WeakSet<object>): JsonObject | JsonO
 }
 
 function extractSessionId(raw: UnknownRecord, fallback: string): string {
+  const properties = asRecord(raw.properties);
   return (
-    readString(raw, ["sessionID", "sessionId", "session.id", "sessionID"]) ??
+    readString(raw, ["sessionID", "sessionId", "session.id"]) ??
+    readString(properties, ["sessionID", "sessionId", "session.id"]) ??
+    readString(asRecord(properties.info), ["sessionID", "sessionId"]) ??
+    readString(asRecord(properties.part), ["sessionID", "sessionId"]) ??
     readString(asRecord(raw.event), ["sessionID", "sessionId", "session.id"]) ??
     fallback
   );
