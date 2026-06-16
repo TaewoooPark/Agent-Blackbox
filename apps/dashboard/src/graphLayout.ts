@@ -63,6 +63,56 @@ export type WorkflowStep = {
   tokens: TokenUsage;
   branches: WorkflowBranch[];
   agentLabel?: string;
+  agentRole?: string;
+};
+
+export type AgentTreeLane = {
+  id: string;
+  label: string;
+  column: number;
+  parentLaneId: string | null;
+  anchorStepId: string | null;
+  startBranch: WorkflowBranch | null;
+  steps: WorkflowStep[];
+};
+
+export type AgentTreeStepItem = {
+  id: string;
+  type: "step";
+  column: number;
+  row: number;
+  laneId: string;
+  step: WorkflowStep;
+};
+
+export type AgentTreeStartItem = {
+  id: string;
+  type: "agent-start";
+  column: number;
+  row: number;
+  laneId: string;
+  branch: WorkflowBranch;
+};
+
+export type AgentTreeItem = AgentTreeStepItem | AgentTreeStartItem;
+
+export type AgentTreeConnectionKind = "trunk" | "branch" | "lane";
+
+export type AgentTreeConnection = {
+  id: string;
+  fromNodeId: string;
+  toNodeId: string;
+  kind: AgentTreeConnectionKind;
+  laneId: string;
+  eventId: string;
+};
+
+export type AgentTreeLayout = {
+  lanes: AgentTreeLane[];
+  items: AgentTreeItem[];
+  connections: AgentTreeConnection[];
+  columnCount: number;
+  rowCount: number;
 };
 
 const laneByType: Record<string, number> = {
@@ -226,6 +276,184 @@ export function filterWorkflowStepsBySeq(steps: WorkflowStep[], replaySeq: numbe
       ...step,
       branches: step.branches.filter((branch) => branch.seq <= replaySeq)
     }));
+}
+
+export function createAgentTreeLayout(steps: WorkflowStep[]): AgentTreeLayout {
+  const lanes = new Map<string, AgentTreeLane>();
+  const rootLane: AgentTreeLane = {
+    id: "root",
+    label: "main",
+    column: 1,
+    parentLaneId: null,
+    anchorStepId: null,
+    startBranch: null,
+    steps: []
+  };
+  lanes.set(rootLane.id, rootLane);
+
+  const ensureLane = (label: string): AgentTreeLane => {
+    const id = agentLaneId(label);
+    const existing = lanes.get(id);
+    if (existing) return existing;
+    const lane: AgentTreeLane = {
+      id,
+      label,
+      column: 1,
+      parentLaneId: "root",
+      anchorStepId: null,
+      startBranch: null,
+      steps: []
+    };
+    lanes.set(id, lane);
+    return lane;
+  };
+
+  for (const step of steps) {
+    const lane = step.agentLabel ? ensureLane(step.agentLabel) : rootLane;
+    lane.steps.push(step);
+
+    for (const branch of step.branches) {
+      if (branch.kind !== "agent" || branch.detail === "root") continue;
+      const branchLane = ensureLane(branch.label);
+      if (!branchLane.startBranch || branch.seq < branchLane.startBranch.seq) {
+        branchLane.startBranch = branch;
+        branchLane.anchorStepId = step.id;
+        branchLane.parentLaneId = step.agentLabel ? agentLaneId(step.agentLabel) : "root";
+      }
+    }
+  }
+
+  for (const lane of lanes.values()) {
+    if (lane.id === "root" || lane.anchorStepId || lane.steps.length === 0) continue;
+    const firstStep = lane.steps[0]!;
+    const anchor = latestStepBefore(steps, firstStep.seq, firstStep.agentLabel) ?? rootLane.steps[0] ?? null;
+    lane.anchorStepId = anchor?.id ?? null;
+    lane.parentLaneId = anchor?.agentLabel ? agentLaneId(anchor.agentLabel) : "root";
+  }
+
+  const branchLanes = [...lanes.values()]
+    .filter((lane) => lane.id !== "root")
+    .sort((a, b) => laneStartSeq(a) - laneStartSeq(b) || a.label.localeCompare(b.label));
+  branchLanes.forEach((lane, index) => {
+    lane.column = index + 2;
+  });
+
+  type PendingTreeItem =
+    | (Omit<AgentTreeStepItem, "row"> & { seq: number; priority: number })
+    | (Omit<AgentTreeStartItem, "row"> & { seq: number; priority: number });
+  const pendingItems: PendingTreeItem[] = [];
+  for (const step of rootLane.steps) {
+    pendingItems.push({
+      id: treeStepNodeId(step.id),
+      type: "step",
+      column: rootLane.column,
+      laneId: rootLane.id,
+      step,
+      seq: step.seq,
+      priority: 1
+    });
+  }
+  for (const lane of branchLanes) {
+    if (lane.startBranch) {
+      pendingItems.push({
+        id: treeStartNodeId(lane.startBranch.id),
+        type: "agent-start",
+        column: lane.column,
+        laneId: lane.id,
+        branch: lane.startBranch,
+        seq: lane.startBranch.seq,
+        priority: 0
+      });
+    }
+    for (const step of lane.steps) {
+      pendingItems.push({
+        id: treeStepNodeId(step.id),
+        type: "step",
+        column: lane.column,
+        laneId: lane.id,
+        step,
+        seq: step.seq,
+        priority: 1
+      });
+    }
+  }
+
+  const items = pendingItems
+    .sort((a, b) => a.seq - b.seq || a.priority - b.priority || a.column - b.column || a.id.localeCompare(b.id))
+    .map((item, index): AgentTreeItem => {
+      const { seq: _seq, priority: _priority, ...rest } = item;
+      return { ...rest, row: index + 1 } as AgentTreeItem;
+    });
+
+  const connections: AgentTreeConnection[] = [];
+  const rootStepItems = items.filter((item): item is AgentTreeStepItem => item.type === "step" && item.laneId === "root");
+  connections.push(...sequentialTreeConnections(rootStepItems, "trunk"));
+
+  for (const lane of branchLanes) {
+    const laneItems = items.filter((item) => item.laneId === lane.id);
+    const firstItem = laneItems[0];
+    if (lane.anchorStepId && firstItem) {
+      connections.push({
+        id: `tree-edge-${lane.anchorStepId}-${firstItem.id}`,
+        fromNodeId: treeStepNodeId(lane.anchorStepId),
+        toNodeId: firstItem.id,
+        kind: "branch",
+        laneId: lane.id,
+        eventId: lane.startBranch?.eventId ?? (firstItem.type === "step" ? firstItem.step.eventId : firstItem.branch.eventId)
+      });
+    }
+    connections.push(...sequentialTreeConnections(laneItems, "lane"));
+  }
+
+  return {
+    lanes: [rootLane, ...branchLanes],
+    items,
+    connections,
+    columnCount: Math.max(1, lanes.size),
+    rowCount: Math.max(1, items.length)
+  };
+}
+
+function latestStepBefore(steps: WorkflowStep[], seq: number, excludedAgentLabel: string | undefined): WorkflowStep | undefined {
+  return [...steps]
+    .filter((step) => step.seq <= seq && step.agentLabel !== excludedAgentLabel)
+    .sort((a, b) => b.seq - a.seq)[0];
+}
+
+function laneStartSeq(lane: AgentTreeLane): number {
+  return lane.startBranch?.seq ?? lane.steps[0]?.seq ?? Number.MAX_SAFE_INTEGER;
+}
+
+function sequentialTreeConnections(
+  items: AgentTreeItem[],
+  kind: Exclude<AgentTreeConnectionKind, "branch">
+): AgentTreeConnection[] {
+  const connections: AgentTreeConnection[] = [];
+  for (let index = 0; index < items.length - 1; index += 1) {
+    const from = items[index]!;
+    const to = items[index + 1]!;
+    connections.push({
+      id: `tree-edge-${from.id}-${to.id}`,
+      fromNodeId: from.id,
+      toNodeId: to.id,
+      kind,
+      laneId: from.laneId,
+      eventId: to.type === "step" ? to.step.eventId : to.branch.eventId
+    });
+  }
+  return connections;
+}
+
+function agentLaneId(label: string): string {
+  return `agent:${label}`;
+}
+
+function treeStepNodeId(stepId: string): string {
+  return `tree-step-${stepId}`;
+}
+
+function treeStartNodeId(branchId: string): string {
+  return `tree-start-${branchId}`;
 }
 
 function promptStepForEvent(event: TraceEvent): WorkflowStep | undefined {
@@ -503,7 +731,8 @@ function makeStep(
     tone: toneForEvent(event),
     tokens: emptyTokenUsage(),
     branches: input.branches,
-    ...(event.agentId || event.agentRole ? { agentLabel: event.agentId ?? event.agentRole } : {})
+    ...(event.agentId || event.agentRole ? { agentLabel: event.agentId ?? event.agentRole } : {}),
+    ...(event.agentRole ? { agentRole: event.agentRole } : {})
   };
 }
 

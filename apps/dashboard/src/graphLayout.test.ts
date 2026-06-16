@@ -2,6 +2,7 @@ import type { WorkflowGraph } from "@agent-blackbox/core";
 import { createTraceEvent } from "@agent-blackbox/core";
 import { describe, expect, it } from "vitest";
 import {
+  createAgentTreeLayout,
   createTimelineMarks,
   createWorkflowSteps,
   filterWorkflowStepsBySeq,
@@ -200,6 +201,83 @@ describe("dashboard graph helpers", () => {
     expect(seqThreeSteps[0]?.branches.map((branch) => branch.label)).toContain("reviewer");
     expect(liveSteps.map((step) => step.title)).toEqual(["Changed a file", "Tests passed"]);
     expect(liveSteps[1]?.branches.map((branch) => branch.label)).toContain("src/late.ts");
+  });
+
+  it("creates genealogical tree lanes for subagents and nested agent branches", () => {
+    const events = [
+      createTraceEvent(1, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "session_created",
+        payload: {}
+      }),
+      createTraceEvent(2, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "file_edit",
+        payload: { path: "src/calc.ts" }
+      }),
+      createTraceEvent(3, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        agentId: "reviewer",
+        agentRole: "subagent",
+        kind: "subagent_spawned",
+        payload: {}
+      }),
+      createTraceEvent(4, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        agentId: "reviewer",
+        agentRole: "subagent",
+        kind: "file_read",
+        payload: { path: "src/calc.ts" }
+      }),
+      createTraceEvent(5, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        agentId: "reviewer",
+        agentRole: "subagent",
+        kind: "decision_extracted",
+        payload: { statement: "Reviewer accepted the calculator change." }
+      }),
+      createTraceEvent(6, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        agentId: "auditor",
+        agentRole: "subagent",
+        kind: "subagent_spawned",
+        payload: {}
+      })
+    ];
+
+    const steps = createWorkflowSteps(events);
+    const layout = createAgentTreeLayout(steps);
+    const reviewerLane = layout.lanes.find((lane) => lane.label === "reviewer");
+    const auditorLane = layout.lanes.find((lane) => lane.label === "auditor");
+    const rootChange = steps.find((step) => step.title === "Changed a file");
+    const reviewerDecision = steps.find((step) => step.agentLabel === "reviewer" && step.title === "Made a decision");
+
+    expect(layout.lanes.map((lane) => lane.label)).toEqual(["main", "reviewer", "auditor"]);
+    expect(reviewerLane).toMatchObject({
+      parentLaneId: "root",
+      anchorStepId: rootChange?.id
+    });
+    expect(auditorLane).toMatchObject({
+      parentLaneId: "agent:reviewer",
+      anchorStepId: reviewerDecision?.id
+    });
+    expect(layout.items.filter((item) => item.type === "agent-start").map((item) => item.laneId)).toEqual([
+      "agent:reviewer",
+      "agent:auditor"
+    ]);
+    expect(layout.connections.filter((connection) => connection.kind === "branch")).toHaveLength(2);
   });
 
   it("shows user prompts with file mentions and token deltas", () => {

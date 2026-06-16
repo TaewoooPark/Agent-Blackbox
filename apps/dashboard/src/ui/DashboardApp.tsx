@@ -2,9 +2,13 @@ import type { PromiseCheck, TraceEvent, WorkflowGraph, WorkflowNode } from "@age
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import {
+  createAgentTreeLayout,
   createTimelineMarks,
   createWorkflowSteps,
   filterWorkflowStepsBySeq,
+  type AgentTreeConnection,
+  type AgentTreeItem,
+  type AgentTreeLayout,
   type TokenUsage,
   type WorkflowBranch,
   type WorkflowStep
@@ -186,6 +190,7 @@ export function DashboardApp() {
         </aside>
 
         <SessionMap
+          agentNodes={agentNodes}
           onSelectEvent={selectWorkflowEvent}
           onSelectFile={setSelectedFilePath}
           onSelectSeq={setSelectedSeq}
@@ -203,6 +208,7 @@ export function DashboardApp() {
 }
 
 function SessionMap({
+  agentNodes,
   onSelectEvent,
   onSelectFile,
   onSelectSeq,
@@ -214,6 +220,7 @@ function SessionMap({
   selectedStep,
   steps
 }: {
+  agentNodes: WorkflowNode[];
   onSelectEvent: (eventId: string) => void;
   onSelectFile: (path: string) => void;
   onSelectSeq: (seq: number) => void;
@@ -228,9 +235,11 @@ function SessionMap({
   const mapRef = useRef<HTMLDivElement | null>(null);
   const [filePanelWidth, setFilePanelWidth] = useState(286);
   const [resizeDrag, setResizeDrag] = useState<{ startWidth: number; startX: number } | null>(null);
+  const treeLayout = useMemo(() => createAgentTreeLayout(steps), [steps]);
   const fileConnections = useMemo(() => createFileConnections(steps), [steps]);
   const fileRows = useMemo(() => createFileRows(fileConnections), [fileConnections]);
   const [measuredEdges, setMeasuredEdges] = useState<MeasuredEdge[]>([]);
+  const [measuredTreeEdges, setMeasuredTreeEdges] = useState<MeasuredTreeEdge[]>([]);
 
   useEffect(() => {
     if (!resizeDrag) return undefined;
@@ -261,6 +270,7 @@ function SessionMap({
       const containerRect = container.getBoundingClientRect();
       const stepElements = new Map<string, HTMLElement>();
       const fileElements = new Map<string, HTMLElement>();
+      const treeElements = new Map<string, HTMLElement>();
       container.querySelectorAll<HTMLElement>("[data-step-id]").forEach((element) => {
         const stepId = element.dataset.stepId;
         if (stepId) stepElements.set(stepId, element);
@@ -268,6 +278,10 @@ function SessionMap({
       container.querySelectorAll<HTMLElement>("[data-file-path]").forEach((element) => {
         const path = element.dataset.filePath;
         if (path) fileElements.set(path, element);
+      });
+      container.querySelectorAll<HTMLElement>("[data-tree-node-id]").forEach((element) => {
+        const nodeId = element.dataset.treeNodeId;
+        if (nodeId) treeElements.set(nodeId, element);
       });
 
       const nextEdges = fileConnections.flatMap((connection) => {
@@ -289,6 +303,19 @@ function SessionMap({
         ];
       });
       setMeasuredEdges(nextEdges);
+
+      const nextTreeEdges = treeLayout.connections.flatMap((connection) => {
+        const fromElement = treeElements.get(connection.fromNodeId);
+        const toElement = treeElements.get(connection.toNodeId);
+        if (!fromElement || !toElement) return [];
+        return [
+          {
+            ...connection,
+            pathD: treeConnectionPath(fromElement.getBoundingClientRect(), toElement.getBoundingClientRect(), containerRect)
+          }
+        ];
+      });
+      setMeasuredTreeEdges(nextTreeEdges);
     };
 
     const frame = window.requestAnimationFrame(measure);
@@ -299,7 +326,7 @@ function SessionMap({
       window.removeEventListener("resize", measure);
       window.removeEventListener("agent-blackbox:layout", measure);
     };
-  }, [fileConnections, filePanelWidth, steps, selectedEventId, selectedFilePath]);
+  }, [fileConnections, filePanelWidth, steps, selectedEventId, selectedFilePath, treeLayout]);
 
   const focusedStepId = selectedFilePath ? null : selectedStep?.id ?? null;
 
@@ -308,9 +335,9 @@ function SessionMap({
       <div className="workflowHeader">
         <div>
           <h2>Session Map</h2>
-          <p>Main actions run downward. Files stay in the right list and connect back to the exact moments that used them.</p>
+          <p>Main actions form the trunk. Agents fork into branches, then reconnect through files and decisions.</p>
         </div>
-        <span>{steps.length} moments</span>
+        <span>{steps.length} moments · {Math.max(0, treeLayout.lanes.length - 1)} branches</span>
       </div>
 
       <div
@@ -323,19 +350,21 @@ function SessionMap({
           focusedFilePath={selectedFilePath}
           focusedStepId={focusedStepId}
           selectedEventId={selectedEventId}
+          treeEdges={measuredTreeEdges}
         />
-        <div className="mapColumn">
+        <div className="workflowTree">
           {steps.length === 0 ? (
             <div className="emptyWorkflow">
               <h3>No workflow yet</h3>
               <p className="muted">Start an agent run and the session map will form here.</p>
             </div>
           ) : (
-            <WorkflowColumn
+            <WorkflowTree
+              agentNodes={agentNodes}
+              layout={treeLayout}
               onSelectEvent={onSelectEvent}
               selectedEventId={selectedEventId}
               selectedFilePath={selectedFilePath}
-              steps={steps}
             />
           )}
         </div>
@@ -359,44 +388,128 @@ function SessionMap({
   );
 }
 
-function WorkflowColumn({
+function WorkflowTree({
+  agentNodes,
+  layout,
   onSelectEvent,
   selectedEventId,
-  selectedFilePath,
-  steps
+  selectedFilePath
 }: {
+  agentNodes: WorkflowNode[];
+  layout: AgentTreeLayout;
   onSelectEvent: (eventId: string) => void;
   selectedEventId: string | null;
   selectedFilePath: string | null;
-  steps: WorkflowStep[];
 }) {
+  const agentStatusByLabel = useMemo(() => {
+    const statuses = new Map<string, WorkflowNode["status"]>();
+    for (const node of agentNodes) {
+      statuses.set(node.label, node.status);
+    }
+    return statuses;
+  }, [agentNodes]);
+  const rootIndexByStepId = useMemo(() => {
+    const indexes = new Map<string, number>();
+    layout.items
+      .filter((item): item is AgentTreeItem & { type: "step" } => item.type === "step" && item.laneId === "root")
+      .forEach((item, index) => indexes.set(item.step.id, index + 1));
+    return indexes;
+  }, [layout]);
+  const branchColumnCount = Math.max(0, layout.columnCount - 1);
+  const gridTemplateColumns =
+    branchColumnCount === 0 ? "minmax(190px, 286px)" : `minmax(190px, 286px) repeat(${branchColumnCount}, minmax(0, 1fr))`;
+
   return (
-    <ol className="spine">
-      {steps.map((step, index) => {
-        const selected = !selectedFilePath && step.eventId === selectedEventId;
-        const fileCount = uniqueFileCount(step);
-        return (
-          <li className="spineItem" key={step.id}>
-            <button
-              aria-label={`${step.title}. ${formatTokenCount(step.tokens.total)}. ${fileCount} connected files.`}
-              className={`spineStep tone-${step.tone} ${selected ? "selected" : ""}`}
-              data-step-id={step.id}
-              onClick={() => onSelectEvent(step.eventId)}
-              type="button"
-            >
-              <span className="stepMarker">{index + 1}</span>
-              <span className="stepMain">
-                <strong>{shortTitle(step.title)}</strong>
-              </span>
-              <span className="stepBadges">
-                <span className="tokenPill">{formatTokenCount(step.tokens.total)}</span>
-                <span className="stepCount">{fileCount === 0 ? "no files" : `${fileCount} files`}</span>
-              </span>
-            </button>
-          </li>
-        );
-      })}
-    </ol>
+    <div
+      className={`treeGrid ${layout.columnCount > 4 ? "dense" : ""}`}
+      style={
+        {
+          "--tree-rows": layout.rowCount,
+          gridTemplateColumns
+        } as CSSProperties
+      }
+    >
+      {layout.items.map((item) => (
+        <TreeItemCard
+          agentStatus={item.type === "step" && item.step.agentLabel ? agentStatusByLabel.get(item.step.agentLabel) : undefined}
+          item={item}
+          key={item.id}
+          markerLabel={item.type === "step" && item.laneId === "root" ? String(rootIndexByStepId.get(item.step.id) ?? "") : ""}
+          onSelectEvent={onSelectEvent}
+          selectedEventId={selectedEventId}
+          selectedFilePath={selectedFilePath}
+        />
+      ))}
+    </div>
+  );
+}
+
+function TreeItemCard({
+  agentStatus,
+  item,
+  markerLabel,
+  onSelectEvent,
+  selectedEventId,
+  selectedFilePath
+}: {
+  agentStatus: WorkflowNode["status"] | undefined;
+  item: AgentTreeItem;
+  markerLabel: string;
+  onSelectEvent: (eventId: string) => void;
+  selectedEventId: string | null;
+  selectedFilePath: string | null;
+}) {
+  const style = { gridColumn: item.column, gridRow: item.row } as CSSProperties;
+  if (item.type === "agent-start") {
+    const selected = !selectedFilePath && item.branch.eventId === selectedEventId;
+    return (
+      <button
+        aria-label={`${item.branch.title}. ${item.branch.label}.`}
+        className={`treeNode agentStartCard tone-${item.branch.tone} ${selected ? "selected" : ""}`}
+        data-tree-node-id={item.id}
+        onClick={() => onSelectEvent(item.branch.eventId)}
+        style={style}
+        type="button"
+      >
+        <span className="agentStemDot" />
+        <span className="agentStartText">
+          <span>{item.branch.detail ?? "agent"}</span>
+          <strong>{shortTitle(item.branch.label)}</strong>
+        </span>
+      </button>
+    );
+  }
+
+  const step = item.step;
+  const selected = !selectedFilePath && step.eventId === selectedEventId;
+  const fileCount = uniqueFileCount(step);
+  return (
+    <button
+      aria-label={`${step.title}. ${formatTokenCount(step.tokens.total)}. ${fileCount} connected files.`}
+      className={`treeNode spineStep treeStep tone-${step.tone} ${step.agentLabel ? "agentStep" : "rootStep"} ${
+        selected ? "selected" : ""
+      }`}
+      data-step-id={step.id}
+      data-tree-node-id={item.id}
+      onClick={() => onSelectEvent(step.eventId)}
+      style={style}
+      type="button"
+    >
+      <span className={step.agentLabel ? "stepMarker agentMarker" : "stepMarker"}>{markerLabel}</span>
+      <span className="stepMain">
+        {step.agentLabel ? (
+          <span className="agentPill">
+            {shortTitle(step.agentLabel)}
+            {agentStatus ? <span>{agentStatus.toLowerCase()}</span> : null}
+          </span>
+        ) : null}
+        <strong>{shortTitle(step.title)}</strong>
+      </span>
+      <span className="stepBadges">
+        <span className="tokenPill">{formatTokenCount(step.tokens.total)}</span>
+        <span className="stepCount">{fileCount === 0 ? "no files" : `${fileCount} files`}</span>
+      </span>
+    </button>
   );
 }
 
@@ -404,15 +517,29 @@ function ConnectionLayer({
   edges,
   focusedFilePath,
   focusedStepId,
-  selectedEventId
+  selectedEventId,
+  treeEdges
 }: {
   edges: MeasuredEdge[];
   focusedFilePath: string | null;
   focusedStepId: string | null;
   selectedEventId: string | null;
+  treeEdges: MeasuredTreeEdge[];
 }) {
   return (
     <svg className="connectionLayer" aria-hidden="true">
+      {treeEdges.map((edge) => {
+        const focused =
+          (focusedStepId !== null && (edge.fromNodeId.includes(focusedStepId) || edge.toNodeId.includes(focusedStepId))) ||
+          edge.eventId === selectedEventId;
+        return (
+          <path
+            className={`treeEdge treeEdge-${edge.kind} ${focused ? "focused" : ""}`}
+            d={edge.pathD}
+            key={edge.id}
+          />
+        );
+      })}
       {edges.map((edge) => {
         const focused =
           (focusedFilePath !== null && edge.path === focusedFilePath) ||
@@ -422,6 +549,25 @@ function ConnectionLayer({
       })}
     </svg>
   );
+}
+
+function treeConnectionPath(fromRect: DOMRect, toRect: DOMRect, containerRect: DOMRect): string {
+  const sameColumn = Math.abs(fromRect.left - toRect.left) < 12;
+  if (sameColumn) {
+    const startX = fromRect.left + fromRect.width / 2 - containerRect.left;
+    const startY = fromRect.bottom - containerRect.top;
+    const endX = toRect.left + toRect.width / 2 - containerRect.left;
+    const endY = toRect.top - containerRect.top;
+    const midY = startY + Math.max(12, (endY - startY) / 2);
+    return `M ${startX} ${startY} C ${startX} ${midY}, ${endX} ${midY}, ${endX} ${endY}`;
+  }
+
+  const startX = fromRect.right - containerRect.left;
+  const startY = fromRect.top + fromRect.height / 2 - containerRect.top;
+  const endX = toRect.left - containerRect.left;
+  const endY = toRect.top + toRect.height / 2 - containerRect.top;
+  const bend = Math.max(28, Math.min(92, Math.abs(endX - startX) / 2));
+  return `M ${startX} ${startY} C ${startX + bend} ${startY}, ${endX - bend} ${endY}, ${endX} ${endY}`;
 }
 
 function FileStructure({
@@ -594,6 +740,10 @@ type MeasuredEdge = FileConnection & {
   pathD: string;
 };
 
+type MeasuredTreeEdge = AgentTreeConnection & {
+  pathD: string;
+};
+
 type FileTreeRow =
   | {
       id: string;
@@ -619,7 +769,7 @@ function createFileConnections(steps: WorkflowStep[]): FileConnection[] {
         id: `${step.id}-${branch.id}`,
         stepId: step.id,
         eventId: branch.eventId,
-        path: branch.label,
+        path: normalizedProjectPath(branch.label),
         seq: branch.seq,
         tone: branch.tone
       }))
@@ -721,11 +871,11 @@ function uniqueFileCount(step: WorkflowStep): number {
 }
 
 function pathSegments(path: string): string[] {
-  return path
-    .replace(/^\$PROJECT\/?/, "")
-    .replace(/^\/+/, "")
-    .split("/")
-    .filter(Boolean);
+  return normalizedProjectPath(path).split("/").filter(Boolean);
+}
+
+function normalizedProjectPath(path: string): string {
+  return path.replace(/^\$PROJECT\/?/, "").replace(/^\/+/, "");
 }
 
 function fileNameFromPath(path: string): string {

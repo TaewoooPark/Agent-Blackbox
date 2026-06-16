@@ -15,6 +15,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  overflow: hidden;
 }
 
 button {
@@ -27,7 +28,9 @@ button {
     #f4f5f6;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
+  height: 100vh;
   min-height: 100vh;
+  overflow: hidden;
 }
 
 .topbar {
@@ -108,7 +111,9 @@ button {
   display: grid;
   grid-template-columns: 218px minmax(0, 1fr);
   gap: 12px;
+  height: 100%;
   min-height: 0;
+  overflow: hidden;
   padding: 0 14px 14px;
 }
 
@@ -119,6 +124,7 @@ button {
   box-shadow:
     0 18px 64px rgba(23, 26, 31, 0.06),
     inset 0 0 0 1px rgba(28, 32, 38, 0.04);
+  height: calc(100vh - 64px);
   min-height: calc(100vh - 64px);
   overflow: hidden;
   padding: 14px;
@@ -281,6 +287,7 @@ h3 {
 }
 
 .sessionMap {
+  height: calc(100vh - 64px);
   min-height: calc(100vh - 64px);
   overflow: hidden;
   padding: 14px 0 0;
@@ -319,13 +326,16 @@ h3 {
 
 .mapCanvas {
   display: grid;
-  grid-template-columns: minmax(224px, 286px) minmax(28px, 1fr) minmax(220px, var(--files-width, 286px));
+  grid-template-columns: minmax(0, 1fr) minmax(220px, var(--files-width, 286px));
+  gap: 18px;
+  height: calc(100vh - 104px);
   min-height: calc(100vh - 104px);
   overflow: hidden;
   position: relative;
 }
 
-.mapColumn {
+.mapColumn,
+.workflowTree {
   grid-column: 1;
   min-width: 0;
   position: relative;
@@ -358,6 +368,35 @@ h3 {
   stroke-width: 2.4;
 }
 
+.treeEdge {
+  fill: none;
+  opacity: 0.34;
+  stroke: #1d2127;
+  stroke-linecap: round;
+  stroke-width: 1.15;
+  transition:
+    opacity 140ms ease,
+    stroke-width 140ms ease;
+}
+
+.treeEdge-trunk {
+  opacity: 0.28;
+}
+
+.treeEdge-branch {
+  opacity: 0.42;
+  stroke-dasharray: 4 5;
+}
+
+.treeEdge-lane {
+  opacity: 0.24;
+}
+
+.treeEdge.focused {
+  opacity: 0.92;
+  stroke-width: 2;
+}
+
 .emptyWorkflow {
   background: rgba(255, 255, 255, 0.68);
   border: 1px solid rgba(25, 28, 33, 0.08);
@@ -367,13 +406,20 @@ h3 {
   backdrop-filter: blur(18px);
 }
 
-.spine {
+.spine,
+.treeGrid {
   display: grid;
   gap: 7px;
   list-style: none;
   margin: 0;
   padding: 0;
   position: relative;
+}
+
+.treeGrid {
+  align-items: start;
+  gap: 5px 10px;
+  grid-auto-rows: minmax(34px, auto);
 }
 
 .spine::before {
@@ -387,7 +433,7 @@ h3 {
 }
 
 .spineItem {
-  min-height: 42px;
+  min-height: 36px;
   position: relative;
 }
 
@@ -402,15 +448,129 @@ h3 {
   color: #17191c;
   cursor: pointer;
   display: grid;
-  gap: 7px;
+  gap: 6px;
   grid-template-columns: 26px minmax(0, 1fr) auto;
-  min-height: 42px;
-  padding: 6px 7px;
+  min-height: 36px;
+  padding: 5px 6px;
   position: relative;
   text-align: left;
   width: 100%;
   -webkit-backdrop-filter: blur(22px) saturate(1.25);
   backdrop-filter: blur(22px) saturate(1.25);
+}
+
+.treeNode {
+  min-width: 0;
+  z-index: 2;
+}
+
+.treeStep {
+  min-height: 36px;
+}
+
+.agentStep {
+  background: rgba(255, 255, 255, 0.58);
+  border-color: rgba(25, 28, 33, 0.09);
+}
+
+.agentStartCard {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.54);
+  border: 1px solid rgba(25, 28, 33, 0.1);
+  border-radius: 14px;
+  box-shadow:
+    0 8px 24px rgba(22, 25, 30, 0.035),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.52);
+  color: #20242a;
+  cursor: pointer;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: 18px minmax(0, 1fr);
+  min-height: 31px;
+  padding: 5px 7px;
+  text-align: left;
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  backdrop-filter: blur(18px) saturate(1.2);
+}
+
+.agentStartCard:hover,
+.agentStartCard.selected {
+  border-color: rgba(23, 25, 28, 0.34);
+  box-shadow: 0 8px 28px rgba(22, 25, 30, 0.08);
+}
+
+.agentStemDot {
+  background: #24282e;
+  border: 3px solid rgba(255, 255, 255, 0.88);
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(25, 28, 33, 0.14);
+  display: block;
+  height: 12px;
+  width: 12px;
+}
+
+.agentStartText {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.agentStartText span,
+.agentPill {
+  color: #727983;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.agentStartText strong {
+  color: #17191c;
+  font-size: 11px;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentMarker {
+  background: rgba(32, 36, 42, 0.11);
+}
+
+.agentMarker::after {
+  background: #24282e;
+  border-radius: 999px;
+  content: "";
+  height: 6px;
+  width: 6px;
+}
+
+.agentPill {
+  align-items: center;
+  display: flex;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentPill span {
+  background: rgba(245, 246, 247, 0.82);
+  border: 1px solid rgba(25, 28, 33, 0.07);
+  border-radius: 999px;
+  color: #68707a;
+  flex: 0 0 auto;
+  font-size: 8px;
+  padding: 1px 4px;
+  text-transform: uppercase;
+}
+
+.treeGrid.dense .spineStep {
+  grid-template-columns: 20px minmax(0, 1fr);
+}
+
+.treeGrid.dense .stepBadges {
+  display: none;
 }
 
 .spineStep:hover,
@@ -428,10 +588,10 @@ h3 {
   display: flex;
   font-size: 11px;
   font-weight: 800;
-  height: 20px;
+  height: 18px;
   justify-content: center;
   position: relative;
-  width: 20px;
+  width: 18px;
   z-index: 1;
 }
 
@@ -498,7 +658,7 @@ h3 {
   border: 1px solid rgba(25, 28, 33, 0.08);
   border-radius: 13px;
   box-shadow: 0 18px 60px rgba(24, 28, 34, 0.06);
-  grid-column: 3;
+  grid-column: 2;
   max-height: calc(100vh - 126px);
   min-width: 0;
   overflow: hidden;
@@ -750,9 +910,9 @@ h3 {
     0 20px 80px rgba(18, 22, 28, 0.12),
     inset 0 0 0 1px rgba(28, 32, 38, 0.04);
   display: grid;
-  gap: 6px;
-  max-width: min(390px, 42vw);
-  padding: 12px;
+  gap: 5px;
+  max-width: min(320px, 34vw);
+  padding: 10px;
   position: absolute;
   right: 0;
   z-index: 4;
@@ -769,15 +929,15 @@ h3 {
 
 .glassInspector strong {
   color: #16191d;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.2;
   overflow-wrap: anywhere;
 }
 
 .glassInspector p {
   color: #555c66;
-  font-size: 12px;
-  line-height: 1.3;
+  font-size: 11px;
+  line-height: 1.25;
   margin: 0;
 }
 
