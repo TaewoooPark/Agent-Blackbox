@@ -134,23 +134,31 @@ function normalizePayload(value: unknown, context: OpenCodeNormalizerContext) {
 }
 
 function toJsonObject(value: unknown): JsonObject {
-  return sanitizeJson(value) as JsonObject;
+  return sanitizeJson(value, new WeakSet<object>()) as JsonObject;
 }
 
-function sanitizeJson(value: unknown): JsonObject | JsonObject[keyof JsonObject] {
+function sanitizeJson(value: unknown, seen: WeakSet<object>): JsonObject | JsonObject[keyof JsonObject] {
   if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     return value;
   }
   if (Array.isArray(value)) {
-    return value.map((item) => sanitizeJson(item)) as JsonObject[keyof JsonObject];
+    if (seen.has(value)) {
+      return "[Circular]";
+    }
+    seen.add(value);
+    return value.map((item) => sanitizeJson(item, seen)) as JsonObject[keyof JsonObject];
   }
   if (typeof value === "object") {
+    if (seen.has(value)) {
+      return "[Circular]";
+    }
+    seen.add(value);
     const output: JsonObject = {};
     for (const [key, nested] of Object.entries(value)) {
       if (typeof nested === "undefined" || typeof nested === "function" || typeof nested === "symbol") {
         continue;
       }
-      output[key] = sanitizeJson(nested);
+      output[key] = sanitizeJson(nested, seen);
     }
     return output;
   }

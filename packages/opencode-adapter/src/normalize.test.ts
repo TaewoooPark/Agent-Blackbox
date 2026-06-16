@@ -48,5 +48,18 @@ describe("OpenCode event normalization", () => {
     expect(output.args?.command).toContain("[REDACTED_GITHUB_TOKEN]");
     expect(event.redaction.rulesApplied).toContain("github-token");
   });
-});
 
+  it("handles circular host payloads without throwing", () => {
+    const input: Record<string, unknown> = { tool: "custom", sessionID: "session-1" };
+    input.self = input;
+
+    const event = normalizeToolBefore(input, {}, {
+      runId: "run-opencode",
+      seq: 3,
+      defaultSessionId: "fallback-session"
+    });
+
+    const payloadInput = event.payload.input as { self?: string };
+    expect(payloadInput.self).toBe("[Circular]");
+  });
+});
