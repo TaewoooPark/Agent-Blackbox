@@ -126,6 +126,9 @@ export function DashboardApp() {
   const workflowSteps = useMemo(() => createWorkflowSteps(visibleEvents), [visibleEvents]);
   const tokenTotals = useMemo(() => latestTokenUsage(visibleEvents), [visibleEvents]);
   const sessionName = useMemo(() => sessionDisplayName(visibleEvents, graph?.runId), [visibleEvents, graph]);
+  const runHost = visibleEvents[0]?.host ?? null;
+  const runStatus = useMemo(() => deriveRunStatus(visibleEvents), [visibleEvents]);
+  const riskMomentCount = useMemo(() => workflowSteps.filter((step) => step.tone === "risk").length, [workflowSteps]);
   const orderedEvents = useMemo(() => [...visibleEvents].sort((a, b) => a.seq - b.seq), [visibleEvents]);
   const marks = useMemo(() => createTimelineMarks(orderedEvents), [orderedEvents]);
   const maxSeq = orderedEvents.at(-1)?.seq ?? 0;
@@ -162,7 +165,19 @@ export function DashboardApp() {
     <main className="shell">
       <header className="topbar">
         <strong>{sessionName}</strong>
-        <span className="topbarBlock" aria-hidden="true" />
+        <div className="topbarStatus">
+          {runHost ? <span className="statusChip host">{runHost}</span> : null}
+          <span className={`statusChip state state-${runStatus}`}>
+            <span className="statusDot" aria-hidden="true" />
+            {runStatus}
+          </span>
+          <span className="statusChip">{visibleEvents.length} events</span>
+          {riskMomentCount > 0 ? (
+            <span className="statusChip risk">
+              {riskMomentCount} risk {riskMomentCount === 1 ? "moment" : "moments"}
+            </span>
+          ) : null}
+        </div>
       </header>
 
       {error ? <div className="banner">Daemon unavailable: {error}</div> : null}
@@ -1720,6 +1735,17 @@ function latestTokenUsage(events: TraceEvent[]): TokenUsage {
     }
   }
   return usage;
+}
+
+function deriveRunStatus(events: TraceEvent[]): "active" | "idle" | "error" {
+  if (events.length === 0) return "idle";
+  let latest = events[0]!;
+  for (const event of events) {
+    if (Date.parse(event.ts) >= Date.parse(latest.ts)) latest = event;
+  }
+  if (latest.kind === "session_error") return "error";
+  if (latest.kind === "session_idle") return "idle";
+  return "active";
 }
 
 function isRuntimeAgentNode(node: WorkflowNode): boolean {

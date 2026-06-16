@@ -56,13 +56,63 @@ button {
   white-space: nowrap;
 }
 
-.topbarBlock {
-  background: #111317;
-  border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(17, 19, 23, 0.16);
-  display: block;
-  height: 22px;
-  width: 38px;
+.topbarStatus {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.statusChip {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid rgba(24, 28, 34, 0.08);
+  border-radius: 999px;
+  color: #4d535c;
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 700;
+  gap: 5px;
+  padding: 4px 9px;
+  white-space: nowrap;
+}
+
+.statusChip.host {
+  color: #2b2f36;
+  text-transform: lowercase;
+}
+
+.statusChip.state {
+  text-transform: capitalize;
+}
+
+.statusDot {
+  background: #9aa0a8;
+  border-radius: 999px;
+  height: 6px;
+  width: 6px;
+}
+
+.state-active .statusDot {
+  background: #2f9e57;
+}
+
+.state-idle .statusDot {
+  background: #9aa0a8;
+}
+
+.state-error {
+  color: #a8322e;
+}
+
+.state-error .statusDot {
+  background: #c4403c;
+}
+
+.statusChip.risk {
+  background: rgba(200, 78, 74, 0.12);
+  border-color: rgba(196, 64, 60, 0.25);
+  color: #a8322e;
 }
 
 .stats {
