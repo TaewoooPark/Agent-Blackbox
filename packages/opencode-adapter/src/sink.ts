@@ -25,20 +25,60 @@ export function createFileTraceSink(eventsFile: string): TraceSink {
   };
 }
 
-export function createHttpTraceSink(daemonUrl: string): TraceSink {
+export type HttpTraceSinkOptions = {
+  retries?: number;
+  timeoutMs?: number;
+  retryDelayMs?: number;
+  onWarn?: (message: string) => void;
+};
+
+// Recording is best-effort observability: a daemon hiccup (e.g. ECONNRESET, a
+// brief restart, or a 5xx) must never throw into the agent's hook and disrupt
+// the run. Transient failures are retried with backoff; on persistent failure
+// the event is dropped with a single warning instead of crashing the agent.
+export function createHttpTraceSink(daemonUrl: string, options: HttpTraceSinkOptions = {}): TraceSink {
   const endpoint = new URL("/events", daemonUrl.endsWith("/") ? daemonUrl : `${daemonUrl}/`);
+  const retries = options.retries ?? 3;
+  const timeoutMs = options.timeoutMs ?? 4000;
+  const retryDelayMs = options.retryDelayMs ?? 120;
+  const warn = options.onWarn ?? ((message: string) => console.warn(`[agent-blackbox] ${message}`));
+
   return {
     async write(event) {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(event)
-      });
-      if (!response.ok) {
-        throw new Error(`Agent-Blackbox daemon rejected event ${event.id}: HTTP ${response.status}`);
+      let lastError = "";
+      for (let attempt = 0; attempt <= retries; attempt += 1) {
+        try {
+          const response = await fetch(endpoint, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(event),
+            signal: AbortSignal.timeout(timeoutMs)
+          });
+          if (response.ok) {
+            return;
+          }
+          // A 4xx won't be fixed by retrying (e.g. invalid event); drop it.
+          if (response.status < 500) {
+            warn(`daemon rejected event ${event.id}: HTTP ${response.status}`);
+            return;
+          }
+          lastError = `HTTP ${response.status}`;
+        } catch (error) {
+          lastError = error instanceof Error ? error.message : String(error);
+        }
+        if (attempt < retries) {
+          await delay(retryDelayMs * (attempt + 1));
+        }
       }
+      warn(`could not deliver event ${event.id} after ${retries + 1} attempts (${lastError}); dropping it`);
     }
   };
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 export function resolveRecorderOptions(options: OpenCodeRecorderOptions): OpenCodeRecorderOptions {
