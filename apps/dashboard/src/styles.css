@@ -552,6 +552,44 @@ h3 {
   padding: 4px 9px;
 }
 
+/* Zoom is a light segmented control [−][100%][+] to sit apart from the dark
+   "Auto layout" action while matching the FILES-panel card styling. */
+.zoomControls {
+  align-items: stretch;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border-color);
+  border-radius: var(--card-radius);
+  display: flex;
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+
+.workflowTools .zoomControls button {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  color: #1d2127;
+  min-width: 30px;
+  padding: 4px 8px;
+}
+
+.workflowTools .zoomControls button:hover:not(:disabled) {
+  background: rgba(17, 19, 23, 0.06);
+}
+
+.workflowTools .zoomControls button:disabled {
+  color: #b7bcc4;
+  cursor: default;
+}
+
+.workflowTools .zoomControls button:nth-child(2) {
+  border-left: 1px solid var(--card-border-color);
+  border-right: 1px solid var(--card-border-color);
+  font-variant-numeric: tabular-nums;
+  min-width: 48px;
+}
+
 .mapCanvas {
   align-items: flex-start;
   display: flex;
@@ -696,8 +734,14 @@ h3 {
 
 .treeGrid {
   min-width: 0;
-  transform: scale(var(--tree-scale, 1));
+  transform: translate(var(--tree-pan-x, 0px), var(--tree-pan-y, 0px)) scale(var(--tree-scale, 1));
   transform-origin: 0 0;
+  transition: none;
+}
+
+/* Only animate the transform for the "Auto layout" reset — during active wheel
+   pan/zoom an easing transition would lag behind the pointer. */
+.mapCanvas.autoLayouting .treeGrid {
   transition: transform 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
