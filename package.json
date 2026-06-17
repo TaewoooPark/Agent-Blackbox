@@ -13,7 +13,8 @@
     "check": "npm run typecheck && npm test",
     "lint": "npm run typecheck",
     "test": "vitest run",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "up": "node apps/daemon/dist/cli.js up"
   },
   "engines": {
     "node": ">=20"

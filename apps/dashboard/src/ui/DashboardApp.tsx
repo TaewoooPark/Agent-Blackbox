@@ -24,7 +24,18 @@ import {
 } from "../graphLayout.js";
 import { filterEventsForRun, latestRunId, listRuns } from "../runSelection.js";
 
-const daemonUrl = import.meta.env.VITE_AGENT_BLACKBOX_DAEMON_URL ?? "http://127.0.0.1:47831";
+declare global {
+  interface Window {
+    AGENT_BLACKBOX_DAEMON_URL?: string;
+  }
+}
+
+// Runtime override (injected by `up` static server) wins, then build-time env,
+// then the default port.
+const daemonUrl =
+  (typeof window !== "undefined" ? window.AGENT_BLACKBOX_DAEMON_URL : undefined) ??
+  import.meta.env.VITE_AGENT_BLACKBOX_DAEMON_URL ??
+  "http://127.0.0.1:47831";
 
 const TREE_ROOT_COLUMN_WIDTH = 172;
 const TREE_BRANCH_COLUMN_WIDTH = 104;
