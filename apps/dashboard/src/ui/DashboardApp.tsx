@@ -693,10 +693,13 @@ function SessionMap({
       });
       setMeasuredTreeEdges(nextTreeEdges);
 
-      // Anchor the moment popover beside the focused node (or file row).
+      // Anchor the moment popover beside the focused node (or file row). A
+      // selected subagent branch also marks the trunk step that holds it, so
+      // prefer the agent-start card to anchor next to the subagent box itself.
       const anchorEl = selectedFilePath
         ? container.querySelector<HTMLElement>(".fileRows .finderRow.selected")
-        : container.querySelector<HTMLElement>(".treeNode.selected");
+        : container.querySelector<HTMLElement>(".treeNode.agentStartCard.selected") ??
+          container.querySelector<HTMLElement>(".treeNode.selected");
       if (!anchorEl) {
         setMomentAnchor(null);
       } else {
