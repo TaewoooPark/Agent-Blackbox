@@ -641,12 +641,48 @@ h3 {
 }
 
 .emptyWorkflow {
-  background: rgba(255, 255, 255, 0.68);
-  border: 1px solid rgba(25, 28, 33, 0.08);
+  background: var(--card-bg);
+  border: 1px solid var(--card-border-color);
   border-radius: var(--card-radius);
-  padding: 14px;
-  -webkit-backdrop-filter: blur(18px);
-  backdrop-filter: blur(18px);
+  box-shadow: var(--card-shadow);
+  max-width: 460px;
+  padding: 18px;
+  -webkit-backdrop-filter: var(--card-blur);
+  backdrop-filter: var(--card-blur);
+}
+
+.emptySteps {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 6px;
+  padding-left: 18px;
+}
+
+.emptySteps li {
+  color: #3c424b;
+  font-size: var(--fs-body);
+  line-height: 1.4;
+}
+
+.emptySteps code,
+.banner code {
+  background: rgba(25, 28, 33, 0.06);
+  border: 1px solid var(--card-border-color);
+  border-radius: 6px;
+  display: inline-block;
+  font-family: Helvetica, Arial, sans-serif;
+  font-size: var(--fs-label);
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  padding: 3px 6px;
+}
+
+.banner code {
+  margin-top: 0;
+}
+
+.emptyHint {
+  margin-top: 12px;
 }
 
 .spine,

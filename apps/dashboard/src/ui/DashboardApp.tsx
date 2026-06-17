@@ -314,7 +314,12 @@ export function DashboardApp() {
         </div>
       ) : null}
 
-      {error ? <div className="banner">Daemon unavailable: {error}</div> : null}
+      {error ? (
+        <div className="banner">
+          Can’t reach the trace daemon at {daemonUrl} ({error}). Start it with <code>npm run up</code> (or{" "}
+          <code>agent-blackbox daemon --project &lt;dir&gt;</code>), then this view reconnects automatically.
+        </div>
+      ) : null}
 
       <section className="workspace">
         <aside className="lanes" aria-label="Agent lanes">
@@ -889,8 +894,20 @@ function SessionMap({
         <div className="workflowTree">
           {steps.length === 0 ? (
             <div className="emptyWorkflow">
-              <h3>No workflow yet</h3>
-              <p className="muted">Start an agent run and the session map will form here.</p>
+              <h3>No runs recorded yet</h3>
+              <p className="muted">Run a coding agent in this project and the session map forms here, live.</p>
+              <ol className="emptySteps">
+                <li>
+                  Start the recorder:
+                  <code>npm run up -- --project &lt;your-project&gt;</code>
+                </li>
+                <li>
+                  Run your agent in that project:
+                  <code>AGENT_BLACKBOX_DAEMON_URL={daemonUrl} opencode run "Read the code, run the tests, and summarize."</code>
+                </li>
+                <li>This view updates automatically as events arrive — no refresh needed.</li>
+              </ol>
+              <p className="emptyHint muted">Listening at {daemonUrl}</p>
             </div>
           ) : (
             <WorkflowTree
