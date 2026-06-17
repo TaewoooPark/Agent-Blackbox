@@ -321,7 +321,34 @@ function deriveObservedToolResult(
     };
   }
 
-  return undefined;
+  if (tool === "skill") {
+    const name = readString(payload, ["input.args.name", "output.args.name"]);
+    return {
+      kind: "tool_result",
+      summary: name ? `Used the ${name} skill` : "Used a skill",
+      payload: compactJsonObject({
+        tool: "skill",
+        source: "tool.after",
+        skill: name,
+        title: readString(payload, ["output.title"]),
+        callID: readString(payload, ["input.callID"])
+      })
+    };
+  }
+
+  // Any other tool (grep, glob, list, webfetch, todowrite, a command, …) is
+  // still a real action — keep it as a renderable result instead of dropping it.
+  return {
+    kind: "tool_result",
+    summary: `Used ${tool}`,
+    payload: compactJsonObject({
+      tool,
+      source: "tool.after",
+      title: readString(payload, ["output.title"]),
+      description: readString(payload, ["input.args.description", "output.metadata.description"]),
+      callID: readString(payload, ["input.callID"])
+    })
+  };
 }
 
 function readMessageText(...records: UnknownRecord[]): string | undefined {

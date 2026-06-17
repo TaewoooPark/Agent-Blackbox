@@ -317,6 +317,12 @@ function canAggregateSteps(previous: WorkflowStep, next: WorkflowStep): boolean 
   if (previous.kind !== next.kind) return false;
   if (previous.title !== next.title) return false;
   if (previous.agentLabel !== next.agentLabel) return false;
+  if (previous.kind === "coordination") {
+    // Collapse repeated identical tool moments ("Used grep" ×6) but never fold
+    // session starts or unique-named skills together — the title guard above
+    // already keeps differently-named actions apart.
+    return previous.title.startsWith("Used ");
+  }
   return previous.kind === "change" || previous.kind === "verification" || previous.kind === "context";
 }
 
@@ -639,6 +645,48 @@ function trunkStepForEvent(event: TraceEvent): WorkflowStep | undefined {
         })
       ]
     });
+  }
+  if (event.kind === "tool_result") {
+    // Tolerate both the clean adapter payload ({tool, skill, source}) and the
+    // older raw shape ({tool, phase:"after", input:{args:{name}}}) so runs
+    // captured before the skill mapping landed still render.
+    const tool = stringPayloadPath(event, ["tool", "input.tool", "output.tool"]);
+    if (tool === "skill") {
+      const name = stringPayloadPath(event, ["skill", "input.args.name", "output.args.name"]);
+      return makeStep(event, {
+        kind: "coordination",
+        title: name ? `Used the ${name} skill` : "Used a skill",
+        description: name ? `The ${name} skill was loaded into the workflow.` : "A skill was loaded into the workflow.",
+        branches: [
+          makeBranch(event, {
+            kind: "evidence",
+            label: name ?? "skill",
+            title: "Skill",
+            description: name ? `The ${name} skill was loaded.` : "A skill was loaded.",
+            tone: "decision",
+            detail: "skill"
+          })
+        ]
+      });
+    }
+    if (tool) {
+      const note = stringPayloadPath(event, ["description", "input.args.description", "output.metadata.description"]);
+      return makeStep(event, {
+        kind: "coordination",
+        title: `Used ${tool}`,
+        description: note ?? `The ${tool} tool was used.`,
+        branches: [
+          makeBranch(event, {
+            kind: "evidence",
+            label: tool,
+            title: `Used ${tool}`,
+            description: note ?? `The ${tool} tool was used.`,
+            tone: "work",
+            detail: "tool"
+          })
+        ]
+      });
+    }
   }
   const statement = stringPayload(event, "statement");
   if (statement && event.kind === "decision_extracted") {

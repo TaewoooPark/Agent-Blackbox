@@ -396,6 +396,58 @@ describe("dashboard graph helpers", () => {
     expect(steps[0]?.seq).toBe(1);
   });
 
+  it("renders a skill tool result as a named coordination moment", () => {
+    const steps = createWorkflowSteps([
+      createTraceEvent(1, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "tool_result",
+        summary: "Used the algorithmic-art skill",
+        payload: { source: "tool.after", tool: "skill", skill: "algorithmic-art" }
+      })
+    ]);
+    expect(steps).toHaveLength(1);
+    expect(steps[0]?.kind).toBe("coordination");
+    expect(steps[0]?.title).toBe("Used the algorithmic-art skill");
+  });
+
+  it("renders an unrecognized tool result as a generic moment and collapses repeats", () => {
+    const grep = (seq: number) =>
+      createTraceEvent(seq, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "tool_result",
+        summary: "Used grep",
+        payload: { source: "tool.after", tool: "grep" }
+      });
+    const steps = createWorkflowSteps([grep(1), grep(2), grep(3)]);
+    // Three consecutive identical tool moments collapse into one.
+    expect(steps).toHaveLength(1);
+    expect(steps[0]?.kind).toBe("coordination");
+    expect(steps[0]?.title).toBe("Used grep");
+    expect(steps[0]?.branches).toHaveLength(3);
+  });
+
+  it("keeps differently-named skills as separate moments", () => {
+    const skill = (seq: number, name: string) =>
+      createTraceEvent(seq, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "tool_result",
+        summary: `Used the ${name} skill`,
+        payload: { source: "tool.after", tool: "skill", skill: name }
+      });
+    const steps = createWorkflowSteps([skill(1, "algorithmic-art"), skill(2, "frontend-design")]);
+    expect(steps).toHaveLength(2);
+    expect(steps.map((step) => step.title)).toEqual([
+      "Used the algorithmic-art skill",
+      "Used the frontend-design skill"
+    ]);
+  });
+
   it("does not aggregate a passed test run with a failed one", () => {
     const bash = (seq: number, exit: number) =>
       createTraceEvent(seq, {
