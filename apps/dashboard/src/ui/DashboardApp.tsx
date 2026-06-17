@@ -14,6 +14,7 @@ import {
   createTimelineMarks,
   createWorkflowSteps,
   filterWorkflowStepsBySeq,
+  summarizeAgentActivity,
   type AgentTreeConnection,
   type AgentTreeItem,
   type AgentTreeLayout,
@@ -166,6 +167,7 @@ export function DashboardApp() {
   const maxSeq = orderedEvents.at(-1)?.seq ?? 0;
   const replaySeq = selectedSeq ?? maxSeq;
   const replaySteps = useMemo(() => filterWorkflowStepsBySeq(workflowSteps, replaySeq), [workflowSteps, replaySeq]);
+  const replayEvents = useMemo(() => visibleEvents.filter((event) => event.seq <= replaySeq), [visibleEvents, replaySeq]);
   const selectedStep = selectedEventId
     ? replaySteps.find(
         (step) => step.eventId === selectedEventId || step.branches.some((branch) => branch.eventId === selectedEventId)
@@ -363,6 +365,7 @@ export function DashboardApp() {
 
         <SessionMap
           agentNodes={agentNodes}
+          events={replayEvents}
           onClearFocus={clearFocus}
           onSelectEvent={selectWorkflowEvent}
           onSelectFile={selectFile}
@@ -383,6 +386,7 @@ export function DashboardApp() {
 
 function SessionMap({
   agentNodes,
+  events,
   onClearFocus,
   onSelectEvent,
   onSelectFile,
@@ -397,6 +401,7 @@ function SessionMap({
   steps
 }: {
   agentNodes: WorkflowNode[];
+  events: TraceEvent[];
   onClearFocus: () => void;
   onSelectEvent: (eventId: string) => void;
   onSelectFile: (path: string) => void;
@@ -413,8 +418,7 @@ function SessionMap({
   const mapRef = useRef<HTMLDivElement | null>(null);
   const [filePanelWidth, setFilePanelWidth] = useState(252);
   const [resizeDrag, setResizeDrag] = useState<{ startWidth: number; startX: number } | null>(null);
-  const [inspectorSize, setInspectorSize] = useState<InspectorSize>({ height: 142, width: 320 });
-  const [inspectorResizeDrag, setInspectorResizeDrag] = useState<InspectorResizeDrag | null>(null);
+  const [momentAnchor, setMomentAnchor] = useState<{ left: number; top: number } | null>(null);
   const [nodeOffsets, setNodeOffsets] = useState<NodeOffsetMap>({});
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(() => new Set());
   const [nodeDrag, setNodeDrag] = useState<NodeDrag | null>(null);
@@ -427,6 +431,20 @@ function SessionMap({
     selectedAgentLabel !== null && !treeLayout.lanes.some((lane) => lane.id !== "root" && lane.label === selectedAgentLabel);
   const fileConnections = useMemo(() => createFileConnections(steps), [steps]);
   const fileRows = useMemo(() => createFileRows(fileConnections), [fileConnections]);
+  const agentDetail = useMemo<AgentDetail | null>(() => {
+    if (!selectedBranch || selectedBranch.kind !== "agent") return null;
+    const label = selectedBranch.label;
+    const node = agentNodes.find((agent) => agent.label === label);
+    const activity = summarizeAgentActivity(events, label);
+    return {
+      commands: activity.commands,
+      files: activity.files,
+      label,
+      moments: activity.moments,
+      role: selectedBranch.detail ?? "agent",
+      status: node?.status ?? null
+    };
+  }, [selectedBranch, agentNodes, events]);
   const [measuredEdges, setMeasuredEdges] = useState<MeasuredEdge[]>([]);
   const [measuredTreeEdges, setMeasuredTreeEdges] = useState<MeasuredTreeEdge[]>([]);
   const treeItemIds = useMemo(() => new Set(treeLayout.items.map((item) => item.id)), [treeLayout.items]);
@@ -463,33 +481,6 @@ function SessionMap({
     };
   }, [resizeDrag]);
 
-  useEffect(() => {
-    if (!inspectorResizeDrag) return undefined;
-
-    const move = (event: PointerEvent) => {
-      const changesWidth = inspectorResizeDrag.edge === "left" || inspectorResizeDrag.edge === "top-left";
-      const changesHeight = inspectorResizeDrag.edge === "top" || inspectorResizeDrag.edge === "top-left";
-      const widthDelta = changesWidth ? inspectorResizeDrag.startX - event.clientX : 0;
-      const heightDelta = changesHeight ? inspectorResizeDrag.startY - event.clientY : 0;
-      setInspectorSize({
-        width: clamp(inspectorResizeDrag.startWidth + widthDelta, 260, 560),
-        height: clamp(inspectorResizeDrag.startHeight + heightDelta, 122, 420)
-      });
-      requestLayoutMeasure();
-    };
-    const stop = () => {
-      setInspectorResizeDrag(null);
-      document.body.style.cursor = "";
-    };
-    document.body.style.cursor = inspectorResizeCursor(inspectorResizeDrag.edge);
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", stop, { once: true });
-    return () => {
-      document.body.style.cursor = "";
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", stop);
-    };
-  }, [inspectorResizeDrag]);
 
   useEffect(() => {
     if (!nodeDrag) return undefined;
@@ -617,11 +608,11 @@ function SessionMap({
       // the rendered tree, so reading its width here would feed the scale back into
       // itself. Reserve room for the docked file panel and the column gap.
       const canvasRect = container.getBoundingClientRect();
-      const reservedHeight = showInspector ? Math.min(inspectorSize.height + 22, canvasRect.height * 0.36) : 0;
       // Mirror the .mapCanvas padding (26px inset, plus the file column + 52px
-      // reserve on the right) so the tree fits inside the breathing room.
+      // reserve on the right) so the tree fits inside the breathing room. The
+      // moment popover floats over the node, so no bottom space is reserved.
       const availableWidth = Math.max(120, canvasRect.width - filePanelWidth - 52 - 26);
-      const availableHeight = Math.max(120, canvasRect.height - reservedHeight - 52);
+      const availableHeight = Math.max(120, canvasRect.height - 52);
       const nextScale = clamp(
         Math.min(TREE_MAX_SCALE, availableWidth / treeMetrics.width, availableHeight / treeMetrics.height),
         TREE_MIN_SCALE,
@@ -640,7 +631,7 @@ function SessionMap({
       observer.disconnect();
       window.removeEventListener("resize", fitTree);
     };
-  }, [filePanelWidth, inspectorSize, showInspector, treeMetrics.height, treeMetrics.width]);
+  }, [filePanelWidth, showInspector, treeMetrics.height, treeMetrics.width]);
 
   useLayoutEffect(() => {
     const container = mapRef.current;
@@ -701,6 +692,43 @@ function SessionMap({
         ];
       });
       setMeasuredTreeEdges(nextTreeEdges);
+
+      // Anchor the moment popover beside the focused node (or file row).
+      const anchorEl = selectedFilePath
+        ? container.querySelector<HTMLElement>(".fileRows .finderRow.selected")
+        : container.querySelector<HTMLElement>(".treeNode.selected");
+      if (!anchorEl) {
+        setMomentAnchor(null);
+      } else {
+        const rect = anchorEl.getBoundingClientRect();
+        const popWidth = 296;
+        const gap = 12;
+        const nodeLeft = rect.left - containerRect.left;
+        const nodeRight = rect.right - containerRect.left;
+        const nodeTop = rect.top - containerRect.top;
+        const nodeBottom = rect.bottom - containerRect.top;
+        let left: number;
+        let top: number;
+        if (selectedFilePath) {
+          // File rows live in the top-right panel: open the popover to their left.
+          left = nodeLeft - gap - popWidth;
+          top = nodeTop;
+          if (left < 8) {
+            left = nodeLeft;
+            top = nodeBottom + gap;
+          }
+        } else if (nodeRight + gap + popWidth <= containerRect.width) {
+          // Trunk nodes sit on the left with room to their right.
+          left = nodeRight + gap;
+          top = nodeTop;
+        } else {
+          left = nodeLeft;
+          top = nodeBottom + gap;
+        }
+        left = Math.min(Math.max(8, left), Math.max(8, containerRect.width - popWidth - 8));
+        top = Math.max(8, Math.min(top, Math.max(8, containerRect.height - 132)));
+        setMomentAnchor({ left, top });
+      }
     };
 
     let measureFrame: number | null = null;
@@ -740,7 +768,6 @@ function SessionMap({
   }, [
     fileConnections,
     filePanelWidth,
-    inspectorSize,
     nodeOffsets,
     selectedEventId,
     selectedFilePath,
@@ -892,19 +919,11 @@ function SessionMap({
           selectedFilePath={selectedFilePath}
           selectedStepId={focusedStepId}
         />
-        {showInspector ? (
+        {showInspector && momentAnchor ? (
           <GlassInspector
+            agentDetail={agentDetail}
+            anchor={momentAnchor}
             connections={fileConnections}
-            inspectorSize={inspectorSize}
-            onResizeStart={(edge, clientX, clientY) =>
-              setInspectorResizeDrag({
-                edge,
-                startHeight: inspectorSize.height,
-                startWidth: inspectorSize.width,
-                startX: clientX,
-                startY: clientY
-              })
-            }
             onSelectSeq={onSelectSeq}
             selectedBranch={selectedBranch}
             selectedEvent={selectedEvent}
@@ -1039,7 +1058,7 @@ function TreeItemCard({
         aria-label={`${item.branch.title}. ${item.branch.label}.`}
         className={`treeNode agentStartCard tone-${item.branch.tone} ${selected ? "selected" : ""} ${
           manuallySelected ? "manualSelected" : ""
-        } ${agentFocused ? "agentFocused" : ""} ${fileFocused ? "fileFocused" : ""} ${selected ? "expanded" : ""}`}
+        } ${agentFocused ? "agentFocused" : ""} ${fileFocused ? "fileFocused" : ""}`}
         data-agent-label={item.branch.label}
         data-tree-node-id={item.id}
         onPointerDown={(event) => onBeginNodeDrag(event, item)}
@@ -1050,7 +1069,6 @@ function TreeItemCard({
         <span className="agentStartText">
           <span>{item.branch.detail ?? "agent"}</span>
           <strong>{shortTitle(item.branch.label)}</strong>
-          {selected ? <span className="agentStartDetail">{compactDescription(item.branch.description)}</span> : null}
         </span>
       </button>
     );
@@ -1067,7 +1085,7 @@ function TreeItemCard({
         selected ? "selected" : ""
       } ${manuallySelected ? "manualSelected" : ""} ${agentFocused ? "agentFocused" : ""} ${
         fileFocused ? "fileFocused" : ""
-      } ${selected ? "expanded" : ""}`}
+      }`}
       data-agent-label={step.agentLabel ?? "main"}
       data-step-id={step.id}
       data-tree-node-id={item.id}
@@ -1091,7 +1109,6 @@ function TreeItemCard({
             {fileCount > 0 ? `${fileCount} ${fileCount === 1 ? "file" : "files"}` : null}
           </span>
         ) : null}
-        {selected ? <span className="stepSummary">{compactDescription(step.description)}</span> : null}
       </span>
       <span className="stepBadges">
         <span className="tokenPill">{formatTokenNumber(step.tokens.total)}</span>
@@ -1400,25 +1417,63 @@ function fileAnchorTop(index: number, count: number): number {
   return 8 + (index / (count - 1)) * 84;
 }
 
+type AgentDetail = {
+  commands: number;
+  files: string[];
+  label: string;
+  moments: number;
+  role: string;
+  status: WorkflowNode["status"] | null;
+};
+
 function GlassInspector({
+  agentDetail,
+  anchor,
   connections,
-  inspectorSize,
-  onResizeStart,
   onSelectSeq,
   selectedBranch,
   selectedEvent,
   selectedFilePath,
   selectedStep
 }: {
+  agentDetail: AgentDetail | null;
+  anchor: { left: number; top: number };
   connections: FileConnection[];
-  inspectorSize: InspectorSize;
-  onResizeStart: (edge: InspectorResizeEdge, clientX: number, clientY: number) => void;
   onSelectSeq: (seq: number) => void;
   selectedBranch: WorkflowBranch | null;
   selectedEvent: TraceEvent | null;
   selectedFilePath: string | null;
   selectedStep: WorkflowStep | null;
 }) {
+  if (agentDetail) {
+    return (
+      <aside className="glassInspector" aria-label="Agent detail" style={{ left: anchor.left, top: anchor.top } as CSSProperties}>
+        <span className="glassKicker">{agentDetail.role}</span>
+        <strong>{agentDetail.label}</strong>
+        <p>
+          {agentDetail.status ? `${agentDetail.status.toLowerCase()} · ` : ""}
+          {agentDetail.moments} {agentDetail.moments === 1 ? "moment" : "moments"} on this lane
+          {agentDetail.commands > 0 ? ` · ${agentDetail.commands} verifications` : ""}
+          {agentDetail.files.length > 0 ? `. Touched ${agentDetail.files.map(fileNameFromPath).join(", ")}.` : "."}
+        </p>
+        <div className="glassMeta">
+          {agentDetail.status ? <span>{agentDetail.status.toLowerCase()}</span> : null}
+          <span>
+            {agentDetail.moments} {agentDetail.moments === 1 ? "moment" : "moments"}
+          </span>
+          <span>
+            {agentDetail.files.length} {agentDetail.files.length === 1 ? "file" : "files"}
+          </span>
+        </div>
+        {selectedBranch?.seq ? (
+          <button onClick={() => onSelectSeq(selectedBranch.seq)} type="button">
+            Replay
+          </button>
+        ) : null}
+      </aside>
+    );
+  }
+
   const fileConnections = selectedFilePath
     ? connections.filter((connection) => connection.path === selectedFilePath)
     : [];
@@ -1439,7 +1494,7 @@ function GlassInspector({
     <aside
       className="glassInspector"
       aria-label="Focused detail"
-      style={{ height: inspectorSize.height, width: inspectorSize.width } as CSSProperties}
+      style={{ left: anchor.left, top: anchor.top } as CSSProperties}
     >
       <span className="glassKicker">{selectedFilePath ? "file focus" : selectedBranch ? selectedBranch.kind : "moment"}</span>
       <strong>{shortTitle(title)}</strong>
@@ -1457,36 +1512,6 @@ function GlassInspector({
           Replay
         </button>
       ) : null}
-      <button
-        aria-label="Resize focused detail from left"
-        className="inspectorResizeHandle inspectorResizeHandle-left"
-        onPointerDown={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          onResizeStart("left", event.clientX, event.clientY);
-        }}
-        type="button"
-      />
-      <button
-        aria-label="Resize focused detail from top"
-        className="inspectorResizeHandle inspectorResizeHandle-top"
-        onPointerDown={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          onResizeStart("top", event.clientX, event.clientY);
-        }}
-        type="button"
-      />
-      <button
-        aria-label="Resize focused detail from top left"
-        className="inspectorResizeHandle inspectorResizeHandle-topLeft"
-        onPointerDown={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          onResizeStart("top-left", event.clientX, event.clientY);
-        }}
-        type="button"
-      />
     </aside>
   );
 }
@@ -1559,21 +1584,6 @@ type SelectionDrag = {
   additive: boolean;
   current: Point;
   start: Point;
-};
-
-type InspectorSize = {
-  height: number;
-  width: number;
-};
-
-type InspectorResizeEdge = "left" | "top" | "top-left";
-
-type InspectorResizeDrag = {
-  edge: InspectorResizeEdge;
-  startHeight: number;
-  startWidth: number;
-  startX: number;
-  startY: number;
 };
 
 type FileTreeRow =
@@ -1833,12 +1843,6 @@ function requestLayoutMeasure() {
   window.requestAnimationFrame(() => {
     window.dispatchEvent(new Event("agent-blackbox:layout"));
   });
-}
-
-function inspectorResizeCursor(edge: InspectorResizeEdge): string {
-  if (edge === "left") return "ew-resize";
-  if (edge === "top") return "ns-resize";
-  return "nwse-resize";
 }
 
 function agentLaneIdForLabel(label: string): string {

@@ -1084,6 +1084,29 @@ function filePathForEvent(event: TraceEvent): string | undefined {
   ]);
 }
 
+export type AgentActivity = {
+  moments: number;
+  commands: number;
+  files: string[];
+};
+
+// Summarize what one agent actually did from the raw events (by agentId), so a
+// subagent's reads — which the trunk attributes to the parent step — are still
+// counted against the agent that performed them.
+export function summarizeAgentActivity(events: TraceEvent[], agentLabel: string): AgentActivity {
+  const actionKinds = new Set<TraceEvent["kind"]>([
+    "file_read",
+    "file_edit",
+    "file_created",
+    "file_deleted",
+    "bash"
+  ]);
+  const actions = events.filter((event) => event.agentId === agentLabel && actionKinds.has(event.kind));
+  const files = [...new Set(actions.map((event) => filePathForEvent(event)).filter((path): path is string => Boolean(path)))];
+  const commands = actions.filter((event) => event.kind === "bash").length;
+  return { commands, files, moments: actions.length };
+}
+
 function shouldMergeSequentialStep(
   previousStep: WorkflowStep | undefined,
   nextStep: WorkflowStep,
