@@ -1797,7 +1797,7 @@ function uniqueFileCount(step: WorkflowStep): number {
 // Inspector body for a moment: when it aggregates several files, list them so
 // the operator can see exactly what "Created 12 files" covered.
 function aggregatedStepDescription(step: WorkflowStep): string {
-  if (step.kind === "change") {
+  if (step.kind === "change" || step.kind === "context") {
     const files = [...new Set(step.branches.filter((branch) => branch.kind === "file").map((branch) => branch.label))];
     if (files.length > 1) {
       return `${files.length} files: ${files.map(fileNameFromPath).join(", ")}`;
