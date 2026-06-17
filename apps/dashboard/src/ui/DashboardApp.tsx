@@ -43,10 +43,15 @@ const TREE_COLUMN_GAP = 14;
 const TREE_ROW_HEIGHT = 46;
 const TREE_ROW_GAP = 26;
 const TREE_MIN_SCALE = 0.12;
-// Never upscale: the tree transform multiplies font sizes, so magnifying small
-// runs made the same node title render at different effective sizes per run.
-// Aggregation keeps node counts low enough that 1:1 fits without shrinking.
+// The auto-fit never upscales past 1:1 — the tree transform multiplies font
+// sizes, so magnifying small runs would render the same node title at different
+// effective sizes per run. Manual zoom (below) is what lets a user push past it.
 const TREE_MAX_SCALE = 1;
+// Manual zoom is a multiplier layered on top of the auto-fit scale: 1 = fitted,
+// >1 magnifies to read a dense run, <1 pulls back. Bounds keep it usable.
+const USER_ZOOM_MIN = 0.4;
+const USER_ZOOM_MAX = 4;
+const USER_ZOOM_STEP = 1.2;
 
 type ApiResponse<T> = {
   ok: boolean;
@@ -443,6 +448,10 @@ function SessionMap({
   const treeLayout = useMemo(() => createAgentTreeLayout(steps), [steps]);
   const treeMetrics = useMemo(() => createTreeLayoutMetrics(treeLayout), [treeLayout]);
   const [treeFitScale, setTreeFitScale] = useState(1);
+  const [userZoom, setUserZoom] = useState(1);
+  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  // The scale actually applied to the tree: auto-fit × the user's manual zoom.
+  const appliedScale = clamp(treeFitScale * userZoom, TREE_MIN_SCALE * 0.5, USER_ZOOM_MAX);
   const selectedAgentIsRoot =
     selectedAgentLabel !== null && !treeLayout.lanes.some((lane) => lane.id !== "root" && lane.label === selectedAgentLabel);
   const fileConnections = useMemo(() => createFileConnections(steps), [steps]);
@@ -507,8 +516,8 @@ function SessionMap({
       const dy = event.clientY - nodeDrag.startY;
       moved = moved || Math.abs(dx) > 2 || Math.abs(dy) > 2;
       if (!moved) return;
-      const scaledDx = dx / treeFitScale;
-      const scaledDy = dy / treeFitScale;
+      const scaledDx = dx / appliedScale;
+      const scaledDy = dy / appliedScale;
       setNodeOffsets((current) => {
         const next = { ...current };
         for (const id of nodeDrag.nodeIds) {
@@ -540,7 +549,7 @@ function SessionMap({
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", stop);
     };
-  }, [nodeDrag, onSelectEvent, treeFitScale]);
+  }, [nodeDrag, onSelectEvent, appliedScale]);
 
   useEffect(() => {
     if (!selectionDrag) return undefined;
@@ -612,6 +621,29 @@ function SessionMap({
       return next.size === current.size ? current : next;
     });
   }, [treeItemIds]);
+
+  // Wheel over the map: pinch / ctrl+wheel zooms, a plain wheel pans. Attached
+  // natively (not via React's passive onWheel) so we can preventDefault and stop
+  // the page from scrolling underneath the canvas.
+  useEffect(() => {
+    const container = mapRef.current;
+    if (!container) return undefined;
+    const onWheel = (event: WheelEvent) => {
+      // Don't hijack scrolling inside the docked file panel or the inspector.
+      const target = event.target as HTMLElement | null;
+      if (target?.closest(".fileStructure, .glassInspector")) return;
+      event.preventDefault();
+      if (event.ctrlKey || event.metaKey) {
+        const factor = Math.exp(-event.deltaY * 0.0015);
+        setUserZoom((zoom) => clamp(zoom * factor, USER_ZOOM_MIN, USER_ZOOM_MAX));
+      } else {
+        setPan((current) => ({ x: current.x - event.deltaX, y: current.y - event.deltaY }));
+      }
+      requestLayoutMeasure();
+    };
+    container.addEventListener("wheel", onWheel, { passive: false });
+    return () => container.removeEventListener("wheel", onWheel);
+  }, []);
 
   useLayoutEffect(() => {
     const container = mapRef.current;
@@ -840,10 +872,21 @@ function SessionMap({
       start: point
     });
   };
+  const zoomBy = (factor: number) => {
+    setUserZoom((zoom) => clamp(zoom * factor, USER_ZOOM_MIN, USER_ZOOM_MAX));
+    requestLayoutMeasure();
+  };
+  const resetView = () => {
+    setUserZoom(1);
+    setPan({ x: 0, y: 0 });
+    requestLayoutMeasure();
+  };
   const resetLayout = () => {
     setAutoLayouting(true);
     setSelectedNodeIds(new Set());
     onClearFocus();
+    setUserZoom(1);
+    setPan({ x: 0, y: 0 });
     window.requestAnimationFrame(() => {
       setNodeOffsets({});
       requestLayoutMeasure();
@@ -860,6 +903,27 @@ function SessionMap({
         </div>
         <div className="workflowTools">
           <span>{steps.length} moments · {Math.max(0, treeLayout.lanes.length - 1)} branches</span>
+          <div className="zoomControls" role="group" aria-label="Zoom the session map">
+            <button
+              onClick={() => zoomBy(1 / USER_ZOOM_STEP)}
+              type="button"
+              aria-label="Zoom out"
+              disabled={userZoom <= USER_ZOOM_MIN + 0.001}
+            >
+              −
+            </button>
+            <button onClick={resetView} type="button" aria-label="Reset zoom" title="Reset zoom (100% = fit)">
+              {Math.round(userZoom * 100)}%
+            </button>
+            <button
+              onClick={() => zoomBy(USER_ZOOM_STEP)}
+              type="button"
+              aria-label="Zoom in"
+              disabled={userZoom >= USER_ZOOM_MAX - 0.001}
+            >
+              +
+            </button>
+          </div>
           <button onClick={resetLayout} type="button">
             Auto layout
           </button>
@@ -875,9 +939,11 @@ function SessionMap({
         style={
           {
             "--files-width": `${filePanelWidth}px`,
-            "--tree-scale": treeFitScale,
-            "--tree-render-width": `${Math.round(treeMetrics.width * treeFitScale)}px`,
-            "--tree-render-height": `${Math.round(treeMetrics.height * treeFitScale)}px`
+            "--tree-scale": appliedScale,
+            "--tree-pan-x": `${pan.x}px`,
+            "--tree-pan-y": `${pan.y}px`,
+            "--tree-render-width": `${Math.round(treeMetrics.width * appliedScale)}px`,
+            "--tree-render-height": `${Math.round(treeMetrics.height * appliedScale)}px`
           } as CSSProperties
         }
       >
