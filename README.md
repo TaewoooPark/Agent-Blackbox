@@ -25,7 +25,7 @@ Agent-Blackbox is a **local-first flight recorder for coding agents**. It turns 
 [**taewoopark.com** — author site](https://taewoopark.com)
 
 <p align="center">
-  <img src="./docs/screenshots/session-map.jpeg" alt="Agent-Blackbox session map — a fizzbuzz debugging run rendered as a vertical spine of moments: Started a session, Prompt received, Tests failed (red), Changed a file, Tests passed (green), with the touched files docked top-right and connector lines linking moments to files." width="100%">
+  <img src="./docs/screenshots/session-map.jpeg" alt="Agent-Blackbox session map — a multi-agent run ('Stabilize multi-agent workflow orchestration and visual audit map') rendered as a trunk of moments that fork into subagent branches (researcher, architect, security, qa, release-notes, perf-auditor), with the touched files docked top-right and connector lines linking moments to files." width="100%">
 </p>
 
 ---
@@ -89,7 +89,7 @@ The gap between what an agent *says* and what it *does* is where bugs, overconfi
 - **One-command bootstrap** — `npm run up` installs the recorder plugin, starts the daemon, and serves the dashboard.
 
 <p align="center">
-  <img src="./docs/screenshots/subagent.jpeg" alt="Agent-Blackbox subagent view — the build agent delegates to a 'general' subagent which forks into its own SUBAGENT branch; the anchored detail popover shows the subagent is active, ran 1 moment on its lane, and touched calc.js." width="100%">
+  <img src="./docs/screenshots/subagent.jpeg" alt="Agent-Blackbox focus view — a risk moment ('Permission was needed') is selected, dimming the rest of the map, with an anchored detail popover explaining the security subagent requested approval before exposing raw prompt text." width="100%">
 </p>
 
 ---
@@ -127,10 +127,10 @@ AGENT_BLACKBOX_DAEMON_URL=http://127.0.0.1:47831 \
   "Read the relevant code, run the tests, and summarize the result."
 ```
 
-Open the dashboard URL it printed (default `http://127.0.0.1:5173/`) and watch the run assemble itself live.
+Open the dashboard URL it printed (default `http://127.0.0.1:5173/`) and watch the run assemble itself live. When you need to continue the run elsewhere — a teammate, the next agent, or the same agent after a context reset — export a structured **handoff**:
 
 <p align="center">
-  <img src="./docs/screenshots/getting-started.jpeg" alt="Agent-Blackbox getting-started state — when no runs are recorded yet, the session map shows a card with the exact commands to start the recorder and run the agent, plus the live daemon URL." width="100%">
+  <img src="./docs/screenshots/handoff.jpeg" alt="Agent-Blackbox handoff summary — a panel over the session map listing the run's files in play, decisions, commands / verification, failed attempts, blockers, promise checks, and the next safe action, with a one-click Copy markdown button." width="100%">
 </p>
 
 ---
