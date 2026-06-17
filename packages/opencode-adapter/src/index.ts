@@ -1,9 +1,11 @@
+import type { TraceEvent } from "@agent-blackbox/core";
 import {
   normalizeOpenCodeEvent,
   normalizeSyntheticUserPrompt,
   normalizeToolAfter,
   normalizeToolBefore,
   shouldRecordOpenCodeEvent,
+  subagentSessionFromEvent,
   type OpenCodeNormalizerContext
 } from "./normalize.js";
 import { createTraceSink, resolveRecorderOptions } from "./sink.js";
@@ -75,6 +77,17 @@ function createOpenCodeEventFactory(options: {
 }) {
   let seq = 0;
   const promptSessions = new Set<string>();
+  const subagentSessions = new Map<string, { agent: string; parentId: string }>();
+  const attributeToSubagent = (event: TraceEvent): TraceEvent => {
+    const owner = subagentSessions.get(event.sessionId);
+    if (!owner) return event;
+    return {
+      ...event,
+      agentId: owner.agent,
+      agentRole: "subagent",
+      parentSessionId: event.parentSessionId ?? owner.parentId
+    };
+  };
   const nextContext = (): OpenCodeNormalizerContext => {
     seq += 1;
     return {
@@ -89,10 +102,14 @@ function createOpenCodeEventFactory(options: {
 
   return {
     async writeEvent(rawEvent: unknown): Promise<void> {
+      const subagent = subagentSessionFromEvent(rawEvent);
+      if (subagent) {
+        subagentSessions.set(subagent.sessionId, { agent: subagent.agent, parentId: subagent.parentId });
+      }
       if (!shouldRecordOpenCodeEvent(rawEvent)) {
         return;
       }
-      const event = normalizeOpenCodeEvent(rawEvent, nextContext());
+      const event = attributeToSubagent(normalizeOpenCodeEvent(rawEvent, nextContext()));
       await options.sink.write(event);
       if (options.cliPrompt && event.kind === "session_created" && !promptSessions.has(event.sessionId)) {
         promptSessions.add(event.sessionId);
@@ -100,10 +117,10 @@ function createOpenCodeEventFactory(options: {
       }
     },
     async writeToolBefore(input: Record<string, unknown>, output: Record<string, unknown>): Promise<void> {
-      await options.sink.write(normalizeToolBefore(input, output, nextContext()));
+      await options.sink.write(attributeToSubagent(normalizeToolBefore(input, output, nextContext())));
     },
     async writeToolAfter(input: Record<string, unknown>, output: Record<string, unknown>): Promise<void> {
-      await options.sink.write(normalizeToolAfter(input, output, nextContext()));
+      await options.sink.write(attributeToSubagent(normalizeToolAfter(input, output, nextContext())));
     }
   };
 }

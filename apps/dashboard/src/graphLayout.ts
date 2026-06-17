@@ -761,7 +761,9 @@ function contextualBranchForEvent(event: TraceEvent, treeIsEmpty: boolean): Work
       detail: event.kind === "subagent_spawned" ? "subagent" : "agent"
     });
   }
-  if (event.kind === "session_created" && (event.parentSessionId || !treeIsEmpty)) {
+  // A subagent's own session.created is already represented by the
+  // subagent_spawned moment from the task tool, so don't add a second card.
+  if (event.kind === "session_created" && event.agentRole !== "subagent" && (event.parentSessionId || !treeIsEmpty)) {
     return makeBranch(event, {
       kind: "agent",
       label: event.agentId ?? event.agentRole ?? event.sessionId,

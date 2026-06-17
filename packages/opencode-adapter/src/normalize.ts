@@ -58,6 +58,22 @@ export function shouldRecordOpenCodeEvent(rawEvent: unknown): boolean {
   return !ignoredEventTypes.has(type);
 }
 
+// A subagent's session is announced by a `session.created` whose info carries a
+// parentID. Returns that linkage so the recorder can attribute every later
+// event in the session to the subagent that owns it.
+export function subagentSessionFromEvent(
+  rawEvent: unknown
+): { sessionId: string; agent: string; parentId: string } | null {
+  const raw = asRecord(rawEvent);
+  if (readString(raw, ["type"]) !== "session.created") return null;
+  const properties = asRecord(raw.properties);
+  const info = asRecord(properties.info);
+  const parentId = readString(info, ["parentID", "parentId"]);
+  const sessionId = readString(info, ["id"]) ?? readString(properties, ["sessionID", "sessionId"]);
+  if (!parentId || !sessionId) return null;
+  return { agent: readString(info, ["agent"]) ?? "subagent", parentId, sessionId };
+}
+
 export function normalizeOpenCodeEvent(rawEvent: unknown, context: OpenCodeNormalizerContext): TraceEvent {
   const raw = asRecord(rawEvent);
   const type = readString(raw, ["type"]) ?? "unknown";
@@ -214,9 +230,17 @@ export function normalizeToolAfter(
       truncated: payload.truncated
     }
   };
-  const agentId = extractAgentId(input);
-  if (agentId) {
-    traceInput.agentId = agentId;
+  if (observed?.kind === "subagent_spawned") {
+    // Attribute the spawn to the subagent it launched, so the workflow tree
+    // forks a branch labeled with that subagent rather than the parent agent.
+    const subagentId = readString(observed.payload, ["agent"]);
+    traceInput.agentId = subagentId ?? extractAgentId(input) ?? "subagent";
+    traceInput.agentRole = "subagent";
+  } else {
+    const agentId = extractAgentId(input);
+    if (agentId) {
+      traceInput.agentId = agentId;
+    }
   }
   return createTraceEvent(context.seq, traceInput);
 }
@@ -275,6 +299,24 @@ function deriveObservedToolResult(
     return {
       kind: tool === "write" ? "file_created" : "file_edit",
       summary: path ? `Edited ${path}` : "Edited file",
+      payload: observedPayload
+    };
+  }
+
+  if (tool === "task") {
+    const subagentType = readString(payload, ["input.args.subagent_type", "output.args.subagent_type"]);
+    const description = readString(payload, ["input.args.description", "output.args.description"]);
+    const observedPayload = compactJsonObject({
+      tool,
+      source: "tool.after",
+      agent: subagentType,
+      description,
+      prompt: shortenOptional(readString(payload, ["input.args.prompt", "output.args.prompt"]), 600),
+      callID: readString(payload, ["input.callID"])
+    });
+    return {
+      kind: "subagent_spawned",
+      summary: subagentType ? `Delegated to ${subagentType} subagent` : "Delegated to a subagent",
       payload: observedPayload
     };
   }
