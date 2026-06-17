@@ -177,6 +177,49 @@ describe("OpenCode event normalization", () => {
     expect(event.payload.outputPreview).toBe("pass");
   });
 
+  it("promotes a completed skill tool to a named tool_result event", () => {
+    const event = normalizeToolAfter(
+      {
+        tool: "skill",
+        sessionID: "session-1",
+        args: { name: "algorithmic-art" }
+      },
+      {
+        title: "Loaded skill: algorithmic-art"
+      },
+      {
+        runId: "run-opencode",
+        seq: 6,
+        defaultSessionId: "fallback-session"
+      }
+    );
+
+    expect(event.kind).toBe("tool_result");
+    expect(event.summary).toBe("Used the algorithmic-art skill");
+    expect(event.payload.tool).toBe("skill");
+    expect(event.payload.skill).toBe("algorithmic-art");
+  });
+
+  it("keeps an unrecognized tool as a renderable tool_result instead of dropping it", () => {
+    const event = normalizeToolAfter(
+      {
+        tool: "grep",
+        sessionID: "session-1",
+        args: { pattern: "TODO" }
+      },
+      {},
+      {
+        runId: "run-opencode",
+        seq: 7,
+        defaultSessionId: "fallback-session"
+      }
+    );
+
+    expect(event.kind).toBe("tool_result");
+    expect(event.summary).toBe("Used grep");
+    expect(event.payload.tool).toBe("grep");
+  });
+
   it("does not store raw OpenCode message text in default event payloads", () => {
     const event = normalizeOpenCodeEvent(
       {
