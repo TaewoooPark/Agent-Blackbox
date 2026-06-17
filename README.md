@@ -25,7 +25,7 @@ Agent-Blackbox is a **local-first flight recorder for coding agents**. It turns 
 [**taewoopark.com** — author site](https://taewoopark.com)
 
 <p align="center">
-  <img src="./docs/screenshots/session-map.jpeg" alt="Agent-Blackbox session map — a multi-agent run ('Stabilize multi-agent workflow orchestration and visual audit map') rendered as a trunk of moments that fork into subagent branches (researcher, architect, security, qa, release-notes, perf-auditor), with the touched files docked top-right and connector lines linking moments to files." width="100%">
+  <img src="./docs/screenshots/session-map.jpeg" alt="Agent-Blackbox session map — a real multi-agent OpenCode run ('Utilities library cleanup with peer review'): the build agent's trunk shows three test fail (red) → fix → pass (green) loops, while the explore and general subagents fork into their own lanes with 'Read N files' nodes, the touched files docked top-right." width="100%">
 </p>
 
 ---
@@ -89,7 +89,7 @@ The gap between what an agent *says* and what it *does* is where bugs, overconfi
 - **One-command bootstrap** — `npm run up` installs the recorder plugin, starts the daemon, and serves the dashboard.
 
 <p align="center">
-  <img src="./docs/screenshots/subagent.jpeg" alt="Agent-Blackbox focus view — a risk moment ('Permission was needed') is selected, dimming the rest of the map, and the inspector shows its detail: the security agent requested approval before exposing raw prompt text in demo traces." width="100%">
+  <img src="./docs/screenshots/features.jpeg" alt="Four-panel overview of Agent-Blackbox features. Top-left: the live session map of a multi-agent run with red fail and green pass moments. Top-right: per-agent focus, isolating one agent's lane while the rest dims. Bottom-left: a subagent's work attributed to its own lane, with a 'Read 15 files' moment detail listing the files. Bottom-right: the handoff summary export panel." width="100%">
 </p>
 
 ---
@@ -130,7 +130,7 @@ AGENT_BLACKBOX_DAEMON_URL=http://127.0.0.1:47831 \
 Open the dashboard URL it printed (default `http://127.0.0.1:5173/`) and watch the run assemble itself live. When you need to continue the run elsewhere — a teammate, the next agent, or the same agent after a context reset — export a structured **handoff**:
 
 <p align="center">
-  <img src="./docs/screenshots/handoff.jpeg" alt="Agent-Blackbox handoff summary — a panel over the session map listing the run's files in play, decisions, commands / verification, failed attempts, blockers, promise checks, and the next safe action, with a one-click Copy markdown button." width="100%">
+  <img src="./docs/screenshots/handoff.jpeg" alt="Agent-Blackbox handoff summary — a panel over the multi-agent session map listing the run's files in play, decisions, commands / verification, failed attempts, blockers, promise checks, and the next safe action, with a one-click Copy markdown button." width="100%">
 </p>
 
 ---
