@@ -1815,6 +1815,9 @@ function aggregatedStepDescription(step: WorkflowStep): string {
 // When consecutive identical moments are aggregated into one node, surface the
 // count in the title so "Created a file" x6 reads as "Created 6 files".
 function stepDisplayTitle(step: WorkflowStep, fileCount: number): string {
+  if (step.kind === "context" && step.title.startsWith("Read") && fileCount > 1) {
+    return `Read ${fileCount} files`;
+  }
   if (step.kind === "change" && fileCount > 1) {
     const verb = step.title.startsWith("Created")
       ? "Created"

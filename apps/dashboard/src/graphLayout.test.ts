@@ -357,6 +357,27 @@ describe("dashboard graph helpers", () => {
     expect(fileBranches[0]?.detail).toBe("created");
   });
 
+  it("attributes a subagent's reads to its own lane as aggregated steps", () => {
+    const read = (seq: number, file: string) =>
+      createTraceEvent(seq, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "ses-explore",
+        agentId: "explore",
+        agentRole: "subagent",
+        kind: "file_read",
+        summary: `Read ${file}`,
+        payload: { source: "tool.after", path: file }
+      });
+    const steps = createWorkflowSteps([read(10, "$PROJECT/a.js"), read(11, "$PROJECT/b.js"), read(12, "$PROJECT/c.js")]);
+    // The three reads collapse into one step on the explore lane.
+    expect(steps).toHaveLength(1);
+    expect(steps[0]?.agentLabel).toBe("explore");
+    expect(steps[0]?.title).toBe("Read a file");
+    const files = steps[0]?.branches.filter((branch) => branch.kind === "file").map((branch) => branch.label) ?? [];
+    expect(files.sort()).toEqual(["$PROJECT/a.js", "$PROJECT/b.js", "$PROJECT/c.js"]);
+  });
+
   it("aggregates consecutive file creations into one moment listing every file", () => {
     const mk = (seq: number, file: string) =>
       createTraceEvent(seq, {
