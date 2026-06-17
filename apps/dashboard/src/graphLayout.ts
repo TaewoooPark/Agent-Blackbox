@@ -224,6 +224,18 @@ export function createWorkflowSteps(events: TraceEvent[]): WorkflowStep[] {
       }
       if (branch.kind === "agent" && steps.length > 0) {
         steps[steps.length - 1]!.branches.push(branch);
+      } else if (branch.kind === "file" && event.agentRole === "subagent") {
+        // A subagent's reads are its own work — surface them as steps on the
+        // subagent's lane (makeStep tags agentLabel) instead of folding them
+        // into the primary trunk. Consecutive reads aggregate into "Read N files".
+        steps.push(
+          makeStep(event, {
+            kind: "context",
+            title: "Read a file",
+            description: branch.description,
+            branches: [branch]
+          })
+        );
       } else {
         pendingBranches.push(branch);
       }
@@ -305,7 +317,7 @@ function canAggregateSteps(previous: WorkflowStep, next: WorkflowStep): boolean 
   if (previous.kind !== next.kind) return false;
   if (previous.title !== next.title) return false;
   if (previous.agentLabel !== next.agentLabel) return false;
-  return previous.kind === "change" || previous.kind === "verification";
+  return previous.kind === "change" || previous.kind === "verification" || previous.kind === "context";
 }
 
 export function filterWorkflowStepsBySeq(steps: WorkflowStep[], replaySeq: number): WorkflowStep[] {
