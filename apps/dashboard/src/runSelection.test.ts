@@ -12,6 +12,16 @@ function event(seq: number, runId: string, ts: string) {
   });
 }
 
+function action(seq: number, runId: string, ts: string) {
+  return createTraceEvent(seq, {
+    ts,
+    host: "opencode",
+    runId,
+    sessionId: `session-${runId}`,
+    kind: "file_edit"
+  });
+}
+
 describe("run selection", () => {
   it("returns null for an empty log", () => {
     expect(latestRunId([])).toBeNull();
@@ -28,6 +38,24 @@ describe("run selection", () => {
 
     // Selecting by seq would wrongly stick on "old-run" (seq 824 > 2).
     expect(latestRunId(events)).toBe("new-run");
+  });
+
+  it("ignores an idle session's heartbeats so the run with real work wins", () => {
+    const events = [
+      // a run that just did real work a moment ago
+      action(1, "fresh-run", "2026-06-17T10:00:00.000Z"),
+      // an old TUI session left open, still emitting heartbeats afterwards
+      action(40, "zombie-run", "2026-06-17T02:00:00.000Z"),
+      event(41, "zombie-run", "2026-06-17T10:05:00.000Z") // heartbeat newer than fresh-run's work
+    ];
+    // By raw timestamp the zombie heartbeat is newest, but its last real work is old.
+    expect(latestRunId(events)).toBe("fresh-run");
+    expect(listRuns(events)[0]?.runId).toBe("fresh-run");
+  });
+
+  it("falls back to any event when no run has meaningful activity", () => {
+    const events = [event(1, "a", "2026-06-17T01:00:00.000Z"), event(2, "b", "2026-06-17T02:00:00.000Z")];
+    expect(latestRunId(events)).toBe("b");
   });
 
   it("breaks timestamp ties by append order so the newest run wins", () => {
