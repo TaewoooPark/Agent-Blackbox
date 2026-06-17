@@ -89,7 +89,7 @@ The gap between what an agent *says* and what it *does* is where bugs, overconfi
 - **One-command bootstrap** — `npm run up` installs the recorder plugin, starts the daemon, and serves the dashboard.
 
 <p align="center">
-  <img src="./docs/screenshots/subagent.jpeg" alt="Agent-Blackbox focus view — a risk moment ('Permission was needed') is selected, dimming the rest of the map, with an anchored detail popover explaining the security subagent requested approval before exposing raw prompt text." width="100%">
+  <img src="./docs/screenshots/subagent.jpeg" alt="Agent-Blackbox focus view — a risk moment ('Permission was needed') is selected, dimming the rest of the map, and the inspector shows its detail: the security agent requested approval before exposing raw prompt text in demo traces." width="100%">
 </p>
 
 ---
