@@ -41,6 +41,19 @@ describe("OpenCode event normalization", () => {
     expect(shouldRecordOpenCodeEvent({})).toBe(true);
   });
 
+  it("turns the task tool into a subagent_spawned moment attributed to the subagent", () => {
+    const event = normalizeToolAfter(
+      { tool: "task", sessionID: "ses_parent" },
+      { args: { subagent_type: "general", description: "List functions", prompt: "List exports of calc.js" } },
+      { runId: "run-opencode", seq: 7, defaultSessionId: "unknown-session" }
+    );
+
+    expect(event.kind).toBe("subagent_spawned");
+    expect(event.agentId).toBe("general");
+    expect(event.agentRole).toBe("subagent");
+    expect(event.payload.description).toBe("List functions");
+  });
+
   it("maps file edited events to canonical file_edit trace events", () => {
     const event = normalizeOpenCodeEvent(
       {
