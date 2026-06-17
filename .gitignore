@@ -20,3 +20,7 @@ dist/
 .turbo/
 .vite/
 coverage/
+
+# Tracked documentation assets
+!docs/screenshots/
+!docs/screenshots/*.jpeg

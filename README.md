@@ -1,82 +1,182 @@
 # Agent-Blackbox
 
-Local-first workflow recorder for coding agents.
+**Open your coding agent's black box.**
 
-Agent-Blackbox turns agent execution into a replayable operational graph: what each agent read, changed, ran, decided, delegated, blocked on, and verified.
+<p align="center">
+  <img src="https://img.shields.io/github/stars/TaewoooPark/Agent-Blackbox?style=flat-square&logo=github&logoColor=white&labelColor=000000&color=333333" alt="GitHub stars">
+  <img src="https://img.shields.io/github/last-commit/TaewoooPark/Agent-Blackbox?style=flat-square&labelColor=000000&color=333333" alt="Last commit">
+  <img src="https://img.shields.io/github/languages/top/TaewoooPark/Agent-Blackbox?style=flat-square&labelColor=000000&color=333333" alt="Top language">
+  &nbsp;
+  <img src="https://img.shields.io/badge/TypeScript-000000?style=flat-square&logo=typescript&logoColor=white&labelColor=000000" alt="TypeScript">
+  <img src="https://img.shields.io/badge/React-000000?style=flat-square&logo=react&logoColor=white&labelColor=000000" alt="React">
+  <img src="https://img.shields.io/badge/Vite-000000?style=flat-square&logo=vite&logoColor=white&labelColor=000000" alt="Vite">
+  <img src="https://img.shields.io/badge/Node.js-000000?style=flat-square&logo=nodedotjs&logoColor=white&labelColor=000000" alt="Node.js">
+  <img src="https://img.shields.io/badge/Vitest-000000?style=flat-square&logo=vitest&logoColor=white&labelColor=000000" alt="Vitest">
+  &nbsp;
+  <img src="https://img.shields.io/badge/OpenCode-000000?style=flat-square&labelColor=000000&color=000000" alt="OpenCode">
+  <img src="https://img.shields.io/badge/Local--first-000000?style=flat-square&labelColor=000000&color=000000" alt="Local-first">
+  <img src="https://img.shields.io/badge/Live%20stream-000000?style=flat-square&labelColor=000000&color=000000" alt="Live">
+</p>
 
-This repository is intentionally scaffolded around a host-agnostic core plus thin host adapters. OpenCode is the first target adapter; PI and other harnesses come later.
+Agent-Blackbox is a **local-first flight recorder for coding agents**. It turns every agent run into a **live, replayable operational graph** — what the agent read, changed, ran, decided, delegated, blocked on, and verified — reconstructed from observed events, not from the agent's own summary.
 
-## Packages
+> *"The transcript is what the agent said. The black box is what it did."*
 
-```text
-apps/
-  daemon/             local ingest, replay, and websocket daemon
-  dashboard/          operator console
-packages/
-  core/               canonical events, graph model, redaction, replay
-  storage/            NDJSON persistence
-  opencode-adapter/   OpenCode plugin/SDK bridge
+[**taewoopark.com** — author site](https://taewoopark.com)
+
+<p align="center">
+  <img src="./docs/screenshots/session-map.jpeg" alt="Agent-Blackbox session map — a fizzbuzz debugging run rendered as a vertical spine of moments: Started a session, Prompt received, Tests failed (red), Changed a file, Tests passed (green), with the touched files docked top-right and connector lines linking moments to files." width="100%">
+</p>
+
+---
+
+## Why Agent-Blackbox?
+
+You hand a task to a coding agent. It reads a dozen files, runs commands, edits code, sometimes spawns subagents, and hands you back a tidy summary. Today your only window into that work is a scrolling terminal transcript — and a summary you have to take on faith.
+
+Agent-Blackbox replaces that with a structured, evidence-backed record you can actually inspect.
+
+| Reading the transcript | Agent-Blackbox |
+|---|---|
+| Scroll a linear log | A **session map** you read at a glance |
+| Trust the agent's summary | Reconstructed from **observed events** |
+| "It passed the tests" | See the test **fail (red) → fix → pass (green)** |
+| Lose the thread on long runs | **Scrub and replay** any moment in time |
+| One opaque agent | **Subagent genealogy** — who delegated what |
+| Re-read everything to resume | One-click **handoff** summary |
+| Your code & prompts leave the machine | **Local-first**, minimal capture by default |
+
+---
+
+## Watch it happen — live
+
+The map is not a post-mortem. It is built **as the agent works**: the recorder streams events to a local daemon, and the dashboard updates over a WebSocket — moments appear, files connect, tokens tick, a failure flashes red, the fix turns it green. No refresh, no replay required.
+
+That is the whole idea: **open the black box while the flight is still in the air.**
+
+---
+
+## Philosophy — observe, don't trust the narrator
+
+The gap between what an agent *says* and what it *does* is where bugs, overconfidence, and unverified claims live. Agent-Blackbox is built on one principle:
+
+> **Derive the truth from observed events, never from free-form self-report.**
+
+- **Behavior, not narration.** Every node on the map is an event the agent actually emitted — a read, an edit, a command and its exit code, a delegation — not a sentence it wrote about itself.
+- **A flight recorder, not a chat log.** When an agent takes consequential actions on real code, you want a faithful, replayable record that is independent of the pilot's account.
+- **Local-first by default.** Traces stay on your machine. Raw prompts, secrets, and private file contents are redacted unless you explicitly opt in.
+- **Host-agnostic core.** A canonical event + graph core with thin host adapters, so the same black box can sit behind any agent harness — OpenCode is the first.
+
+---
+
+## Features
+
+```
+   ┌──────────────┬─────────────────────────────────┬──────────────┐
+   │ agent lanes  │          session map            │  file panel  │
+   │ + tokens     │   (live operational graph)      │ (top-right)  │
+   │ + timeline   │   read → edit → fail → fix → ✓   │              │
+   └──────────────┴─────────────────────────────────┴──────────────┘
 ```
 
-## OpenCode MVP Quickstart
+- **Live session map** — the run forms in real time as a spine of meaningful moments; consecutive repeats aggregate (`Created 12 files`, `Tests passed ×6`) so even large runs stay scannable.
+- **Operational tones** — neutral / work / decision; **risk in red**, **success in green** — failures and resolutions read at a glance, on both the map and the timeline heatmap.
+- **Replay** — drag the timeline to any sequence point; the graph and file panel reflect state at exactly that moment.
+- **Click to focus** — select any moment for a detail popover anchored beside it (evidence, files, tokens); click a file to highlight every moment that touched it.
+- **Subagent genealogy** — real delegations (the `task` tool / child sessions) fork into their own branch, attributed to the subagent that did the work.
+- **Handoff export** — generate a structured continuation summary (objective, files in play, decisions, commands, failures, blockers, next safe action) and copy it as Markdown.
+- **Run picker** — one project log can hold many runs; the console follows the most recently *active* run and lets you pin any past one.
+- **One-command bootstrap** — `npm run up` installs the recorder plugin, starts the daemon, and serves the dashboard.
 
-Build the workspace:
+<p align="center">
+  <img src="./docs/screenshots/subagent.jpeg" alt="Agent-Blackbox subagent view — the build agent delegates to a 'general' subagent which forks into its own SUBAGENT branch; the anchored detail popover shows the subagent is active, ran 1 moment on its lane, and touched calc.js." width="100%">
+</p>
+
+---
+
+## How it works
+
+```
+ opencode run ──hooks──▶  recorder plugin  ──events──▶   daemon   ──/stream──▶  dashboard
+                          redact + normalize            NDJSON log            live session map
+                          (host adapter)                + graph/replay        (this UI)
+```
+
+- **`packages/core`** — canonical `TraceEvent`s, the workflow graph model, redaction, replay, audit, and handoff generation.
+- **`packages/opencode-adapter`** — a thin OpenCode plugin that turns host events and tool calls into canonical, redacted events and ships them to the daemon (best-effort, with retries).
+- **`apps/daemon`** — ingests events to a local NDJSON log, materializes the graph, replays it to any point, and pushes live snapshots over WebSocket.
+- **`apps/dashboard`** — the operator console that renders the live session map, replay, inspector, and handoff.
+
+---
+
+## Quickstart
 
 ```bash
 npm install
 npm run build
+
+# One command: install the recorder plugin, start the daemon, serve the dashboard
+npm run up -- --project /path/to/your/project
 ```
 
-Start the local trace daemon for the project you want to observe:
-
-```bash
-node apps/daemon/dist/cli.js daemon --project /path/to/project --port 47831
-```
-
-Install the project-local OpenCode recorder plugin:
-
-```bash
-node apps/daemon/dist/cli.js init-opencode \
-  --project /path/to/project \
-  --adapter-package file:/absolute/path/to/Agent-Blackbox/packages/opencode-adapter \
-  --daemon-url http://127.0.0.1:47831
-```
-
-Then run OpenCode in that project:
+Then run your agent inside that project (the `up` output prints the exact line):
 
 ```bash
 AGENT_BLACKBOX_DAEMON_URL=http://127.0.0.1:47831 \
-AGENT_BLACKBOX_RUN_ID=my-run-id \
-opencode run --dir /path/to/project "Read the relevant file, run tests, and summarize the result."
+  opencode run --dir /path/to/your/project \
+  "Read the relevant code, run the tests, and summarize the result."
 ```
 
-Start the dashboard:
+Open the dashboard URL it printed (default `http://127.0.0.1:5173/`) and watch the run assemble itself live.
 
-```bash
-VITE_AGENT_BLACKBOX_DAEMON_URL=http://127.0.0.1:47831 \
-npm run dev --workspace @agent-blackbox/dashboard -- --port 5173
-```
+<p align="center">
+  <img src="./docs/screenshots/getting-started.jpeg" alt="Agent-Blackbox getting-started state — when no runs are recorded yet, the session map shows a card with the exact commands to start the recorder and run the agent, plus the live daemon URL." width="100%">
+</p>
 
-Open `http://127.0.0.1:5173/`. The dashboard reads daemon snapshots, receives live updates over `/stream`, can scrub replay by event sequence, shows evidence-linked file/command nodes, evaluates simple model promise checks, and exports a handoff summary.
+---
 
 ## Daemon API
 
-- `POST /events` accepts canonical `TraceEvent` JSON.
-- `GET /events` returns the durable event log.
-- `GET /graph?seq=<n>` replays the graph up to a sequence.
-- `GET /snapshot?seq=<n>` returns events, graph, audit checks, and handoff markdown.
-- `GET /audit` returns promise checks.
-- `GET /handoff` returns generated handoff markdown.
-- `WS /stream` pushes live snapshots after event ingest.
+| Method & path | Purpose |
+|---|---|
+| `POST /events` | Ingest a canonical `TraceEvent` |
+| `GET /events` | The durable event log |
+| `GET /graph?seq=<n>` | Replay the graph up to a sequence |
+| `GET /snapshot?seq=<n>` | Events, graph, audit checks, and handoff markdown |
+| `GET /audit` | Promise / claim checks |
+| `GET /handoff` | Generated handoff markdown |
+| `WS /stream` | Live snapshots pushed after each ingest |
+
+---
+
+## Project layout
+
+```text
+apps/
+  daemon/             local ingest, replay, static dashboard, and websocket daemon
+  dashboard/          operator console (live session map, replay, inspector, handoff)
+packages/
+  core/               canonical events, graph model, redaction, replay, audit, handoff
+  storage/            NDJSON persistence
+  opencode-adapter/   OpenCode plugin / SDK bridge
+```
 
 ## Development
 
 ```bash
 npm install
-npm run check
+npm run check   # typecheck + tests
 npm run build
 ```
 
-Local traces and planning artifacts are ignored by default. The recorder must stay useful without storing raw prompts, secrets, private file contents, or full command output unless the operator explicitly enables local raw capture.
+---
 
-Current OpenCode normalization promotes completed `read` tools into `file_read` events and completed `bash` tools into `bash` events with exit codes and short output previews. PI, SQLite, and deeper multi-agent harness instrumentation are planned adapters/layers, not part of the current MVP.
+## Roadmap
+
+- More host adapters beyond OpenCode (PI, Claude Code, and other harnesses) on the same canonical core.
+- Deeper audit: claim-vs-evidence verification and risky-command surfacing.
+- Richer multi-agent fleets and cross-run views.
+
+---
+
+<p align="center"><sub>Local-first. Observe, don't trust the narrator.</sub></p>
