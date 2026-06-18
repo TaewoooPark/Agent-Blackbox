@@ -490,6 +490,117 @@ h3 {
   font-size: var(--fs-body);
 }
 
+.contextPanel {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border-color);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+  margin-top: 16px;
+  padding: 10px;
+  -webkit-backdrop-filter: var(--card-blur);
+  backdrop-filter: var(--card-blur);
+}
+
+.contextScore {
+  align-items: baseline;
+  display: flex;
+  gap: 7px;
+  margin-bottom: 9px;
+}
+
+.contextScoreValue {
+  font-size: var(--fs-title);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.contextHeadline {
+  color: var(--text-muted);
+  font-size: var(--fs-label);
+  line-height: 1.3;
+}
+
+.contextMetrics {
+  display: grid;
+  gap: 6px;
+}
+
+.contextMetric {
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+  display: grid;
+  gap: 3px;
+  margin: 0 -4px;
+  padding: 3px 4px;
+  text-align: left;
+  width: calc(100% + 8px);
+}
+
+.contextMetric:hover:not(:disabled) {
+  background: var(--fill-subtle);
+}
+
+.contextMetric:disabled {
+  cursor: default;
+}
+
+.contextMetricTop {
+  align-items: center;
+  display: flex;
+  font-size: var(--fs-body);
+  justify-content: space-between;
+}
+
+.contextMetricLabel {
+  color: var(--text-muted);
+}
+
+.contextMetricValue {
+  color: var(--text-heading);
+  font-weight: 700;
+}
+
+.contextBar {
+  background: var(--fill-subtle);
+  border-radius: 999px;
+  display: block;
+  height: 3px;
+  overflow: hidden;
+}
+
+.contextBarFill {
+  background: var(--text-faint);
+  border-radius: 999px;
+  display: block;
+  height: 100%;
+}
+
+.status-good {
+  color: var(--success);
+}
+
+.status-warn {
+  color: var(--warn-text);
+}
+
+.status-bad {
+  color: var(--danger);
+}
+
+.contextMetric.status-good .contextBarFill {
+  background: var(--success);
+}
+
+.contextMetric.status-warn .contextBarFill {
+  background: var(--warn-text);
+}
+
+.contextMetric.status-bad .contextBarFill {
+  background: var(--danger);
+}
+
 .replayControls {
   align-items: center;
   display: grid;

@@ -1,7 +1,10 @@
 import {
+  computeEfficiencyReport,
   evaluatePromiseChecks,
   generateHandoffMarkdown,
   materializeWorkflowGraph,
+  type EfficiencyMetric,
+  type EfficiencyReport,
   type PromiseCheck,
   type TraceEvent,
   type WorkflowGraph,
@@ -185,6 +188,8 @@ export function DashboardApp() {
   const selectedAgentLabel = selectedAgent?.label ?? null;
   const workflowSteps = useMemo(() => createWorkflowSteps(visibleEvents), [visibleEvents]);
   const tokenTotals = useMemo(() => latestTokenUsage(visibleEvents), [visibleEvents]);
+  const efficiency = useMemo(() => computeEfficiencyReport(visibleEvents), [visibleEvents]);
+  const [metricHighlight, setMetricHighlight] = useState<{ ids: string[]; nonce: number }>({ ids: [], nonce: 0 });
   const sessionName = useMemo(() => sessionDisplayName(visibleEvents, graph?.runId), [visibleEvents, graph]);
   const runHost = visibleEvents[0]?.host ?? null;
   const runStatus = useMemo(() => deriveRunStatus(visibleEvents), [visibleEvents]);
@@ -376,6 +381,12 @@ export function DashboardApp() {
             </button>
           ))}
           <TokenPanel usage={tokenTotals} />
+          <ContextPanel
+            report={efficiency}
+            onSelectMetric={(metric) =>
+              setMetricHighlight((current) => ({ ids: metric.evidenceEventIds, nonce: current.nonce + 1 }))
+            }
+          />
           <div className="timeline">
             <h2>Events</h2>
             <div className="replayControls">
@@ -411,6 +422,7 @@ export function DashboardApp() {
         <SessionMap
           agentNodes={agentNodes}
           events={replayEvents}
+          metricHighlight={metricHighlight}
           onClearFocus={clearFocus}
           onSelectEvent={selectWorkflowEvent}
           onSelectFile={selectFile}
@@ -432,6 +444,7 @@ export function DashboardApp() {
 function SessionMap({
   agentNodes,
   events,
+  metricHighlight,
   onClearFocus,
   onSelectEvent,
   onSelectFile,
@@ -447,6 +460,7 @@ function SessionMap({
 }: {
   agentNodes: WorkflowNode[];
   events: TraceEvent[];
+  metricHighlight: { ids: string[]; nonce: number };
   onClearFocus: () => void;
   onSelectEvent: (eventId: string) => void;
   onSelectFile: (path: string) => void;
@@ -645,6 +659,25 @@ function SessionMap({
       return next.size === current.size ? current : next;
     });
   }, [treeItemIds]);
+
+  // Clicking an efficiency metric in the rail highlights the tree nodes whose
+  // events the metric flagged (re-reads, big injections, failed retries, …).
+  useEffect(() => {
+    if (metricHighlight.ids.length === 0) return;
+    const want = new Set(metricHighlight.ids);
+    const ids = new Set<string>();
+    for (const item of treeLayout.items) {
+      if (item.type === "step") {
+        if (want.has(item.step.eventId) || item.step.branches.some((branch) => want.has(branch.eventId))) {
+          ids.add(item.id);
+        }
+      } else if (want.has(item.branch.eventId)) {
+        ids.add(item.id);
+      }
+    }
+    if (ids.size > 0) setSelectedNodeIds(ids);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [metricHighlight.nonce, treeLayout]);
 
   // Wheel over the map: pinch / ctrl+wheel zooms, a plain wheel pans. Attached
   // natively (not via React's passive onWheel) so we can preventDefault and stop
@@ -2003,6 +2036,51 @@ function TokenPanel({ usage }: { usage: TokenUsage }) {
             <strong>{formatTokenNumber(value)}</strong>
           </div>
         ))}
+      </div>
+    </section>
+  );
+}
+
+function ContextPanel({
+  report,
+  onSelectMetric
+}: {
+  report: EfficiencyReport;
+  onSelectMetric: (metric: EfficiencyMetric) => void;
+}) {
+  if (report.metrics.length === 0) return null;
+  return (
+    <section className="contextPanel" aria-label="Context efficiency">
+      <h2>Context</h2>
+      <div className="contextScore">
+        <strong className={`contextScoreValue status-${report.status}`}>{report.overallScore}</strong>
+        <span className="contextHeadline">
+          {report.headline}
+          {report.estimated ? " · est." : ""}
+        </span>
+      </div>
+      <div className="contextMetrics">
+        {report.metrics.map((metric) => {
+          const clickable = metric.evidenceEventIds.length > 0;
+          return (
+            <button
+              className={`contextMetric status-${metric.status}`}
+              key={metric.id}
+              type="button"
+              onClick={() => onSelectMetric(metric)}
+              disabled={!clickable}
+              title={metric.detail}
+            >
+              <span className="contextMetricTop">
+                <span className="contextMetricLabel">{metric.label}</span>
+                <span className="contextMetricValue">{metric.display}</span>
+              </span>
+              <span className="contextBar">
+                <span className="contextBarFill" style={{ width: `${metric.score}%` } as CSSProperties} />
+              </span>
+            </button>
+          );
+        })}
       </div>
     </section>
   );
