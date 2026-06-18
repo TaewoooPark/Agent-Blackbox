@@ -50,3 +50,5 @@ export {
 } from "./graph.js";
 export type { PromiseCheck, PromiseCheckSeverity, PromiseCheckStatus } from "./audit.js";
 export { evaluatePromiseChecks, generateHandoffMarkdown } from "./audit.js";
+export type { EfficiencyMetric, EfficiencyReport, EfficiencyStatus } from "./efficiency.js";
+export { computeEfficiencyReport } from "./efficiency.js";
