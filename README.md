@@ -25,7 +25,7 @@ Agent-Blackbox is a **local-first flight recorder for coding agents**. It turns 
 [**taewoopark.com** — author site](https://taewoopark.com)
 
 <p align="center">
-  <img src="./docs/screenshots/session-map.jpeg" alt="Agent-Blackbox session map — a real multi-agent OpenCode run ('Utilities library cleanup with peer review'): the build agent's trunk shows three test fail (red) → fix → pass (green) loops, while the explore and general subagents fork into their own lanes with 'Read N files' nodes, the touched files docked top-right." width="100%">
+  <img src="./docs/screenshots/session-map.jpeg" alt="Agent-Blackbox session map — a complex OpenCode run ('Real-time 3D universe engine') rendered as a Mark Lombardi narrative structure: each moment is a hollow ring with a serif label, the trunk and five dotted subagent branches (explore, shader-engineer, physics-engineer, test-runner, docs-writer) join ring-to-ring, and thin sweeping arcs connect each node to the files it touched. Monochrome graphite on paper, with failed tests in oxblood. The right rail shows a 70 context-efficiency score with optimization notations." width="100%">
 </p>
 
 ---
@@ -80,9 +80,9 @@ The gap between what an agent *says* and what it *does* is where bugs, overconfi
 ```
 
 - **Live session map** — the run forms in real time as a spine of meaningful moments; consecutive repeats aggregate (`Created 12 files`, `Tests passed ×6`) so even large runs stay scannable.
-- **Operational tones** — neutral / work / decision; **risk in red**, **success in green** — failures and resolutions read at a glance, on both the map and the timeline heatmap.
-- **Replay** — drag the timeline to any sequence point; the graph and file panel reflect state at exactly that moment.
-- **Click to focus** — select any moment for a detail popover anchored beside it (evidence, files, tokens); click a file to highlight every moment that touched it.
+- **Narrative-structure aesthetic** — a flat, monochrome "Mark Lombardi" diagram: hollow ring nodes, sweeping ring-to-ring arcs, serif labels. Pure graphite on paper (light) or silverpoint on ink (dark); the lone accent is **oxblood, used only for risk/failure**.
+- **Replay** — drag the navigation-chart timeline to any sequence point; the graph and files reflect state at exactly that moment.
+- **Click to focus** — select any moment for a detail popover (evidence, files, tokens); click a file to highlight every moment that touched it, with the connection arcs drawn from each node's ring.
 - **Subagent genealogy** — real delegations (the `task` tool / child sessions) fork into their own branch, attributed to the subagent that did the work.
 - **Handoff export** — generate a structured continuation summary (objective, files in play, decisions, commands, failures, blockers, next safe action) and copy it as Markdown.
 - **Run picker** — one project log can hold many runs; the console follows the most recently *active* run and lets you pin any past one.
@@ -90,7 +90,7 @@ The gap between what an agent *says* and what it *does* is where bugs, overconfi
 - **One-command bootstrap** — `npm run up` installs the recorder plugin, starts the daemon, and serves the dashboard.
 
 <p align="center">
-  <img src="./docs/screenshots/features.jpeg" alt="Four-panel overview of Agent-Blackbox features. Top-left: the live session map of a multi-agent run with red fail and green pass moments. Top-right: per-agent focus, isolating one agent's lane while the rest dims. Bottom-left: a subagent's work attributed to its own lane, with a 'Read 15 files' moment detail listing the files. Bottom-right: the handoff summary export panel." width="100%">
+  <img src="./docs/screenshots/features.jpeg" alt="Four-panel overview of Agent-Blackbox. Top-left: the live session map of a multi-agent run as a monochrome Lombardi network of rings and sweeping arcs. Top-right: the same console in dark mode (silverpoint on ink). Bottom-left: the context-efficiency co-pilot — a score, segmented metric meters, and optimization notations. Bottom-right: the handoff export panel." width="100%">
 </p>
 
 ---
@@ -131,7 +131,7 @@ AGENT_BLACKBOX_DAEMON_URL=http://127.0.0.1:47831 \
 Open the dashboard URL it printed (default `http://127.0.0.1:5173/`) and watch the run assemble itself live. When you need to continue the run elsewhere — a teammate, the next agent, or the same agent after a context reset — export a structured **handoff**:
 
 <p align="center">
-  <img src="./docs/screenshots/handoff.jpeg" alt="Agent-Blackbox handoff summary — a panel over the multi-agent session map listing the run's files in play, decisions, commands / verification, failed attempts, blockers, promise checks, and the next safe action, with a one-click Copy markdown button." width="100%">
+  <img src="./docs/screenshots/handoff.jpeg" alt="Agent-Blackbox handoff summary — a solid paper card over the dimmed session map listing the run's objective, what was observed (events, nodes, edges), files in play, decisions, commands / verification, blockers, and the next safe action, with a one-click Copy markdown button." width="100%">
 </p>
 
 ---
