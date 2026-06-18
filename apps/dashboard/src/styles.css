@@ -21,8 +21,6 @@
   /* Semantic theme tokens (light). */
   --bg: #f7f8f9;
   --bg-elevated: #edf0f3;
-  --shell-top: rgba(255, 255, 255, 0.74);
-  --shell-bottom: rgba(245, 246, 248, 0.96);
   --panel-grad: rgba(232, 235, 239, 0.88);
   --scrim: rgba(20, 22, 26, 0.28);
   --surface-strong: rgba(255, 255, 255, 0.82);
@@ -92,9 +90,7 @@ button {
 }
 
 .shell {
-  background:
-    linear-gradient(180deg, var(--shell-top), var(--shell-bottom)),
-    var(--bg);
+  background: var(--bg);
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
   height: 100vh;
@@ -1682,8 +1678,6 @@ h3 {
   color-scheme: dark;
   --bg: #0c0c0e;
   --bg-elevated: #161618;
-  --shell-top: rgba(32, 32, 36, 0.5);
-  --shell-bottom: rgba(8, 8, 10, 0.92);
   --panel-grad: rgba(15, 15, 17, 0.9);
   --scrim: rgba(0, 0, 0, 0.62);
   --surface-strong: rgba(31, 31, 35, 0.86);
