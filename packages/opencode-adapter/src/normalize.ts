@@ -253,13 +253,16 @@ function deriveObservedToolResult(
     const path =
       readString(payload, ["input.args.filePath", "output.metadata.display.path"]) ??
       readString(payload, ["output.title"]);
+    const size = measureContent(payload, ["output.output", "output.content", "output.metadata.preview"]);
     const observedPayload = compactJsonObject({
       tool,
       source: "tool.after",
       path,
       callID: readString(payload, ["input.callID"]),
       preview: readString(payload, ["output.metadata.preview"]),
-      truncated: readBoolean(payload, ["output.metadata.truncated"])
+      truncated: readBoolean(payload, ["output.metadata.truncated"]),
+      chars: size?.chars,
+      lines: size?.lines
     });
     return {
       kind: "file_read",
@@ -272,6 +275,7 @@ function deriveObservedToolResult(
     const command = readString(payload, ["input.args.command", "output.metadata.command"]);
     const exitCode = readNumber(payload, ["output.metadata.exit", "output.metadata.exitCode"]);
     const outputPreview = shortenOptional(readString(payload, ["output.metadata.output", "output.output"]), 1200);
+    const size = measureContent(payload, ["output.metadata.output", "output.output"]);
     const observedPayload = compactJsonObject({
       tool,
       source: "tool.after",
@@ -279,7 +283,9 @@ function deriveObservedToolResult(
       exitCode,
       description: readString(payload, ["input.args.description", "output.metadata.description"]),
       outputPreview,
-      truncated: readBoolean(payload, ["output.metadata.truncated"])
+      truncated: readBoolean(payload, ["output.metadata.truncated"]),
+      outputChars: size?.chars,
+      outputLines: size?.lines
     });
     return {
       kind: "bash",
@@ -290,11 +296,19 @@ function deriveObservedToolResult(
 
   if (tool === "edit" || tool === "write" || tool === "patch") {
     const path = readString(payload, ["input.args.filePath", "input.args.path", "output.metadata.path"]);
+    const size = measureContent(payload, [
+      "input.args.content",
+      "input.args.newString",
+      "input.args.replacement",
+      "input.args.patch"
+    ]);
     const observedPayload = compactJsonObject({
       tool,
       source: "tool.after",
       path,
-      callID: readString(payload, ["input.callID"])
+      callID: readString(payload, ["input.callID"]),
+      chars: size?.chars,
+      lines: size?.lines
     });
     return {
       kind: tool === "write" ? "file_created" : "file_edit",
@@ -323,6 +337,7 @@ function deriveObservedToolResult(
 
   if (tool === "skill") {
     const name = readString(payload, ["input.args.name", "output.args.name"]);
+    const size = measureContent(payload, ["output.output", "output.content"]);
     return {
       kind: "tool_result",
       summary: name ? `Used the ${name} skill` : "Used a skill",
@@ -331,13 +346,16 @@ function deriveObservedToolResult(
         source: "tool.after",
         skill: name,
         title: readString(payload, ["output.title"]),
-        callID: readString(payload, ["input.callID"])
+        callID: readString(payload, ["input.callID"]),
+        outputChars: size?.chars,
+        outputLines: size?.lines
       })
     };
   }
 
   // Any other tool (grep, glob, list, webfetch, todowrite, a command, …) is
   // still a real action — keep it as a renderable result instead of dropping it.
+  const size = measureContent(payload, ["output.output", "output.content", "output.metadata.output"]);
   return {
     kind: "tool_result",
     summary: `Used ${tool}`,
@@ -346,7 +364,9 @@ function deriveObservedToolResult(
       source: "tool.after",
       title: readString(payload, ["output.title"]),
       description: readString(payload, ["input.args.description", "output.metadata.description"]),
-      callID: readString(payload, ["input.callID"])
+      callID: readString(payload, ["input.callID"]),
+      outputChars: size?.chars,
+      outputLines: size?.lines
     })
   };
 }
@@ -518,6 +538,25 @@ function shortenOptional(value: string | undefined, maxLength: number): string |
     return value;
   }
   return `${value.slice(0, maxLength)}...`;
+}
+
+// Measure how much text a tool moved into / out of context WITHOUT storing the
+// text — only the counts survive, so redaction is unaffected while the context
+// efficiency engine can still see how many chars/lines each read, output, or
+// edit added. Picks the longest candidate so a full body beats a truncated
+// preview when both are present.
+function measureContent(record: UnknownRecord, paths: string[]): { chars: number; lines: number } | undefined {
+  let longest: string | undefined;
+  for (const path of paths) {
+    const value = readPath(record, path);
+    if (typeof value === "string" && (longest === undefined || value.length > longest.length)) {
+      longest = value;
+    }
+  }
+  if (longest === undefined) {
+    return undefined;
+  }
+  return { chars: longest.length, lines: longest.split("\n").length };
 }
 
 function asRecord(value: unknown): UnknownRecord {
