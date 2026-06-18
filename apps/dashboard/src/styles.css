@@ -998,7 +998,7 @@ h3 {
   justify-content: center;
   min-height: calc(100vh - 104px);
   overflow: hidden;
-  padding: 26px calc(var(--files-width, 252px) + 52px) 26px 26px;
+  padding: 26px;
   position: relative;
 }
 
@@ -1564,15 +1564,11 @@ h3 {
   border: 1px solid var(--card-border-color);
   border-radius: var(--card-radius);
   box-shadow: var(--card-shadow);
-  max-height: calc(100% - 52px);
-  position: absolute;
-  right: 26px;
-  top: 26px;
-  width: var(--files-width, 252px);
+  margin-top: 12px;
   min-width: 0;
   overflow: hidden;
-  padding: 8px;
-  z-index: 3;
+  padding: 10px;
+  position: relative;
   -webkit-backdrop-filter: var(--card-blur);
   backdrop-filter: var(--card-blur);
 }

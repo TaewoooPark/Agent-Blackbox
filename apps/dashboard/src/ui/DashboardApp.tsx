@@ -257,6 +257,16 @@ export function DashboardApp() {
     setSelectedEventId(null);
     setSelectedFilePath(null);
   };
+  // File data for the FILES panel (now docked in the right co-pilot column).
+  const fileConnections = useMemo(() => createFileConnections(replaySteps), [replaySteps]);
+  const fileRows = useMemo(() => createFileRows(fileConnections), [fileConnections]);
+  const subagentLabels = useMemo(
+    () => new Set(replaySteps.map((step) => step.agentLabel).filter((label): label is string => Boolean(label))),
+    [replaySteps]
+  );
+  const filesSelectedAgentIsRoot = selectedAgentLabel !== null && !subagentLabels.has(selectedAgentLabel);
+  const filesFocusedStepId = selectedFilePath ? null : selectedStep?.id ?? null;
+  const filesHasFocus = Boolean(selectedEventId || selectedFilePath || selectedAgentLabel);
   const chooseRun = (runId: string | null) => {
     setSelectedRunId(runId);
     // A selection or replay position from the previous run is meaningless in the
@@ -415,7 +425,6 @@ export function DashboardApp() {
           metricHighlight={metricHighlight}
           onClearFocus={clearFocus}
           onSelectEvent={selectWorkflowEvent}
-          onSelectFile={selectFile}
           onSelectSeq={setSelectedSeq}
           replaySeq={replaySeq}
           selectedAgentLabel={selectedAgentLabel}
@@ -427,7 +436,7 @@ export function DashboardApp() {
           steps={replaySteps}
         />
 
-        <aside className="copilot" aria-label="Context efficiency">
+        <aside className="copilot" aria-label="Context efficiency and files">
           <ContextPanel
             report={efficiency}
             suggestions={aiState?.suggestions ?? suggestions}
@@ -438,6 +447,16 @@ export function DashboardApp() {
             onSelectMetric={(metric) =>
               setMetricHighlight((current) => ({ ids: metric.evidenceEventIds, nonce: current.nonce + 1 }))
             }
+          />
+          <FileStructure
+            hasFocus={filesHasFocus}
+            onSelectFile={selectFile}
+            rows={fileRows}
+            selectedAgentIsRoot={filesSelectedAgentIsRoot}
+            selectedAgentLabel={selectedAgentLabel}
+            selectedEventId={selectedEventId}
+            selectedFilePath={selectedFilePath}
+            selectedStepId={filesFocusedStepId}
           />
         </aside>
       </section>
@@ -487,7 +506,6 @@ function SessionMap({
   metricHighlight,
   onClearFocus,
   onSelectEvent,
-  onSelectFile,
   onSelectSeq,
   replaySeq,
   selectedAgentLabel,
@@ -503,7 +521,6 @@ function SessionMap({
   metricHighlight: { ids: string[]; nonce: number };
   onClearFocus: () => void;
   onSelectEvent: (eventId: string) => void;
-  onSelectFile: (path: string) => void;
   onSelectSeq: (seq: number) => void;
   replaySeq: number;
   selectedAgentLabel: string | null;
@@ -515,8 +532,6 @@ function SessionMap({
   steps: WorkflowStep[];
 }) {
   const mapRef = useRef<HTMLDivElement | null>(null);
-  const [filePanelWidth, setFilePanelWidth] = useState(252);
-  const [resizeDrag, setResizeDrag] = useState<{ startWidth: number; startX: number } | null>(null);
   const [momentAnchor, setMomentAnchor] = useState<{ left: number; top: number } | null>(null);
   const [nodeOffsets, setNodeOffsets] = useState<NodeOffsetMap>({});
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(() => new Set());
@@ -533,7 +548,6 @@ function SessionMap({
   const selectedAgentIsRoot =
     selectedAgentLabel !== null && !treeLayout.lanes.some((lane) => lane.id !== "root" && lane.label === selectedAgentLabel);
   const fileConnections = useMemo(() => createFileConnections(steps), [steps]);
-  const fileRows = useMemo(() => createFileRows(fileConnections), [fileConnections]);
   const agentDetail = useMemo<AgentDetail | null>(() => {
     if (!selectedBranch || selectedBranch.kind !== "agent") return null;
     const label = selectedBranch.label;
@@ -562,27 +576,6 @@ function SessionMap({
   );
   const hasFocus = Boolean(selectedEventId || selectedFilePath || selectedAgentLabel || selectedNodeIds.size > 0);
   const showInspector = Boolean(selectedEventId || selectedFilePath);
-
-  useEffect(() => {
-    if (!resizeDrag) return undefined;
-
-    const move = (event: PointerEvent) => {
-      const delta = resizeDrag.startX - event.clientX;
-      setFilePanelWidth(clamp(resizeDrag.startWidth + delta, 210, 440));
-    };
-    const stop = () => {
-      setResizeDrag(null);
-      document.body.style.cursor = "";
-    };
-    document.body.style.cursor = "col-resize";
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", stop, { once: true });
-    return () => {
-      document.body.style.cursor = "";
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", stop);
-    };
-  }, [resizeDrag]);
 
 
   useEffect(() => {
@@ -756,7 +749,7 @@ function SessionMap({
       // Mirror the .mapCanvas padding (26px inset, plus the file column + 52px
       // reserve on the right) so the tree fits inside the breathing room. The
       // moment popover floats over the node, so no bottom space is reserved.
-      const availableWidth = Math.max(120, canvasRect.width - filePanelWidth - 52 - 26);
+      const availableWidth = Math.max(120, canvasRect.width - 52);
       const availableHeight = Math.max(120, canvasRect.height - 52);
       const nextScale = clamp(
         Math.min(TREE_MAX_SCALE, availableWidth / treeMetrics.width, availableHeight / treeMetrics.height),
@@ -776,7 +769,7 @@ function SessionMap({
       observer.disconnect();
       window.removeEventListener("resize", fitTree);
     };
-  }, [filePanelWidth, showInspector, treeMetrics.height, treeMetrics.width]);
+  }, [showInspector, treeMetrics.height, treeMetrics.width]);
 
   useLayoutEffect(() => {
     const container = mapRef.current;
@@ -915,7 +908,6 @@ function SessionMap({
     };
   }, [
     fileConnections,
-    filePanelWidth,
     nodeOffsets,
     selectedEventId,
     selectedFilePath,
@@ -1035,7 +1027,6 @@ function SessionMap({
         ref={mapRef}
         style={
           {
-            "--files-width": `${filePanelWidth}px`,
             "--tree-scale": appliedScale,
             "--tree-pan-x": `${pan.x}px`,
             "--tree-pan-y": `${pan.y}px`,
@@ -1102,17 +1093,6 @@ function SessionMap({
             }
           />
         ) : null}
-        <FileStructure
-          hasFocus={hasFocus}
-          onResizeStart={(clientX) => setResizeDrag({ startWidth: filePanelWidth, startX: clientX })}
-          onSelectFile={onSelectFile}
-          rows={fileRows}
-          selectedAgentIsRoot={selectedAgentIsRoot}
-          selectedAgentLabel={selectedAgentLabel}
-          selectedEventId={selectedEventId}
-          selectedFilePath={selectedFilePath}
-          selectedStepId={focusedStepId}
-        />
         {showInspector && momentAnchor ? (
           <GlassInspector
             agentDetail={agentDetail}
@@ -1403,7 +1383,7 @@ function FileStructure({
   selectedStepId
 }: {
   hasFocus: boolean;
-  onResizeStart: (clientX: number) => void;
+  onResizeStart?: (clientX: number) => void;
   onSelectFile: (path: string) => void;
   rows: FileTreeRow[];
   selectedAgentIsRoot: boolean;
@@ -1436,15 +1416,17 @@ function FileStructure({
 
   return (
     <aside className={`fileStructure ${hasFocus ? "hasFocus" : ""}`} aria-label="Connected file structure">
-      <button
-        aria-label="Resize file list"
-        className="resizeHandle"
-        onPointerDown={(event) => {
-          event.preventDefault();
-          onResizeStart(event.clientX);
-        }}
-        type="button"
-      />
+      {onResizeStart ? (
+        <button
+          aria-label="Resize file list"
+          className="resizeHandle"
+          onPointerDown={(event) => {
+            event.preventDefault();
+            onResizeStart(event.clientX);
+          }}
+          type="button"
+        />
+      ) : null}
       <div className="finderChrome">
         <span />
         <span />
