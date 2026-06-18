@@ -30,6 +30,57 @@ export type EfficiencyReport = {
   metrics: EfficiencyMetric[];
 };
 
+export type Suggestion = {
+  metricId: string;
+  severity: "warn" | "bad";
+  title: string;
+  action: string;
+  source: "deterministic" | "llm";
+};
+
+// Rule-based optimization advice for every flagged metric. Always available with
+// no model — the dependable floor under the optional LLM-routed suggestions.
+export function buildDeterministicSuggestions(report: EfficiencyReport): Suggestion[] {
+  const suggestions: Suggestion[] = [];
+  for (const metric of report.metrics) {
+    if (metric.status === "good") continue;
+    const action = deterministicActionFor(metric);
+    if (!action) continue;
+    suggestions.push({
+      metricId: metric.id,
+      severity: metric.status,
+      title: metric.label,
+      action,
+      source: "deterministic"
+    });
+  }
+  return suggestions;
+}
+
+function deterministicActionFor(metric: EfficiencyMetric): string | undefined {
+  const reclaim = metric.reclaimableTokens ? ` (~${formatTokens(metric.reclaimableTokens)} reclaimable)` : "";
+  switch (metric.id) {
+    case "context-pressure":
+      return `Peak input reached ${metric.display}. Trim context: summarise old turns, drop files no longer in play, or start a fresh session for unrelated subtasks.`;
+    case "cache-hit":
+      return `Only ${metric.display} of the prompt was cache-served. Keep the stable prefix (system prompt, pinned files) fixed and put volatile content last so more of it is cache-eligible.`;
+    case "redundant-reads":
+      return `Read the same file more than once${reclaim}. Read each file once and reuse it; re-read only the changed region after an edit.`;
+    case "read-amplification":
+      return `Pulled in ${metric.display} more text than was edited. Use ranged/targeted reads (line ranges, symbol search) instead of whole files when only a region changes.`;
+    case "large-injections":
+      return `A single tool output added ${metric.display}. Scope greps/searches (narrow paths, max-count) or summarise large outputs before continuing.`;
+    case "retry-waste":
+      return `Failing commands were re-run${reclaim}. Read the first failure's output and fix the cause before retrying rather than re-running blindly.`;
+    case "yield-density":
+      return `A lot of context produced few concrete changes. Break the task into smaller verifiable steps, or delegate exploration to a subagent to keep the main context lean.`;
+    case "tool-overhead":
+      return `Many tool calls relative to outcomes. Batch related actions and avoid exploratory calls that don't lead to a change.`;
+    default:
+      return metric.detail;
+  }
+}
+
 // ~4 chars per token is the usual rough rule; good enough for relative signals.
 const CHARS_PER_TOKEN = 4;
 const estimateTokens = (chars: number): number => Math.round(chars / CHARS_PER_TOKEN);

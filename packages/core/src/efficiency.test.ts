@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createTraceEvent } from "./events.js";
-import { computeEfficiencyReport, type EfficiencyMetric } from "./efficiency.js";
+import { buildDeterministicSuggestions, computeEfficiencyReport, type EfficiencyMetric } from "./efficiency.js";
 
 const ev = (seq: number, kind: Parameters<typeof createTraceEvent>[1]["kind"], payload: Record<string, unknown>) =>
   createTraceEvent(seq, { host: "opencode", runId: "r", sessionId: "s", kind, payload: payload as never });
@@ -69,6 +69,30 @@ describe("context efficiency report", () => {
     ]);
     expect(report.estimated).toBe(true);
     expect(metric(report, "cache-hit").display).toBe("n/a");
+  });
+
+  it("yields a deterministic suggestion for every flagged metric", () => {
+    const report = computeEfficiencyReport([
+      ev(1, "message", { properties: { tokens: { input: 200_000, output: 100, cache: { read: 5000, write: 100 } } } }),
+      ev(2, "file_read", { source: "tool.after", path: "$PROJECT/a.ts", chars: 80_000 }),
+      ev(3, "file_read", { source: "tool.after", path: "$PROJECT/a.ts", chars: 80_000 }),
+      ev(4, "file_edit", { source: "tool.after", path: "$PROJECT/a.ts", chars: 100 }),
+      ev(5, "bash", { source: "tool.after", command: "npm test", exitCode: 1, outputChars: 8000 }),
+      ev(6, "bash", { source: "tool.after", command: "npm test", exitCode: 0, outputChars: 200 })
+    ]);
+    const flagged = report.metrics.filter((m) => m.status !== "good").map((m) => m.id).sort();
+    const suggestions = buildDeterministicSuggestions(report);
+    // every flagged metric gets exactly one actionable suggestion
+    expect(suggestions.map((s) => s.metricId).sort()).toEqual(flagged);
+    expect(suggestions.every((s) => s.action.length > 20 && s.source === "deterministic")).toBe(true);
+  });
+
+  it("produces no suggestions for a clean run", () => {
+    const report = computeEfficiencyReport([
+      ev(1, "file_read", { source: "tool.after", path: "$PROJECT/a.ts", chars: 800 }),
+      ev(2, "file_edit", { source: "tool.after", path: "$PROJECT/a.ts", chars: 400 })
+    ]);
+    expect(buildDeterministicSuggestions(report)).toEqual([]);
   });
 
   it("produces a clean report for an efficient run", () => {

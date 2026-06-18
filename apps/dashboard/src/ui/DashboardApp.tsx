@@ -1,4 +1,5 @@
 import {
+  buildDeterministicSuggestions,
   computeEfficiencyReport,
   evaluatePromiseChecks,
   generateHandoffMarkdown,
@@ -6,6 +7,7 @@ import {
   type EfficiencyMetric,
   type EfficiencyReport,
   type PromiseCheck,
+  type Suggestion,
   type TraceEvent,
   type WorkflowGraph,
   type WorkflowNode
@@ -189,6 +191,7 @@ export function DashboardApp() {
   const workflowSteps = useMemo(() => createWorkflowSteps(visibleEvents), [visibleEvents]);
   const tokenTotals = useMemo(() => latestTokenUsage(visibleEvents), [visibleEvents]);
   const efficiency = useMemo(() => computeEfficiencyReport(visibleEvents), [visibleEvents]);
+  const suggestions = useMemo(() => buildDeterministicSuggestions(efficiency), [efficiency]);
   const [metricHighlight, setMetricHighlight] = useState<{ ids: string[]; nonce: number }>({ ids: [], nonce: 0 });
   const sessionName = useMemo(() => sessionDisplayName(visibleEvents, graph?.runId), [visibleEvents, graph]);
   const runHost = visibleEvents[0]?.host ?? null;
@@ -383,6 +386,7 @@ export function DashboardApp() {
           <TokenPanel usage={tokenTotals} />
           <ContextPanel
             report={efficiency}
+            suggestions={suggestions}
             onSelectMetric={(metric) =>
               setMetricHighlight((current) => ({ ids: metric.evidenceEventIds, nonce: current.nonce + 1 }))
             }
@@ -2043,12 +2047,17 @@ function TokenPanel({ usage }: { usage: TokenUsage }) {
 
 function ContextPanel({
   report,
+  suggestions,
   onSelectMetric
 }: {
   report: EfficiencyReport;
+  suggestions: Suggestion[];
   onSelectMetric: (metric: EfficiencyMetric) => void;
 }) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   if (report.metrics.length === 0) return null;
+  const suggestionByMetric = new Map(suggestions.map((s) => [s.metricId, s]));
+  const fixCount = suggestions.length;
   return (
     <section className="contextPanel" aria-label="Context efficiency">
       <h2>Context</h2>
@@ -2059,26 +2068,43 @@ function ContextPanel({
           {report.estimated ? " · est." : ""}
         </span>
       </div>
+      {fixCount > 0 ? (
+        <p className="contextFixCount">
+          {fixCount} {fixCount === 1 ? "thing" : "things"} to optimize — tap a flagged metric.
+        </p>
+      ) : null}
       <div className="contextMetrics">
         {report.metrics.map((metric) => {
-          const clickable = metric.evidenceEventIds.length > 0;
+          const suggestion = suggestionByMetric.get(metric.id);
+          const actionable = Boolean(suggestion) || metric.evidenceEventIds.length > 0;
+          const expanded = expandedId === metric.id;
           return (
-            <button
-              className={`contextMetric status-${metric.status}`}
-              key={metric.id}
-              type="button"
-              onClick={() => onSelectMetric(metric)}
-              disabled={!clickable}
-              title={metric.detail}
-            >
-              <span className="contextMetricTop">
-                <span className="contextMetricLabel">{metric.label}</span>
-                <span className="contextMetricValue">{metric.display}</span>
-              </span>
-              <span className="contextBar">
-                <span className="contextBarFill" style={{ width: `${metric.score}%` } as CSSProperties} />
-              </span>
-            </button>
+            <div className="contextMetricWrap" key={metric.id}>
+              <button
+                className={`contextMetric status-${metric.status}${expanded ? " expanded" : ""}`}
+                type="button"
+                onClick={() => {
+                  if (metric.evidenceEventIds.length > 0) onSelectMetric(metric);
+                  setExpandedId((current) => (current === metric.id ? null : suggestion ? metric.id : null));
+                }}
+                disabled={!actionable}
+                aria-expanded={suggestion ? expanded : undefined}
+              >
+                <span className="contextMetricTop">
+                  <span className="contextMetricLabel">{metric.label}</span>
+                  <span className="contextMetricValue">{metric.display}</span>
+                </span>
+                <span className="contextBar">
+                  <span className="contextBarFill" style={{ width: `${metric.score}%` } as CSSProperties} />
+                </span>
+              </button>
+              {expanded && suggestion ? (
+                <p className={`contextSuggestion severity-${suggestion.severity}`}>
+                  {suggestion.action}
+                  <span className="contextSuggestionSource"> · {suggestion.source === "llm" ? "AI" : "rule"}</span>
+                </p>
+              ) : null}
+            </div>
           );
         })}
       </div>

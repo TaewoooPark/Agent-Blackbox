@@ -520,9 +520,44 @@ h3 {
   line-height: 1.3;
 }
 
+.contextFixCount {
+  color: var(--text-muted);
+  font-size: var(--fs-label);
+  margin: 0 0 8px;
+}
+
 .contextMetrics {
   display: grid;
   gap: 6px;
+}
+
+.contextMetricWrap {
+  display: grid;
+  gap: 4px;
+}
+
+.contextSuggestion {
+  background: var(--fill-subtle);
+  border-left: 2px solid var(--text-faint);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: var(--fs-label);
+  line-height: 1.45;
+  margin: 0 0 2px;
+  padding: 6px 8px;
+}
+
+.contextSuggestion.severity-warn {
+  border-left-color: var(--warn-text);
+}
+
+.contextSuggestion.severity-bad {
+  border-left-color: var(--danger);
+}
+
+.contextSuggestionSource {
+  color: var(--text-faint);
+  text-transform: uppercase;
 }
 
 .contextMetric {
