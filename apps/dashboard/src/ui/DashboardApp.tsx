@@ -291,9 +291,11 @@ export function DashboardApp() {
         const stepEl = stepEls.get(connection.stepId);
         const fileEl = fileEls.get(connection.path);
         if (!stepEl || !fileEl) return [];
-        const s = stepEl.getBoundingClientRect();
+        // Originate the file line from the node's ring (now on its right edge).
+        const ringEl = stepEl.querySelector<HTMLElement>(".stepMarker, .agentStemDot") ?? stepEl;
+        const s = ringEl.getBoundingClientRect();
         const f = fileEl.getBoundingClientRect();
-        const startX = s.right - wsRect.left;
+        const startX = s.left + s.width / 2 - wsRect.left;
         const startY = s.top + s.height / 2 - wsRect.top;
         const endX = f.left - wsRect.left;
         const endY = f.top + f.height / 2 - wsRect.top;
@@ -891,12 +893,15 @@ function SessionMap({
         const fromElement = treeElements.get(connection.fromNodeId);
         const toElement = treeElements.get(connection.toNodeId);
         if (!fromElement || !toElement) return [];
+        // Connect ring-to-ring: each node's ring now sits on its right edge.
+        const fromRing = fromElement.querySelector<HTMLElement>(".stepMarker, .agentStemDot") ?? fromElement;
+        const toRing = toElement.querySelector<HTMLElement>(".stepMarker, .agentStemDot") ?? toElement;
         return [
           {
             ...connection,
             pathD: treeConnectionPath(
-              fromElement.getBoundingClientRect(),
-              toElement.getBoundingClientRect(),
+              fromRing.getBoundingClientRect(),
+              toRing.getBoundingClientRect(),
               containerRect,
               connection.kind
             )
@@ -932,13 +937,11 @@ function SessionMap({
             left = nodeLeft;
             top = nodeBottom + gap;
           }
-        } else if (nodeRight + gap + popWidth <= containerRect.width) {
-          // Trunk nodes sit on the left with room to their right.
-          left = nodeRight + gap;
-          top = nodeTop;
         } else {
-          left = nodeLeft;
+          // Node moments: open BELOW the node, extending left — so the popover
+          // clears the file-connection arcs that sweep right from the node's ring.
           top = nodeBottom + gap;
+          left = nodeRight - popWidth;
         }
         left = Math.min(Math.max(8, left), Math.max(8, containerRect.width - popWidth - 8));
         top = Math.max(8, Math.min(top, Math.max(8, containerRect.height - 132)));
