@@ -418,7 +418,8 @@ function buildHeadline(
   reclaimable: number,
   hasRealTokens: boolean
 ): string {
-  const parts: string[] = [`${hasRealTokens ? "" : "~"}${formatTokens(totalInput)} input`];
+  const parts: string[] = [];
+  if (totalInput > 0) parts.push(`${hasRealTokens ? "" : "~"}${formatTokens(totalInput)} input`);
   if (snap && (snap.cacheRead > 0 || snap.cacheWrite > 0)) {
     const denom = snap.cacheRead + snap.input;
     if (denom > 0) parts.push(`cache ${Math.round((snap.cacheRead / denom) * 100)}%`);
