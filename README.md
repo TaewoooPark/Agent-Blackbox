@@ -93,6 +93,10 @@ The gap between what an agent *says* and what it *does* is where bugs, overconfi
   <img src="./docs/screenshots/features.jpeg" alt="Four-panel overview of Agent-Blackbox. Top-left: the live session map of a multi-agent run as a monochrome Lombardi network of rings and sweeping arcs. Top-right: the same console in dark mode (silverpoint on ink). Bottom-left: the context-efficiency co-pilot — a score, segmented metric meters, and optimization notations. Bottom-right: the handoff export panel." width="100%">
 </p>
 
+<p align="center">
+  <img src="./docs/screenshots/focus.jpeg" alt="Two-panel view of focusing. Left: clicking a moment dims the map to that node and opens a detail popover below it (evidence, files, tokens, replay). Right: selecting an agent isolates its lane — that agent's branch and moments stay lit while the rest of the diagram recedes." width="100%">
+</p>
+
 ---
 
 ## How it works
