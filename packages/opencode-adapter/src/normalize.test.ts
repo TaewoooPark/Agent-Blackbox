@@ -177,6 +177,34 @@ describe("OpenCode event normalization", () => {
     expect(event.payload.outputPreview).toBe("pass");
   });
 
+  it("records read/bash/edit content sizes without storing the content", () => {
+    const bigBody = Array.from({ length: 120 }, (_, i) => `line ${i} of a secret file`).join("\n");
+    const read = normalizeToolAfter(
+      { tool: "read", sessionID: "s", args: { filePath: "/repo/big.ts" } },
+      { output: bigBody, metadata: { preview: "line 0", display: { path: "/repo/big.ts" } } },
+      { runId: "r", seq: 1, defaultSessionId: "s", projectDir: "/repo" }
+    );
+    expect(read.payload.chars).toBe(bigBody.length);
+    expect(read.payload.lines).toBe(120);
+    expect(JSON.stringify(read.payload)).not.toContain("secret file");
+
+    const bash = normalizeToolAfter(
+      { tool: "bash", sessionID: "s", args: { command: "grep -r TODO" } },
+      { metadata: { output: "a\nb\nc\nd", exit: 0 } },
+      { runId: "r", seq: 2, defaultSessionId: "s" }
+    );
+    expect(bash.payload.outputChars).toBe(7);
+    expect(bash.payload.outputLines).toBe(4);
+
+    const edit = normalizeToolAfter(
+      { tool: "write", sessionID: "s", args: { filePath: "/repo/out.ts", content: "export const x = 1;\n" } },
+      {},
+      { runId: "r", seq: 3, defaultSessionId: "s", projectDir: "/repo" }
+    );
+    expect(edit.payload.chars).toBe("export const x = 1;\n".length);
+    expect(edit.payload.lines).toBe(2);
+  });
+
   it("promotes a completed skill tool to a named tool_result event", () => {
     const event = normalizeToolAfter(
       {
