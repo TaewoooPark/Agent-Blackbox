@@ -407,47 +407,6 @@ export function DashboardApp() {
               </span>
             </button>
           ))}
-          <TokenPanel usage={tokenTotals} />
-          <ContextPanel
-            report={efficiency}
-            suggestions={aiState?.suggestions ?? suggestions}
-            aiProvider={aiState?.provider ?? null}
-            aiLoading={aiLoading}
-            onRequestAi={requestAiSuggestions}
-            onSelectMetric={(metric) =>
-              setMetricHighlight((current) => ({ ids: metric.evidenceEventIds, nonce: current.nonce + 1 }))
-            }
-          />
-          <div className="timeline">
-            <h2>Events</h2>
-            <div className="replayControls">
-              <input
-                aria-label="Replay sequence"
-                max={maxSeq}
-                min={0}
-                onChange={(event) => setSelectedSeq(Number(event.currentTarget.value))}
-                type="range"
-                value={replaySeq}
-              />
-              <button disabled={selectedSeq === null} onClick={() => setSelectedSeq(null)} type="button">
-                Live
-              </button>
-            </div>
-            <p className="replayLabel">
-              {selectedSeq === null ? "Live replay" : `Seq ${replaySeq}`} / {maxSeq}
-            </p>
-            <div className="ticks">
-              {marks.slice(-80).map((mark) => (
-                <button
-                  className={`tick tick-${mark.tone} ${mark.seq <= replaySeq ? "seen" : ""}`}
-                  key={mark.id}
-                  onClick={() => setSelectedSeq(mark.seq)}
-                  title={`${mark.seq}. ${mark.label}`}
-                  type="button"
-                />
-              ))}
-            </div>
-          </div>
         </aside>
 
         <SessionMap
@@ -467,7 +426,57 @@ export function DashboardApp() {
           selectedStep={selectedStep}
           steps={replaySteps}
         />
+
+        <aside className="copilot" aria-label="Context efficiency">
+          <ContextPanel
+            report={efficiency}
+            suggestions={aiState?.suggestions ?? suggestions}
+            usage={tokenTotals}
+            aiProvider={aiState?.provider ?? null}
+            aiLoading={aiLoading}
+            onRequestAi={requestAiSuggestions}
+            onSelectMetric={(metric) =>
+              setMetricHighlight((current) => ({ ids: metric.evidenceEventIds, nonce: current.nonce + 1 }))
+            }
+          />
+        </aside>
       </section>
+
+      <footer className="timelineBar" aria-label="Replay timeline">
+        <div className="ticks">
+          {marks.slice(-160).map((mark) => (
+            <button
+              className={`tick tick-${mark.tone} ${mark.seq <= replaySeq ? "seen" : ""}`}
+              key={mark.id}
+              onClick={() => setSelectedSeq(mark.seq)}
+              title={`${mark.seq}. ${mark.label}`}
+              type="button"
+            />
+          ))}
+        </div>
+        <div className="timelineControls">
+          <button
+            className="timelineLive"
+            disabled={selectedSeq === null}
+            onClick={() => setSelectedSeq(null)}
+            type="button"
+          >
+            {selectedSeq === null ? "● Live" : "Go live"}
+          </button>
+          <input
+            aria-label="Replay sequence"
+            className="timelineRange"
+            max={maxSeq}
+            min={0}
+            onChange={(event) => setSelectedSeq(Number(event.currentTarget.value))}
+            type="range"
+            value={replaySeq}
+          />
+          <span className="timelineLabel">
+            {selectedSeq === null ? "live" : `seq ${replaySeq}`} / {maxSeq}
+          </span>
+        </div>
+      </footer>
     </main>
   );
 }
@@ -2047,34 +2056,10 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function TokenPanel({ usage }: { usage: TokenUsage }) {
-  const rows = [
-    ["input", usage.input],
-    ["output", usage.output],
-    ["reasoning", usage.reasoning],
-    ["cache read", usage.cacheRead],
-    ["cache write", usage.cacheWrite]
-  ] as const;
-
-  return (
-    <section className="tokenPanel" aria-label="Token usage">
-      <h2>Tokens</h2>
-      <strong className="tokenTotal">{formatTokenCount(usage.total)}</strong>
-      <div className="tokenRows">
-        {rows.map(([label, value]) => (
-          <div className="tokenRow" key={label}>
-            <span>{label}</span>
-            <strong>{formatTokenNumber(value)}</strong>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function ContextPanel({
   report,
   suggestions,
+  usage,
   aiProvider,
   aiLoading,
   onRequestAi,
@@ -2082,30 +2067,77 @@ function ContextPanel({
 }: {
   report: EfficiencyReport;
   suggestions: Suggestion[];
+  usage: TokenUsage;
   aiProvider: string | null;
   aiLoading: boolean;
   onRequestAi: () => void;
   onSelectMetric: (metric: EfficiencyMetric) => void;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [tokensOpen, setTokensOpen] = useState(false);
   if (report.metrics.length === 0) return null;
   const suggestionByMetric = new Map(suggestions.map((s) => [s.metricId, s]));
   const fixCount = suggestions.length;
+  // The worst two fixes ride up top, always visible — the headline advice.
+  const topFixes = [...suggestions]
+    .sort((a, b) => (a.severity === b.severity ? 0 : a.severity === "bad" ? -1 : 1))
+    .slice(0, 2);
+  const tokenRows: [string, number][] = [
+    ["input", usage.input],
+    ["output", usage.output],
+    ["reasoning", usage.reasoning],
+    ["cache read", usage.cacheRead],
+    ["cache write", usage.cacheWrite]
+  ];
   return (
     <section className="contextPanel" aria-label="Context efficiency">
-      <h2>Context</h2>
-      <div className="contextScore">
-        <strong className={`contextScoreValue status-${report.status}`}>{report.overallScore}</strong>
-        <span className="contextHeadline">
-          {report.headline}
-          {report.estimated ? " · est." : ""}
-        </span>
+      <div className="contextHead">
+        <strong className={`contextScoreBig status-${report.status}`}>{report.overallScore}</strong>
+        <div className="contextHeadMeta">
+          <h2>Context efficiency</h2>
+          <span className="contextHeadline">
+            {report.headline}
+            {report.estimated ? " · est." : ""}
+          </span>
+        </div>
       </div>
-      {fixCount > 0 ? (
-        <p className="contextFixCount">
-          {fixCount} {fixCount === 1 ? "thing" : "things"} to optimize — tap a flagged metric.
-        </p>
-      ) : null}
+
+      <div className="contextAi">
+        <button className="contextAiButton" type="button" onClick={onRequestAi} disabled={aiLoading || fixCount === 0}>
+          {aiLoading ? "Optimizing…" : aiProvider ? "Re-run AI suggestions" : "Optimize with a local model"}
+        </button>
+        {aiProvider ? (
+          <span className="contextAiNote">
+            {aiProvider === "deterministic"
+              ? "No local model reachable — showing rule-based tips. Configure --suggest."
+              : `Tailored by ${aiProvider} (local).`}
+          </span>
+        ) : null}
+      </div>
+
+      {topFixes.length > 0 ? (
+        <div className="contextTopFixes">
+          {topFixes.map((fix) => (
+            <button
+              className={`contextTopFix severity-${fix.severity}`}
+              key={fix.metricId}
+              type="button"
+              onClick={() => {
+                const metric = report.metrics.find((m) => m.id === fix.metricId);
+                if (metric && metric.evidenceEventIds.length > 0) onSelectMetric(metric);
+                setExpandedId(fix.metricId);
+              }}
+            >
+              <span className="contextTopFixTitle">{fix.title}</span>
+              <span className="contextTopFixAction">{fix.action}</span>
+              <span className="contextSuggestionSource">{fix.source === "llm" ? "AI" : "rule"}</span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="contextAllClear">No waste detected — this run used its context economically.</p>
+      )}
+
       <div className="contextMetrics">
         {report.metrics.map((metric) => {
           const suggestion = suggestionByMetric.get(metric.id);
@@ -2141,18 +2173,24 @@ function ContextPanel({
           );
         })}
       </div>
-      {fixCount > 0 ? (
-        <div className="contextAi">
-          <button className="contextAiButton" type="button" onClick={onRequestAi} disabled={aiLoading}>
-            {aiLoading ? "Optimizing…" : aiProvider ? "Re-run AI suggestions" : "Optimize with a local model"}
-          </button>
-          {aiProvider ? (
-            <span className="contextAiNote">
-              {aiProvider === "deterministic"
-                ? "No local model reachable — showing rule-based tips. Configure --suggest."
-                : `Tailored by ${aiProvider} (local).`}
-            </span>
-          ) : null}
+
+      <button
+        className="contextTokensToggle"
+        type="button"
+        onClick={() => setTokensOpen((open) => !open)}
+        aria-expanded={tokensOpen}
+      >
+        <span>tokens</span>
+        <span className="contextTokensTotal">{formatTokenNumber(usage.total)} {tokensOpen ? "▾" : "▸"}</span>
+      </button>
+      {tokensOpen ? (
+        <div className="contextTokenRows">
+          {tokenRows.map(([label, value]) => (
+            <div className="tokenRow" key={label}>
+              <span>{label}</span>
+              <strong>{formatTokenNumber(value)}</strong>
+            </div>
+          ))}
         </div>
       ) : null}
     </section>
