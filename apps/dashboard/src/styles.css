@@ -1,76 +1,80 @@
 :root {
   color: var(--text);
   background: var(--bg);
-  font-family: Helvetica, "Helvetica Neue", Arial, sans-serif;
+  font-family: "Spectral", Georgia, "Times New Roman", serif;
   font-weight: 400;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 
-  /* Canonical card design, taken from the Files panel and reused everywhere. */
-  --card-bg: rgba(255, 255, 255, 0.72);
-  --card-border-color: var(--border);
-  --card-radius: 8px;
-  --card-shadow: 0 18px 60px rgba(24, 28, 34, 0.06);
-  --card-blur: blur(20px);
+  /* Lombardi "narrative structure": flat paper, hairlines, no glass. */
+  --card-bg: transparent;
+  --card-border-color: var(--hair);
+  --card-radius: 2px;
+  --card-shadow: none;
+  --card-blur: none;
 
-  /* One curvature for every box/control, and a 3-step type scale (2 weights). */
-  --fs-title: 13px;
-  --fs-body: 11px;
-  --fs-label: 9px;
+  --fs-title: 14px;
+  --fs-body: 12px;
+  --fs-label: 9.5px;
 
-  /* Semantic theme tokens (light). */
-  --bg: #f7f8f9;
-  --bg-elevated: #edf0f3;
-  --panel-grad: rgba(232, 235, 239, 0.88);
-  --scrim: rgba(20, 22, 26, 0.28);
-  --surface-strong: rgba(255, 255, 255, 0.82);
-  --surface-soft: rgba(255, 255, 255, 0.5);
-  --surface-tint: rgba(245, 246, 247, 0.72);
-  --surface-tint-faint: rgba(245, 246, 247, 0.54);
-  --border: rgba(25, 28, 33, 0.08);
-  --border-strong: rgba(25, 28, 33, 0.14);
-  --border-contrast: rgba(23, 25, 28, 0.34);
-  --fill-subtle: rgba(29, 33, 39, 0.06);
-  --fill-hover: rgba(17, 19, 23, 0.06);
-  --node-hover: rgba(31, 35, 40, 0.16);
-  --control-fill: rgba(25, 28, 33, 0.18);
-  --control-fill-hover: rgba(25, 28, 33, 0.36);
-  --dot-fill: rgba(30, 34, 40, 0.16);
-  --tick-fill: rgba(31, 35, 40, 0.28);
-  --text: #17191c;
-  --text-heading: #22262c;
-  --text-secondary: #4d535c;
-  --text-muted: #727983;
-  --text-faint: #9a9fa6;
-  --action-bg: #111317;
-  --action-fg: #fff;
-  --status-dot: #9aa0a8;
-  --tick-empty: #d3d7dc;
-  --tick-work: #aeb5bd;
-  --tick-decision: #9fa5ad;
-  --tick-claim: #c2c6cb;
-  --danger: #a8322e;
-  --danger-2: #8d3d3d;
-  --danger-solid: #c4403c;
-  --danger-bg: rgba(200, 78, 74, 0.12);
-  --danger-bg-2: rgba(200, 78, 74, 0.1);
-  --danger-border: rgba(196, 64, 60, 0.25);
-  --danger-border-soft: rgba(196, 64, 60, 0.22);
-  --danger-border-strong: rgba(196, 64, 60, 0.5);
-  --danger-bar: rgba(196, 64, 60, 0.9);
-  --danger-tint: #faeeee;
-  --success: #2f6b50;
-  --success-solid: #2f9e57;
-  --success-tint: #eef6f2;
-  --success-bar: rgba(47, 158, 87, 0.75);
-  --warn-bg: rgba(255, 250, 237, 0.9);
-  --warn-border: rgba(155, 117, 35, 0.22);
-  --warn-text: #5a4211;
-  --bar-neutral: rgba(150, 156, 164, 0.3);
-  --bar-work: rgba(120, 134, 150, 0.45);
-  --bar-info: rgba(58, 112, 168, 0.6);
-  --bar-coord: rgba(124, 92, 196, 0.65);
-  --shadow-color: rgba(22, 25, 30, 0.08);
+  /* Semantic theme tokens (light · neutral monochrome paper). */
+  --bg: #f2f2f2;
+  --bg-elevated: #ececec;
+  --panel-grad: transparent;
+  --scrim: rgba(0, 0, 0, 0.4);
+  --surface-strong: rgba(0, 0, 0, 0.03);
+  --surface-soft: rgba(0, 0, 0, 0.02);
+  --surface-tint: rgba(0, 0, 0, 0.025);
+  --surface-tint-faint: rgba(0, 0, 0, 0.015);
+  --ink-line: rgba(0, 0, 0, 0.55);
+  --hair: rgba(0, 0, 0, 0.16);
+  --border: rgba(0, 0, 0, 0.16);
+  --border-strong: rgba(0, 0, 0, 0.3);
+  --border-contrast: rgba(0, 0, 0, 0.5);
+  --fill-subtle: rgba(0, 0, 0, 0.05);
+  --fill-hover: rgba(0, 0, 0, 0.07);
+  --node-hover: rgba(0, 0, 0, 0.1);
+  --control-fill: rgba(0, 0, 0, 0.2);
+  --control-fill-hover: rgba(0, 0, 0, 0.38);
+  --dot-fill: var(--text);
+  --tick-fill: var(--text-muted);
+  --fillbar: #2a2a2a;
+  --text: #191919;
+  --text-heading: #191919;
+  --text-secondary: #5c5c5c;
+  --text-muted: #8c8c8c;
+  --text-faint: #bcbcbc;
+  --action-bg: transparent;
+  --action-fg: var(--text);
+  --status-dot: #8c8c8c;
+  --tick-empty: rgba(0, 0, 0, 0.18);
+  --tick-work: rgba(0, 0, 0, 0.34);
+  --tick-decision: rgba(0, 0, 0, 0.42);
+  --tick-claim: rgba(0, 0, 0, 0.26);
+  /* danger = oxblood, the single accent (Lombardi's "red = legal action"). */
+  --danger: #8f342b;
+  --danger-2: #8f342b;
+  --danger-solid: #8f342b;
+  --danger-bg: rgba(143, 52, 43, 0.1);
+  --danger-bg-2: rgba(143, 52, 43, 0.08);
+  --danger-border: rgba(143, 52, 43, 0.42);
+  --danger-border-soft: rgba(143, 52, 43, 0.3);
+  --danger-border-strong: rgba(143, 52, 43, 0.6);
+  --danger-bar: #a7463c;
+  --danger-tint: rgba(143, 52, 43, 0.08);
+  /* "good"/"warn" stay monochrome ink — only trouble gets colour. */
+  --success: #5c5c5c;
+  --success-solid: #5c5c5c;
+  --success-tint: rgba(0, 0, 0, 0.04);
+  --success-bar: var(--fillbar);
+  --warn-bg: rgba(0, 0, 0, 0.04);
+  --warn-border: var(--hair);
+  --warn-text: #5c5c5c;
+  --bar-neutral: var(--hair);
+  --bar-work: var(--hair);
+  --bar-info: var(--border-strong);
+  --bar-coord: var(--border-strong);
+  --shadow-color: rgba(0, 0, 0, 0.18);
 }
 
 * {
@@ -2033,76 +2037,287 @@ h3 {
 /* ---- Dark theme ------------------------------------------------------- */
 /* Monotone, desaturated dark theme — neutral charcoal surfaces, soft off-white
    ink, and muted (never neon) accents that read as a whisper of colour. */
+/* Dark · "silverpoint on ink" — neutral near-black, bone ink, hairlines. */
 [data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0c0c0e;
-  --bg-elevated: #161618;
-  --panel-grad: rgba(15, 15, 17, 0.9);
-  --scrim: rgba(0, 0, 0, 0.62);
-  --surface-strong: rgba(31, 31, 35, 0.86);
-  --surface-soft: rgba(255, 255, 255, 0.04);
-  --surface-tint: rgba(255, 255, 255, 0.028);
-  --surface-tint-faint: rgba(255, 255, 255, 0.018);
-  --border: rgba(255, 255, 255, 0.1);
-  --border-strong: rgba(255, 255, 255, 0.16);
-  --border-contrast: rgba(255, 255, 255, 0.3);
+  --bg: #0d0d0d;
+  --bg-elevated: #131313;
+  --panel-grad: transparent;
+  --scrim: rgba(0, 0, 0, 0.66);
+  --surface-strong: rgba(255, 255, 255, 0.04);
+  --surface-soft: rgba(255, 255, 255, 0.03);
+  --surface-tint: rgba(255, 255, 255, 0.025);
+  --surface-tint-faint: rgba(255, 255, 255, 0.015);
+  --ink-line: rgba(255, 255, 255, 0.52);
+  --hair: rgba(255, 255, 255, 0.15);
+  --border: rgba(255, 255, 255, 0.15);
+  --border-strong: rgba(255, 255, 255, 0.3);
+  --border-contrast: rgba(255, 255, 255, 0.5);
   --fill-subtle: rgba(255, 255, 255, 0.05);
   --fill-hover: rgba(255, 255, 255, 0.08);
-  --node-hover: rgba(255, 255, 255, 0.08);
+  --node-hover: rgba(255, 255, 255, 0.1);
   --control-fill: rgba(255, 255, 255, 0.2);
-  --control-fill-hover: rgba(255, 255, 255, 0.36);
-  --dot-fill: rgba(255, 255, 255, 0.22);
-  --tick-fill: rgba(255, 255, 255, 0.3);
-  --text: #e7e8ea;
-  --text-heading: #f3f3f5;
-  --text-secondary: #b3b4b7;
-  --text-muted: #898a8e;
-  --text-faint: #66676b;
-  --action-bg: #e8e8ea;
-  --action-fg: #161617;
-  --status-dot: #56565a;
-  --tick-empty: #202022;
-  --tick-work: #303033;
-  --tick-decision: #404043;
-  --tick-claim: #29292c;
-  --danger: #cd9590;
-  --danger-2: #c69b97;
-  --danger-solid: #a86560;
-  --danger-bg: rgba(170, 95, 88, 0.16);
-  --danger-bg-2: rgba(170, 95, 88, 0.12);
-  --danger-border: rgba(170, 95, 88, 0.32);
-  --danger-border-soft: rgba(170, 95, 88, 0.26);
-  --danger-border-strong: rgba(170, 95, 88, 0.48);
-  --danger-bar: rgba(178, 104, 96, 0.82);
-  --danger-tint: rgba(170, 95, 88, 0.13);
-  --success: #8bad97;
-  --success-solid: #6a967c;
-  --success-tint: rgba(120, 158, 132, 0.13);
-  --success-bar: rgba(124, 162, 138, 0.68);
-  --warn-bg: rgba(140, 122, 78, 0.16);
-  --warn-border: rgba(165, 146, 98, 0.28);
-  --warn-text: #c8b78d;
-  --bar-neutral: rgba(150, 150, 154, 0.42);
-  --bar-work: rgba(170, 172, 176, 0.5);
-  --bar-info: rgba(138, 150, 168, 0.5);
-  --bar-coord: rgba(164, 154, 172, 0.5);
+  --control-fill-hover: rgba(255, 255, 255, 0.38);
+  --dot-fill: var(--text);
+  --tick-fill: var(--text-muted);
+  --fillbar: #d6d6d6;
+  --text: #e9e9e9;
+  --text-heading: #f2f2f2;
+  --text-secondary: #b0b0b0;
+  --text-muted: #8a8a8a;
+  --text-faint: #565656;
+  --action-bg: transparent;
+  --action-fg: var(--text);
+  --status-dot: #6e6e6e;
+  --tick-empty: rgba(255, 255, 255, 0.16);
+  --tick-work: rgba(255, 255, 255, 0.34);
+  --tick-decision: rgba(255, 255, 255, 0.44);
+  --tick-claim: rgba(255, 255, 255, 0.24);
+  --danger: #b5675c;
+  --danger-2: #b5675c;
+  --danger-solid: #b5675c;
+  --danger-bg: rgba(181, 103, 92, 0.16);
+  --danger-bg-2: rgba(181, 103, 92, 0.12);
+  --danger-border: rgba(181, 103, 92, 0.4);
+  --danger-border-soft: rgba(181, 103, 92, 0.3);
+  --danger-border-strong: rgba(181, 103, 92, 0.6);
+  --danger-bar: #a85a4e;
+  --danger-tint: rgba(181, 103, 92, 0.14);
+  --success: #b0b0b0;
+  --success-solid: #b0b0b0;
+  --success-tint: rgba(255, 255, 255, 0.05);
+  --success-bar: var(--fillbar);
+  --warn-bg: rgba(255, 255, 255, 0.05);
+  --warn-border: var(--hair);
+  --warn-text: #b0b0b0;
+  --bar-neutral: var(--hair);
+  --bar-work: var(--hair);
+  --bar-info: var(--border-strong);
+  --bar-coord: var(--border-strong);
   --shadow-color: rgba(0, 0, 0, 0.5);
-  /* Real glass: a translucent pane with a top-edge sheen, low enough opacity to
-     frost the ambient light behind it, plus a stronger blur. */
-  --card-bg: linear-gradient(157deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.012) 62%), rgba(20, 20, 23, 0.55);
-  --card-border-color: rgba(255, 255, 255, 0.14);
-  --card-blur: blur(22px) saturate(125%);
-  --card-shadow:
-    0 16px 50px rgba(0, 0, 0, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.09),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+  --card-bg: transparent;
+  --card-border-color: var(--hair);
+  --card-blur: none;
+  --card-shadow: none;
 }
 
-/* Ambient light pools so the frosted panels have something to refract. Soft,
-   off-centre, monotone — reads as lighting in a dark room, not a gradient wash. */
-[data-theme="dark"] .shell {
-  background:
-    radial-gradient(900px 620px at 14% -12%, rgba(255, 255, 255, 0.055), transparent 60%),
-    radial-gradient(820px 760px at 102% 118%, rgba(255, 255, 255, 0.04), transparent 60%),
-    var(--bg);
+/* ===================================================================
+   Lombardi "narrative structure" overrides — ring+label nodes, thin
+   sweeping arcs, a navigation-chart timeline, neutral controls.
+   =================================================================== */
+
+/* Session-map nodes → a hollow ring + serif label, no card box. */
+.treeGrid.fit .treeStep,
+.treeGrid.fit .agentStartCard {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 3px 2px;
+  min-height: 20px;
+}
+.treeGrid.fit .spineStep {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 11px;
+  gap: 9px;
+  align-items: center;
+}
+.treeGrid.fit .spineStep .stepMain {
+  order: 1;
+  text-align: right;
+  align-items: flex-end;
+}
+.treeGrid.fit .spineStep .stepMarker {
+  order: 2;
+}
+.treeGrid.fit .treeStep .stepMarker {
+  display: flex;
+  width: 9px;
+  height: 9px;
+  min-width: 9px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--ink-line);
+  box-shadow: none;
+  color: transparent;
+  font-size: 0;
+  padding: 0;
+}
+.treeGrid.fit .stepMarker.agentMarker {
+  background: var(--bg);
+}
+.treeGrid.fit .agentMarker::after {
+  display: none;
+}
+.treeStep.tone-risk .stepMarker {
+  border-color: var(--danger);
+  border-width: 1.5px;
+}
+.treeGrid.fit .stepMain {
+  gap: 1px;
+}
+.treeGrid.fit .stepMain strong {
+  font-weight: 400;
+  font-size: 13px;
+  color: var(--text);
+}
+.treeStep.tone-risk .stepMain strong {
+  color: var(--danger);
+}
+.treeGrid.fit .stepInlineStats {
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  font-style: italic;
+}
+.treeGrid.fit .agentPill {
+  color: var(--text-muted);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.treeGrid.fit .agentPill span {
+  display: none;
+}
+.treeGrid.fit .stepBadges {
+  display: none !important;
+}
+
+/* subagent-start node = hollow ring too, ring on the right */
+.treeGrid.fit .agentStartCard {
+  grid-template-columns: minmax(0, 1fr) 10px;
+  gap: 9px;
+}
+.treeGrid.fit .agentStartCard .agentStartText {
+  order: 1;
+  text-align: right;
+}
+.treeGrid.fit .agentStartCard .agentStemDot {
+  order: 2;
+}
+.treeGrid.fit .agentStemDot {
+  background: var(--bg);
+  border: 1px solid var(--ink-line);
+  box-shadow: none;
+  width: 9px;
+  height: 9px;
+}
+
+/* selection: quiet — fill the ring, underline the label (no heavy outline box) */
+.treeGrid.fit .treeNode.selected,
+.treeGrid.fit .treeNode.manualSelected,
+.treeGrid.fit .treeNode.agentFocused,
+.treeGrid.fit .treeNode.fileFocused {
+  outline: none;
+  background: transparent;
+}
+.treeGrid.fit .treeNode.selected .stepMarker,
+.treeGrid.fit .treeNode.selected .agentStemDot,
+.treeGrid.fit .treeNode.fileFocused .stepMarker {
+  background: var(--ink-line);
+  border-color: var(--ink-line);
+}
+.treeGrid.fit .treeNode.selected .stepMain strong {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 0.5px;
+}
+
+/* connectors: thin graphite; subagent branches dotted (= indirect) */
+.treeEdge {
+  stroke-width: 1;
+  opacity: 0.5;
+}
+.treeEdge-branch,
+.treeEdge-lane {
+  stroke-dasharray: 1.5 4;
+  stroke-linecap: round;
+  opacity: 0.5;
+}
+.treeEdge.focused {
+  stroke-width: 1.4;
+  opacity: 1;
+}
+.fileEdge {
+  stroke-width: 1;
+  opacity: 0.26;
+}
+
+/* timeline → a navigation-chart axis: baseline + thin ticks */
+.timelineBar {
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--hair);
+  border-radius: 0;
+  box-shadow: none;
+  margin: 0 16px;
+  padding: 11px 4px 6px;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.timelineBar .ticks {
+  position: relative;
+  align-items: center;
+  height: 22px;
+  gap: 3px;
+}
+.timelineBar .ticks::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background: var(--ink-line);
+  opacity: 0.45;
+}
+.timelineBar .tick {
+  align-self: center;
+  height: 7px;
+  border-radius: 0;
+  background: var(--tick-empty);
+}
+.timelineBar .tick.seen {
+  background: var(--tick-decision);
+}
+.timelineBar .tick.tick-risk {
+  background: var(--danger);
+  height: 14px;
+}
+.timelineLive {
+  background: transparent;
+  border: 1px solid var(--hair);
+  color: var(--text-secondary);
+}
+.timelineLive:disabled {
+  color: var(--text);
+}
+.timelineRange {
+  accent-color: var(--text);
+}
+
+/* neutral native controls + focus (kill default blue) */
+input[type="range"] {
+  accent-color: var(--text);
+}
+button:focus-visible,
+select:focus-visible {
+  outline: 1px solid var(--border-contrast);
+  outline-offset: 2px;
+}
+.runPicker {
+  color: var(--text);
+}
+
+/* Floating surfaces need a solid (opaque) paper background and must sit in front
+   of everything — the flat card tokens are transparent, which would make popovers
+   vanish or hide behind focused nodes/edges. */
+.glassInspector {
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 14px 44px var(--shadow-color);
+  z-index: 60;
+}
+.handoffPanel {
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 14px 44px var(--shadow-color);
 }
