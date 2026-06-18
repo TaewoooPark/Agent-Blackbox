@@ -560,6 +560,38 @@ h3 {
   text-transform: uppercase;
 }
 
+.contextAi {
+  display: grid;
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.contextAiButton {
+  background: var(--fill-subtle);
+  border: 1px solid var(--card-border-color);
+  border-radius: var(--card-radius);
+  color: var(--text-heading);
+  cursor: pointer;
+  font-size: var(--fs-body);
+  font-weight: 700;
+  padding: 5px 9px;
+}
+
+.contextAiButton:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.contextAiButton:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.contextAiNote {
+  color: var(--text-muted);
+  font-size: var(--fs-label);
+  line-height: 1.4;
+}
+
 .contextMetric {
   background: transparent;
   border: 0;
