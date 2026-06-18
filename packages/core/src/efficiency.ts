@@ -288,7 +288,7 @@ export function computeEfficiencyReport(events: TraceEvent[]): EfficiencyReport 
         label: "Large context injections",
         value: biggest,
         unit: "tokens",
-        display: biggest === 0 ? "none" : formatTokens(biggest),
+        display: biggest >= 2000 ? formatTokens(biggest) : "none",
         score,
         status,
         detail:

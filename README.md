@@ -86,6 +86,7 @@ The gap between what an agent *says* and what it *does* is where bugs, overconfi
 - **Subagent genealogy** — real delegations (the `task` tool / child sessions) fork into their own branch, attributed to the subagent that did the work.
 - **Handoff export** — generate a structured continuation summary (objective, files in play, decisions, commands, failures, blockers, next safe action) and copy it as Markdown.
 - **Run picker** — one project log can hold many runs; the console follows the most recently *active* run and lets you pin any past one.
+- **Context efficiency** — a live score for how economically the run used its context window (cache reuse, redundant re-reads, read-vs-edit amplification, oversized tool outputs, retry waste, yield density), with one-tap optimization suggestions — rule-based by default, or routed to a **free/local model** (no API key).
 - **One-command bootstrap** — `npm run up` installs the recorder plugin, starts the daemon, and serves the dashboard.
 
 <p align="center">
@@ -135,6 +136,27 @@ Open the dashboard URL it printed (default `http://127.0.0.1:5173/`) and watch t
 
 ---
 
+## Context efficiency
+
+The **CONTEXT** panel scores how economically each run used its context window — derived from observed sizes and token snapshots, never the agent's self-report. Flagged metrics get one-tap, concrete optimization tips.
+
+Suggestions are **rule-based by default** (always available, no dependencies). To get them tailored by a model — with **no API key** — point `up` at a local/free model:
+
+```bash
+# Ollama (recommended): no key, runs locally
+npm run up -- --project /path/to/project --suggest ollama --suggest-model llama3.1
+
+# Any OpenAI-compatible localhost server (LM Studio, llama.cpp)
+npm run up -- --project /path --suggest openai-compat --suggest-base-url http://127.0.0.1:1234
+
+# Reuse OpenCode's free model via your installed binary
+npm run up -- --project /path --suggest opencode --suggest-model opencode/deepseek-v4-flash-free
+```
+
+`--suggest auto` (the default) probes those in order and falls back to rule-based. Only a **redacted, derived digest** (statuses, counts, sizes — never file contents, paths, or commands) is ever sent, even to a local model.
+
+---
+
 ## Daemon API
 
 | Method & path | Purpose |
@@ -142,8 +164,10 @@ Open the dashboard URL it printed (default `http://127.0.0.1:5173/`) and watch t
 | `POST /events` | Ingest a canonical `TraceEvent` |
 | `GET /events` | The durable event log |
 | `GET /graph?seq=<n>` | Replay the graph up to a sequence |
-| `GET /snapshot?seq=<n>` | Events, graph, audit checks, and handoff markdown |
+| `GET /snapshot?seq=<n>` | Events, graph, audit checks, efficiency report, and handoff markdown |
 | `GET /audit` | Promise / claim checks |
+| `GET /efficiency?seq=<n>` | Context-efficiency report (scores + metrics) |
+| `POST /suggest` | Optimization suggestions for a posted report (deterministic or local-model) |
 | `GET /handoff` | Generated handoff markdown |
 | `WS /stream` | Live snapshots pushed after each ingest |
 
