@@ -193,6 +193,30 @@ export function DashboardApp() {
   const efficiency = useMemo(() => computeEfficiencyReport(visibleEvents), [visibleEvents]);
   const suggestions = useMemo(() => buildDeterministicSuggestions(efficiency), [efficiency]);
   const [metricHighlight, setMetricHighlight] = useState<{ ids: string[]; nonce: number }>({ ids: [], nonce: 0 });
+  const [aiState, setAiState] = useState<{ suggestions: Suggestion[]; provider: string } | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+
+  // Stale AI advice shouldn't bleed across runs; deterministic suggestions track live.
+  useEffect(() => {
+    setAiState(null);
+  }, [selectedRunId]);
+
+  const requestAiSuggestions = async () => {
+    setAiLoading(true);
+    try {
+      const response = await fetch(`${daemonUrl}/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ report: efficiency })
+      });
+      const json = (await response.json()) as { ok: boolean; data?: { suggestions: Suggestion[]; provider: string } };
+      if (json.ok && json.data) setAiState(json.data);
+    } catch {
+      // Daemon unreachable — keep the deterministic suggestions already shown.
+    } finally {
+      setAiLoading(false);
+    }
+  };
   const sessionName = useMemo(() => sessionDisplayName(visibleEvents, graph?.runId), [visibleEvents, graph]);
   const runHost = visibleEvents[0]?.host ?? null;
   const runStatus = useMemo(() => deriveRunStatus(visibleEvents), [visibleEvents]);
@@ -386,7 +410,10 @@ export function DashboardApp() {
           <TokenPanel usage={tokenTotals} />
           <ContextPanel
             report={efficiency}
-            suggestions={suggestions}
+            suggestions={aiState?.suggestions ?? suggestions}
+            aiProvider={aiState?.provider ?? null}
+            aiLoading={aiLoading}
+            onRequestAi={requestAiSuggestions}
             onSelectMetric={(metric) =>
               setMetricHighlight((current) => ({ ids: metric.evidenceEventIds, nonce: current.nonce + 1 }))
             }
@@ -2048,10 +2075,16 @@ function TokenPanel({ usage }: { usage: TokenUsage }) {
 function ContextPanel({
   report,
   suggestions,
+  aiProvider,
+  aiLoading,
+  onRequestAi,
   onSelectMetric
 }: {
   report: EfficiencyReport;
   suggestions: Suggestion[];
+  aiProvider: string | null;
+  aiLoading: boolean;
+  onRequestAi: () => void;
   onSelectMetric: (metric: EfficiencyMetric) => void;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -2108,6 +2141,20 @@ function ContextPanel({
           );
         })}
       </div>
+      {fixCount > 0 ? (
+        <div className="contextAi">
+          <button className="contextAiButton" type="button" onClick={onRequestAi} disabled={aiLoading}>
+            {aiLoading ? "Optimizing…" : aiProvider ? "Re-run AI suggestions" : "Optimize with a local model"}
+          </button>
+          {aiProvider ? (
+            <span className="contextAiNote">
+              {aiProvider === "deterministic"
+                ? "No local model reachable — showing rule-based tips. Configure --suggest."
+                : `Tailored by ${aiProvider} (local).`}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }

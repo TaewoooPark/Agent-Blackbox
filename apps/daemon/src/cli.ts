@@ -6,6 +6,7 @@ import { startDashboardServer } from "./dashboardServer.js";
 import { AGENT_BLACKBOX_DAEMON_VERSION, describeDaemon } from "./index.js";
 import { initOpenCodeProject } from "./initOpenCode.js";
 import { buildReplaySummary, loadTraceEvents, startTraceDaemon } from "./server.js";
+import type { SuggestionConfig, SuggestionMode } from "./suggestionProvider.js";
 
 const args = process.argv.slice(2);
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -34,6 +35,7 @@ async function main(argv: string[]): Promise<void> {
     const uiPort = Number(readFlag(argv, "--ui-port") ?? "5173");
     const daemonUrl = `http://127.0.0.1:${port}`;
     const adapterPackage = readFlag(argv, "--adapter-package") ?? `file:${resolve(repoRoot, "packages/opencode-adapter")}`;
+    const suggest = readSuggestConfig(argv);
 
     try {
       const result = await initOpenCodeProject({ projectDir, daemonUrl, adapterPackage, force: false });
@@ -46,7 +48,7 @@ async function main(argv: string[]): Promise<void> {
       }
     }
 
-    const daemon = await startTraceDaemon({ projectDir, port });
+    const daemon = await startTraceDaemon({ projectDir, port, suggest });
     const distDir = resolve(repoRoot, "apps/dashboard/dist");
     const ui = await startDashboardServer({ distDir, port: uiPort, daemonUrl });
 
@@ -54,6 +56,7 @@ async function main(argv: string[]): Promise<void> {
     console.log(`✓ Agent-Blackbox is up for ${projectDir}`);
     console.log(`  Dashboard:  http://127.0.0.1:${ui.port}`);
     console.log(`  Daemon API: ${daemonUrl}  (trace: ${daemon.eventsFile})`);
+    console.log(`  Suggestions: ${suggest.mode}${suggest.model ? ` (${suggest.model})` : ""}`);
     console.log("");
     console.log("Now run your agent in that project, e.g.:");
     console.log(`  AGENT_BLACKBOX_DAEMON_URL=${daemonUrl} opencode run --dir ${projectDir} "Read the code, run tests, summarize."`);
@@ -104,6 +107,7 @@ function printHelp(): void {
   console.log("");
   console.log("Usage:");
   console.log("  agent-blackbox up [--project <dir>] [--port <port>] [--ui-port <port>]   # plugin + daemon + dashboard, one command");
+  console.log("       [--suggest auto|off|ollama|opencode|openai-compat] [--suggest-model <id>] [--suggest-base-url <url>]");
   console.log("  agent-blackbox daemon [--project <dir>] [--port <port>]");
   console.log("  agent-blackbox init-opencode [--project <dir>] [--daemon-url <url>] [--adapter-package <specifier>] [--force]");
   console.log("  agent-blackbox handoff <events.ndjson>");
@@ -117,4 +121,13 @@ function readFlag(argv: string[], flag: string): string | undefined {
     return undefined;
   }
   return argv[index + 1];
+}
+
+function readSuggestConfig(argv: string[]): SuggestionConfig {
+  const modes: SuggestionMode[] = ["auto", "off", "ollama", "opencode", "openai-compat"];
+  const raw = readFlag(argv, "--suggest") ?? process.env.AGENT_BLACKBOX_SUGGEST ?? "auto";
+  const mode = (modes as string[]).includes(raw) ? (raw as SuggestionMode) : "auto";
+  const model = readFlag(argv, "--suggest-model") ?? process.env.AGENT_BLACKBOX_SUGGEST_MODEL;
+  const baseUrl = readFlag(argv, "--suggest-base-url") ?? process.env.AGENT_BLACKBOX_SUGGEST_BASE_URL;
+  return { mode, ...(model ? { model } : {}), ...(baseUrl ? { baseUrl } : {}) };
 }

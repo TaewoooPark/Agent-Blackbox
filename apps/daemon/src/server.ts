@@ -15,11 +15,13 @@ import { appendTraceEvent, readTraceEvents } from "@agent-blackbox/storage";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
+import { generateSuggestions, type SuggestionConfig } from "./suggestionProvider.js";
 
 export type TraceDaemonOptions = {
   projectDir: string;
   port?: number;
   eventsFile?: string;
+  suggest?: SuggestionConfig;
 };
 
 export type RunningTraceDaemon = {
@@ -50,9 +52,10 @@ type JsonResponse = {
 
 export async function startTraceDaemon(options: TraceDaemonOptions): Promise<RunningTraceDaemon> {
   const eventsFile = options.eventsFile ?? join(options.projectDir, ".agent-blackbox", "events.ndjson");
+  const suggestConfig: SuggestionConfig = options.suggest ?? { mode: "auto" };
   const clients = new Set<WebSocket>();
   const server = createServer((request, response) => {
-    void handleRequest(request, response, eventsFile, clients);
+    void handleRequest(request, response, eventsFile, clients, suggestConfig);
   });
   const streamServer = new WebSocketServer({ noServer: true });
   server.on("upgrade", (request, socket, head) => {
@@ -154,7 +157,8 @@ async function handleRequest(
   request: IncomingMessage,
   response: ServerResponse,
   eventsFile: string,
-  clients: Set<WebSocket>
+  clients: Set<WebSocket>,
+  suggestConfig: SuggestionConfig
 ): Promise<void> {
   try {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
@@ -192,6 +196,18 @@ async function handleRequest(
         ok: true,
         data: { markdown: (await buildTraceSnapshot(eventsFile, replay)).handoffMarkdown }
       });
+      return;
+    }
+    if (url.pathname === "/suggest" && (request.method === "POST" || request.method === "GET")) {
+      // POST a client-computed report (keeps it consistent with the per-run panel);
+      // GET falls back to the whole-file report.
+      const body = request.method === "POST" ? ((await readJsonBody(request)) as { report?: EfficiencyReport }) : {};
+      const report =
+        body.report && Array.isArray(body.report.metrics)
+          ? body.report
+          : (await buildTraceSnapshot(eventsFile, replay)).efficiency;
+      const result = await generateSuggestions(report, suggestConfig);
+      sendJson(response, 200, { ok: true, data: result });
       return;
     }
     if (request.method === "POST" && url.pathname === "/events") {
