@@ -1,6 +1,6 @@
 :root {
-  color: #17191c;
-  background: #f7f8f9;
+  color: var(--text);
+  background: var(--bg);
   font-family: Helvetica, "Helvetica Neue", Arial, sans-serif;
   font-weight: 400;
   font-synthesis: none;
@@ -8,7 +8,7 @@
 
   /* Canonical card design, taken from the Files panel and reused everywhere. */
   --card-bg: rgba(255, 255, 255, 0.72);
-  --card-border-color: rgba(25, 28, 33, 0.08);
+  --card-border-color: var(--border);
   --card-radius: 8px;
   --card-shadow: 0 18px 60px rgba(24, 28, 34, 0.06);
   --card-blur: blur(20px);
@@ -17,6 +17,62 @@
   --fs-title: 13px;
   --fs-body: 11px;
   --fs-label: 9px;
+
+  /* Semantic theme tokens (light). */
+  --bg: #f7f8f9;
+  --bg-elevated: #edf0f3;
+  --shell-top: rgba(255, 255, 255, 0.74);
+  --shell-bottom: rgba(245, 246, 248, 0.96);
+  --panel-grad: rgba(232, 235, 239, 0.88);
+  --scrim: rgba(20, 22, 26, 0.28);
+  --surface-strong: rgba(255, 255, 255, 0.82);
+  --surface-soft: rgba(255, 255, 255, 0.5);
+  --surface-tint: rgba(245, 246, 247, 0.72);
+  --surface-tint-faint: rgba(245, 246, 247, 0.54);
+  --border: rgba(25, 28, 33, 0.08);
+  --border-strong: rgba(25, 28, 33, 0.14);
+  --border-contrast: rgba(23, 25, 28, 0.34);
+  --fill-subtle: rgba(29, 33, 39, 0.06);
+  --fill-hover: rgba(17, 19, 23, 0.06);
+  --node-hover: rgba(31, 35, 40, 0.16);
+  --control-fill: rgba(25, 28, 33, 0.18);
+  --control-fill-hover: rgba(25, 28, 33, 0.36);
+  --dot-fill: rgba(30, 34, 40, 0.16);
+  --tick-fill: rgba(31, 35, 40, 0.28);
+  --text: #17191c;
+  --text-heading: #22262c;
+  --text-secondary: #4d535c;
+  --text-muted: #727983;
+  --text-faint: #9a9fa6;
+  --action-bg: #111317;
+  --action-fg: #fff;
+  --status-dot: #9aa0a8;
+  --tick-empty: #d3d7dc;
+  --tick-work: #aeb5bd;
+  --tick-decision: #9fa5ad;
+  --tick-claim: #c2c6cb;
+  --danger: #a8322e;
+  --danger-2: #8d3d3d;
+  --danger-solid: #c4403c;
+  --danger-bg: rgba(200, 78, 74, 0.12);
+  --danger-bg-2: rgba(200, 78, 74, 0.1);
+  --danger-border: rgba(196, 64, 60, 0.25);
+  --danger-border-soft: rgba(196, 64, 60, 0.22);
+  --danger-border-strong: rgba(196, 64, 60, 0.5);
+  --danger-bar: rgba(196, 64, 60, 0.9);
+  --danger-tint: #faeeee;
+  --success: #2f6b50;
+  --success-solid: #2f9e57;
+  --success-tint: #eef6f2;
+  --success-bar: rgba(47, 158, 87, 0.75);
+  --warn-bg: rgba(255, 250, 237, 0.9);
+  --warn-border: rgba(155, 117, 35, 0.22);
+  --warn-text: #5a4211;
+  --bar-neutral: rgba(150, 156, 164, 0.3);
+  --bar-work: rgba(120, 134, 150, 0.45);
+  --bar-info: rgba(58, 112, 168, 0.6);
+  --bar-coord: rgba(124, 92, 196, 0.65);
+  --shadow-color: rgba(22, 25, 30, 0.08);
 }
 
 * {
@@ -37,8 +93,8 @@ button {
 
 .shell {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.74), rgba(245, 246, 248, 0.96)),
-    #f4f5f6;
+    linear-gradient(180deg, var(--shell-top), var(--shell-bottom)),
+    var(--bg);
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
   height: 100vh;
@@ -50,7 +106,7 @@ button {
   align-items: center;
   background: transparent;
   border-bottom: 0;
-  color: #17191c;
+  color: var(--text);
   display: flex;
   gap: 14px;
   justify-content: space-between;
@@ -81,7 +137,7 @@ button {
   background: var(--card-bg);
   border: 1px solid var(--card-border-color);
   border-radius: var(--card-radius);
-  color: #4d535c;
+  color: var(--text-secondary);
   display: inline-flex;
   font-size: var(--fs-body);
   font-weight: 700;
@@ -94,7 +150,7 @@ button {
   background: var(--card-bg);
   border: 1px solid var(--card-border-color);
   border-radius: var(--card-radius);
-  color: #2b2f36;
+  color: var(--text-heading);
   cursor: pointer;
   font-size: var(--fs-body);
   font-weight: 700;
@@ -103,14 +159,14 @@ button {
 }
 
 .runPicker:hover {
-  border-color: rgba(24, 28, 34, 0.22);
+  border-color: var(--border-strong);
 }
 
 .topbarAction {
-  background: #111317;
-  border: 1px solid rgba(17, 19, 23, 0.1);
+  background: var(--action-bg);
+  border: 1px solid var(--border-strong);
   border-radius: var(--card-radius);
-  color: #fff;
+  color: var(--action-fg);
   cursor: pointer;
   font-size: var(--fs-body);
   font-weight: 700;
@@ -122,9 +178,28 @@ button {
   opacity: 0.4;
 }
 
+.themeToggle {
+  align-items: center;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border-color);
+  border-radius: var(--card-radius);
+  color: var(--text-heading);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: var(--fs-title);
+  justify-content: center;
+  line-height: 1;
+  min-height: 28px;
+  padding: 4px 8px;
+}
+
+.themeToggle:hover {
+  border-color: var(--border-strong);
+}
+
 .handoffOverlay {
   align-items: center;
-  background: rgba(20, 22, 26, 0.28);
+  background: var(--scrim);
   display: flex;
   inset: 0;
   justify-content: center;
@@ -164,7 +239,7 @@ button {
   background: var(--card-bg);
   border: 1px solid var(--card-border-color);
   border-radius: var(--card-radius);
-  color: #262a30;
+  color: var(--text-heading);
   cursor: pointer;
   font-size: var(--fs-body);
   font-weight: 700;
@@ -172,10 +247,10 @@ button {
 }
 
 .handoffBody {
-  background: rgba(255, 255, 255, 0.5);
+  background: var(--surface-soft);
   border: 1px solid var(--card-border-color);
   border-radius: var(--card-radius);
-  color: #24282e;
+  color: var(--text-heading);
   font-size: var(--fs-body);
   line-height: 1.5;
   margin: 0;
@@ -186,7 +261,7 @@ button {
 }
 
 .statusChip.host {
-  color: #2b2f36;
+  color: var(--text-heading);
   text-transform: lowercase;
 }
 
@@ -195,32 +270,32 @@ button {
 }
 
 .statusDot {
-  background: #9aa0a8;
+  background: var(--status-dot);
   border-radius: 999px;
   height: 6px;
   width: 6px;
 }
 
 .state-active .statusDot {
-  background: #2f9e57;
+  background: var(--success-solid);
 }
 
 .state-idle .statusDot {
-  background: #9aa0a8;
+  background: var(--status-dot);
 }
 
 .state-error {
-  color: #a8322e;
+  color: var(--danger);
 }
 
 .state-error .statusDot {
-  background: #c4403c;
+  background: var(--danger-solid);
 }
 
 .statusChip.risk {
-  background: rgba(200, 78, 74, 0.12);
-  border-color: rgba(196, 64, 60, 0.25);
-  color: #a8322e;
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
+  color: var(--danger);
 }
 
 button.statusChip {
@@ -229,7 +304,7 @@ button.statusChip {
 }
 
 button.statusChip:hover {
-  border-color: rgba(196, 64, 60, 0.5);
+  border-color: var(--danger-border-strong);
 }
 
 .stats {
@@ -248,28 +323,28 @@ button.statusChip:hover {
 }
 
 .metric span {
-  color: #79808a;
+  color: var(--text-muted);
   font-size: var(--fs-body);
   margin: 0;
 }
 
 .metric strong {
-  color: #17191c;
+  color: var(--text);
   font-size: var(--fs-title);
 }
 
 .metric.ok strong {
-  color: #2f6b50;
+  color: var(--success);
 }
 
 .metric.risk strong {
-  color: #8d3d3d;
+  color: var(--danger-2);
 }
 
 .banner {
-  background: rgba(255, 250, 237, 0.9);
-  border-bottom: 1px solid rgba(155, 117, 35, 0.22);
-  color: #5a4211;
+  background: var(--warn-bg);
+  border-bottom: 1px solid var(--warn-border);
+  color: var(--warn-text);
   font-size: var(--fs-body);
   padding: 7px 16px;
 }
@@ -298,7 +373,7 @@ button.statusChip:hover {
 }
 
 h2 {
-  color: #464b53;
+  color: var(--text-heading);
   font-size: var(--fs-body);
   letter-spacing: 0;
   margin: 0 0 8px;
@@ -313,7 +388,7 @@ h3 {
 }
 
 .muted {
-  color: #7a8088;
+  color: var(--text-muted);
   font-size: var(--fs-body);
 }
 
@@ -322,7 +397,7 @@ h3 {
   background: var(--card-bg);
   border: 1px solid var(--card-border-color);
   border-radius: var(--card-radius);
-  color: #1f2328;
+  color: var(--text);
   cursor: pointer;
   display: grid;
   gap: 7px;
@@ -336,15 +411,15 @@ h3 {
 
 .lane.active,
 .lane:hover {
-  border-color: rgba(26, 30, 36, 0.3);
-  box-shadow: 0 8px 28px rgba(22, 25, 30, 0.08);
+  border-color: var(--border-contrast);
+  box-shadow: 0 8px 28px var(--shadow-color);
 }
 
 .laneMarker {
-  background: #24282e;
-  border: 3px solid rgba(255, 255, 255, 0.88);
+  background: var(--text-heading);
+  border: 3px solid var(--surface-strong);
   border-radius: 999px;
-  box-shadow: 0 0 0 1px rgba(25, 28, 33, 0.14);
+  box-shadow: 0 0 0 1px var(--border-strong);
   display: block;
   height: 12px;
   width: 12px;
@@ -357,7 +432,7 @@ h3 {
 }
 
 .laneMain strong {
-  color: #17191c;
+  color: var(--text);
   font-size: var(--fs-body);
   line-height: 1.15;
   overflow: hidden;
@@ -366,7 +441,7 @@ h3 {
 }
 
 .laneMain span {
-  color: #727983;
+  color: var(--text-muted);
   font-size: var(--fs-label);
   font-weight: 700;
   text-transform: uppercase;
@@ -394,7 +469,7 @@ h3 {
 }
 
 .tokenTotal {
-  color: #181b20;
+  color: var(--text);
   display: block;
   font-size: var(--fs-title);
   line-height: 1.2;
@@ -408,14 +483,14 @@ h3 {
 
 .tokenRow {
   align-items: center;
-  color: #68707a;
+  color: var(--text-muted);
   display: flex;
   font-size: var(--fs-body);
   justify-content: space-between;
 }
 
 .tokenRow strong {
-  color: #24282e;
+  color: var(--text-heading);
   font-size: var(--fs-body);
 }
 
@@ -427,7 +502,7 @@ h3 {
 }
 
 .replayControls input {
-  accent-color: #20242a;
+  accent-color: var(--text-heading);
   min-width: 0;
   width: 100%;
 }
@@ -437,7 +512,7 @@ h3 {
   background: var(--card-bg);
   border: 1px solid var(--card-border-color);
   border-radius: var(--card-radius);
-  color: #262a30;
+  color: var(--text-heading);
   cursor: pointer;
   font-size: var(--fs-body);
   min-height: 26px;
@@ -445,12 +520,12 @@ h3 {
 }
 
 .replayControls button:disabled {
-  color: #9a9fa6;
+  color: var(--text-faint);
   cursor: not-allowed;
 }
 
 .replayLabel {
-  color: #777e87;
+  color: var(--text-muted);
   font-size: var(--fs-body);
   margin: 8px 0;
 }
@@ -462,7 +537,7 @@ h3 {
 }
 
 .tick {
-  background: #d3d7dc;
+  background: var(--tick-empty);
   border: 0;
   border-radius: 3px;
   display: block;
@@ -471,27 +546,27 @@ h3 {
 }
 
 .tick.seen {
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.68);
+  box-shadow: inset 0 0 0 2px var(--surface-soft);
 }
 
 .tick-work {
-  background: #aeb5bd;
+  background: var(--tick-work);
 }
 
 .tick-decision {
-  background: #9fa5ad;
+  background: var(--tick-decision);
 }
 
 .tick-risk {
-  background: #c4403c;
+  background: var(--danger-solid);
 }
 
 .tick-success {
-  background: #2f9e57;
+  background: var(--success-solid);
 }
 
 .tick-claim {
-  background: #c2c6cb;
+  background: var(--tick-claim);
 }
 
 .sessionMap {
@@ -515,7 +590,7 @@ h3 {
 }
 
 .workflowHeader p {
-  color: #6b727c;
+  color: var(--text-muted);
   font-size: var(--fs-body);
   line-height: 1.3;
   margin: 0;
@@ -532,7 +607,7 @@ h3 {
   background: var(--card-bg);
   border: 1px solid var(--card-border-color);
   border-radius: var(--card-radius);
-  color: #4d535c;
+  color: var(--text-secondary);
   flex: 0 0 auto;
   font-size: var(--fs-body);
   font-weight: 700;
@@ -540,11 +615,11 @@ h3 {
 }
 
 .workflowTools button {
-  background: #111317;
-  border: 1px solid rgba(17, 19, 23, 0.1);
+  background: var(--action-bg);
+  border: 1px solid var(--border-strong);
   border-radius: var(--card-radius);
-  box-shadow: 0 8px 22px rgba(17, 19, 23, 0.14);
-  color: #fff;
+  box-shadow: 0 8px 22px var(--shadow-color);
+  color: var(--action-fg);
   cursor: pointer;
   font-size: var(--fs-body);
   font-weight: 700;
@@ -569,17 +644,17 @@ h3 {
   border: 0;
   border-radius: 0;
   box-shadow: none;
-  color: #1d2127;
+  color: var(--text);
   min-width: 30px;
   padding: 4px 8px;
 }
 
 .workflowTools .zoomControls button:hover:not(:disabled) {
-  background: rgba(17, 19, 23, 0.06);
+  background: var(--fill-hover);
 }
 
 .workflowTools .zoomControls button:disabled {
-  color: #b7bcc4;
+  color: var(--text-faint);
   cursor: default;
 }
 
@@ -631,7 +706,7 @@ h3 {
 .mapEdge {
   fill: none;
   opacity: 0.32;
-  stroke: #1d2127;
+  stroke: var(--text);
   stroke-linecap: round;
   stroke-width: 1.25;
   transition:
@@ -653,7 +728,7 @@ h3 {
 .treeEdge {
   fill: none;
   opacity: 0.32;
-  stroke: #1d2127;
+  stroke: var(--text);
   stroke-linecap: round;
   stroke-width: 1.25;
   transition:
@@ -697,14 +772,14 @@ h3 {
 }
 
 .emptySteps li {
-  color: #3c424b;
+  color: var(--text-heading);
   font-size: var(--fs-body);
   line-height: 1.4;
 }
 
 .emptySteps code,
 .banner code {
-  background: rgba(25, 28, 33, 0.06);
+  background: var(--fill-subtle);
   border: 1px solid var(--card-border-color);
   border-radius: 6px;
   display: inline-block;
@@ -750,7 +825,7 @@ h3 {
 }
 
 .spine::before {
-  background: rgba(31, 35, 40, 0.16);
+  background: var(--node-hover);
   bottom: 22px;
   content: "";
   left: 17px;
@@ -770,7 +845,7 @@ h3 {
   border: 1px solid var(--card-border-color);
   border-radius: var(--card-radius);
   box-shadow: var(--card-shadow);
-  color: #17191c;
+  color: var(--text);
   cursor: pointer;
   display: grid;
   gap: 4px;
@@ -788,37 +863,37 @@ h3 {
 /* Restrained operational tone accents: a left edge stripe per step kind so a
    failure/blocker reads at a glance without overwhelming the muted palette. */
 .treeStep.tone-neutral {
-  box-shadow: var(--card-shadow), inset 3px 0 0 rgba(150, 156, 164, 0.3);
+  box-shadow: var(--card-shadow), inset 3px 0 0 var(--bar-neutral);
 }
 
 .treeStep.tone-claim {
-  box-shadow: var(--card-shadow), inset 3px 0 0 rgba(120, 134, 150, 0.45);
+  box-shadow: var(--card-shadow), inset 3px 0 0 var(--bar-work);
 }
 
 .treeStep.tone-work {
-  box-shadow: var(--card-shadow), inset 3px 0 0 rgba(58, 112, 168, 0.6);
+  box-shadow: var(--card-shadow), inset 3px 0 0 var(--bar-info);
 }
 
 .treeStep.tone-decision {
-  box-shadow: var(--card-shadow), inset 3px 0 0 rgba(124, 92, 196, 0.65);
+  box-shadow: var(--card-shadow), inset 3px 0 0 var(--bar-coord);
 }
 
 .treeStep.tone-success {
-  box-shadow: var(--card-shadow), inset 3px 0 0 rgba(47, 158, 87, 0.75);
+  box-shadow: var(--card-shadow), inset 3px 0 0 var(--success-bar);
 }
 
 .treeStep.tone-success .stepMain strong {
-  color: #2f7d4f;
+  color: var(--success);
 }
 
 .treeStep.tone-risk {
-  background: rgba(200, 78, 74, 0.1);
-  border-color: rgba(196, 64, 60, 0.22);
-  box-shadow: var(--card-shadow), inset 3px 0 0 rgba(196, 64, 60, 0.9);
+  background: var(--danger-bg-2);
+  border-color: var(--danger-border-soft);
+  box-shadow: var(--card-shadow), inset 3px 0 0 var(--danger-bar);
 }
 
 .treeStep.tone-risk .stepMain strong {
-  color: #a8322e;
+  color: var(--danger);
 }
 
 .treeNode {
@@ -881,8 +956,8 @@ h3 {
 }
 
 .agentStep {
-  background: rgba(255, 255, 255, 0.58);
-  border-color: rgba(25, 28, 33, 0.09);
+  background: var(--surface-soft);
+  border-color: var(--border);
 }
 
 .agentStartCard {
@@ -891,7 +966,7 @@ h3 {
   border: 1px solid var(--card-border-color);
   border-radius: var(--card-radius);
   box-shadow: var(--card-shadow);
-  color: #20242a;
+  color: var(--text-heading);
   cursor: pointer;
   display: grid;
   gap: 4px;
@@ -908,15 +983,15 @@ h3 {
 .agentStartCard.selected,
 .agentStartCard.manualSelected,
 .agentStartCard.agentFocused {
-  border-color: rgba(23, 25, 28, 0.34);
-  box-shadow: 0 8px 28px rgba(22, 25, 30, 0.08);
+  border-color: var(--border-contrast);
+  box-shadow: 0 8px 28px var(--shadow-color);
 }
 
 .agentStemDot {
-  background: #24282e;
-  border: 3px solid rgba(255, 255, 255, 0.88);
+  background: var(--text-heading);
+  border: 3px solid var(--surface-strong);
   border-radius: 999px;
-  box-shadow: 0 0 0 1px rgba(25, 28, 33, 0.14);
+  box-shadow: 0 0 0 1px var(--border-strong);
   display: block;
   height: 9px;
   width: 9px;
@@ -930,14 +1005,14 @@ h3 {
 
 .agentStartText span,
 .agentPill {
-  color: #727983;
+  color: var(--text-muted);
   font-size: var(--fs-label);
   font-weight: 700;
   text-transform: uppercase;
 }
 
 .agentStartText strong {
-  color: #17191c;
+  color: var(--text);
   font-size: var(--fs-body);
   line-height: 1.15;
   overflow: hidden;
@@ -946,11 +1021,11 @@ h3 {
 }
 
 .agentMarker {
-  background: rgba(32, 36, 42, 0.11);
+  background: var(--fill-subtle);
 }
 
 .agentMarker::after {
-  background: #24282e;
+  background: var(--text-heading);
   border-radius: 999px;
   content: "";
   height: 6px;
@@ -968,10 +1043,10 @@ h3 {
 }
 
 .agentPill span {
-  background: rgba(245, 246, 247, 0.82);
-  border: 1px solid rgba(25, 28, 33, 0.07);
+  background: var(--surface-tint);
+  border: 1px solid var(--border);
   border-radius: 999px;
-  color: #68707a;
+  color: var(--text-muted);
   flex: 0 0 auto;
   font-size: var(--fs-label);
   padding: 1px 4px;
@@ -1011,30 +1086,30 @@ h3 {
 .spineStep.selected,
 .spineStep.manualSelected,
 .spineStep.agentFocused {
-  border-color: rgba(23, 25, 28, 0.36);
-  box-shadow: 0 8px 28px rgba(22, 25, 30, 0.08);
+  border-color: var(--border-contrast);
+  box-shadow: 0 8px 28px var(--shadow-color);
 }
 
 .treeNode.manualSelected {
-  outline: 1px solid rgba(17, 19, 23, 0.42);
+  outline: 1px solid var(--border-contrast);
   outline-offset: 2px;
 }
 
 .treeNode.agentFocused {
-  background: rgba(255, 255, 255, 0.82);
+  background: var(--surface-strong);
 }
 
 .treeNode.selected,
 .treeNode.agentFocused,
 .treeNode.fileFocused {
-  outline: 1px solid rgba(17, 19, 23, 0.28);
+  outline: 1px solid var(--border-contrast);
   outline-offset: 2px;
 }
 
 .treeNode.expanded {
   box-shadow:
-    0 18px 52px rgba(18, 22, 28, 0.13),
-    inset 0 0 0 1px rgba(26, 30, 36, 0.06);
+    0 18px 52px var(--shadow-color),
+    inset 0 0 0 1px var(--fill-subtle);
   min-height: 62px;
   width: 238px;
   z-index: 8;
@@ -1045,8 +1120,8 @@ h3 {
 }
 
 .selectionBox {
-  background: rgba(17, 19, 23, 0.055);
-  border: 1px solid rgba(17, 19, 23, 0.32);
+  background: var(--fill-subtle);
+  border: 1px solid var(--border-contrast);
   border-radius: var(--card-radius);
   pointer-events: none;
   position: absolute;
@@ -1055,10 +1130,10 @@ h3 {
 
 .stepMarker {
   align-items: center;
-  background: rgba(255, 255, 255, 0.82);
-  border: 1px solid rgba(25, 28, 33, 0.14);
+  background: var(--surface-strong);
+  border: 1px solid var(--border-strong);
   border-radius: 999px;
-  color: #272b31;
+  color: var(--text-heading);
   display: flex;
   font-size: var(--fs-body);
   font-weight: 700;
@@ -1076,13 +1151,13 @@ h3 {
 }
 
 .stepMeta {
-  color: #858b94;
+  color: var(--text-faint);
   font-size: var(--fs-label);
   font-weight: 700;
 }
 
 .stepMain strong {
-  color: #17191c;
+  color: var(--text);
   font-size: var(--fs-body);
   line-height: 1.15;
   overflow: hidden;
@@ -1103,7 +1178,7 @@ h3 {
 
 .treeGrid.fit .stepInlineStats,
 .spineStep.expanded .stepInlineStats {
-  color: #777e87;
+  color: var(--text-muted);
   display: block;
   font-size: var(--fs-label);
   font-weight: 700;
@@ -1115,7 +1190,7 @@ h3 {
 
 .spineStep.expanded .stepSummary,
 .agentStartCard.expanded .agentStartDetail {
-  color: #555c66;
+  color: var(--text-secondary);
   display: block;
   font-size: var(--fs-body);
   font-weight: 700;
@@ -1129,10 +1204,10 @@ h3 {
 
 .stepCount {
   align-self: start;
-  background: rgba(245, 246, 247, 0.72);
-  border: 1px solid rgba(25, 28, 33, 0.08);
+  background: var(--surface-tint);
+  border: 1px solid var(--border);
   border-radius: 999px;
-  color: #6d737c;
+  color: var(--text-muted);
   font-size: var(--fs-label);
   font-weight: 700;
   padding: 2px 5px;
@@ -1148,10 +1223,10 @@ h3 {
 }
 
 .tokenPill {
-  background: rgba(24, 27, 32, 0.08);
-  border: 1px solid rgba(25, 28, 33, 0.08);
+  background: var(--fill-subtle);
+  border: 1px solid var(--border);
   border-radius: 999px;
-  color: #4d535c;
+  color: var(--text-secondary);
   font-size: var(--fs-label);
   font-weight: 700;
   padding: 2px 5px;
@@ -1187,10 +1262,10 @@ h3 {
 }
 
 .fileAnchorTick {
-  background: rgba(31, 35, 40, 0.28);
-  border: 2px solid rgba(255, 255, 255, 0.9);
+  background: var(--tick-fill);
+  border: 2px solid var(--surface-strong);
   border-radius: 999px;
-  box-shadow: 0 0 0 1px rgba(25, 28, 33, 0.08);
+  box-shadow: 0 0 0 1px var(--border);
   display: block;
   height: 8px;
   left: 2px;
@@ -1207,10 +1282,10 @@ h3 {
 .fileAnchorTick.linked,
 .fileAnchorTick.agentLinked,
 .fileAnchorTick.eventLinked {
-  background: #111317;
+  background: var(--action-bg);
   box-shadow:
-    0 0 0 2px rgba(17, 19, 23, 0.13),
-    0 8px 18px rgba(17, 19, 23, 0.16);
+    0 0 0 2px var(--shadow-color),
+    0 8px 18px var(--shadow-color);
 }
 
 .fileStructure.hasFocus .fileAnchorTick {
@@ -1238,7 +1313,7 @@ h3 {
 }
 
 .resizeHandle::after {
-  background: rgba(25, 28, 33, 0.18);
+  background: var(--control-fill);
   border-radius: 999px;
   content: "";
   height: 44px;
@@ -1249,7 +1324,7 @@ h3 {
 }
 
 .resizeHandle:hover::after {
-  background: rgba(25, 28, 33, 0.36);
+  background: var(--control-fill-hover);
 }
 
 .finderChrome {
@@ -1259,7 +1334,7 @@ h3 {
 }
 
 .finderChrome span {
-  background: rgba(30, 34, 40, 0.16);
+  background: var(--dot-fill);
   border-radius: 999px;
   display: block;
   height: 8px;
@@ -1278,17 +1353,17 @@ h3 {
 }
 
 .fileHeader span {
-  color: #747b84;
+  color: var(--text-muted);
   font-size: var(--fs-body);
   font-weight: 700;
 }
 
 .finderColumns {
   align-items: center;
-  background: rgba(238, 240, 242, 0.68);
-  border: 1px solid rgba(25, 28, 33, 0.07);
+  background: var(--surface-tint);
+  border: 1px solid var(--border);
   border-radius: 7px 7px 0 0;
-  color: #7a8088;
+  color: var(--text-muted);
   display: grid;
   font-size: var(--fs-label);
   font-weight: 700;
@@ -1299,7 +1374,7 @@ h3 {
 }
 
 .finderColumns span {
-  border-left: 1px solid rgba(25, 28, 33, 0.08);
+  border-left: 1px solid var(--border);
   min-width: 0;
   overflow: hidden;
   padding-left: 7px;
@@ -1324,7 +1399,7 @@ h3 {
 .finderRow {
   align-items: center;
   border: 0;
-  color: #20242a;
+  color: var(--text-heading);
   display: grid;
   font-size: var(--fs-body);
   gap: 0;
@@ -1336,12 +1411,12 @@ h3 {
 }
 
 .finderRow:nth-child(even) {
-  background: rgba(245, 246, 247, 0.54);
+  background: var(--surface-tint-faint);
 }
 
 .finderRow > span {
-  border-left: 1px solid rgba(25, 28, 33, 0.055);
-  color: #727983;
+  border-left: 1px solid var(--border);
+  color: var(--text-muted);
   min-width: 0;
   overflow: hidden;
   padding-left: 7px;
@@ -1356,21 +1431,21 @@ h3 {
 
 .folderRow {
   background: transparent;
-  color: #20242a;
+  color: var(--text-heading);
   cursor: pointer;
   font-weight: 700;
   text-align: left;
 }
 
 .folderRow:hover {
-  background: rgba(29, 33, 39, 0.055);
+  background: var(--fill-subtle);
 }
 
 .fileNode {
   background: transparent;
   border: 0;
   border-radius: 5px;
-  color: #20242a;
+  color: var(--text-heading);
   cursor: pointer;
   text-align: left;
 }
@@ -1380,14 +1455,14 @@ h3 {
 .fileNode.linked,
 .fileNode.agentLinked,
 .fileNode.eventLinked {
-  background: rgba(29, 33, 39, 0.08);
+  background: var(--fill-subtle);
 }
 
 .fileNode.selected,
 .fileNode.linked,
 .fileNode.agentLinked,
 .fileNode.eventLinked {
-  box-shadow: inset 0 0 0 1px rgba(24, 28, 34, 0.22);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
 }
 
 .fileStructure.hasFocus .finderRow {
@@ -1410,7 +1485,7 @@ h3 {
 
 .finderName {
   align-items: center;
-  color: #22262c;
+  color: var(--text-heading);
   display: flex;
   gap: 5px;
   min-width: 0;
@@ -1427,7 +1502,7 @@ h3 {
 
 .disclosure {
   border-bottom: 4px solid transparent;
-  border-left: 5px solid #9097a0;
+  border-left: 5px solid var(--text-faint);
   border-top: 4px solid transparent;
   display: block;
   flex: 0 0 auto;
@@ -1446,15 +1521,15 @@ h3 {
 
 .folderGlyph,
 .fileGlyph {
-  border: 1px solid rgba(25, 28, 33, 0.14);
+  border: 1px solid var(--border-strong);
   display: block;
   flex: 0 0 auto;
 }
 
 .folderGlyph {
   background:
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.44), rgba(232, 235, 239, 0.88)),
-    #edf0f3;
+    linear-gradient(to bottom, var(--surface-soft), var(--panel-grad)),
+    var(--bg-elevated);
   border-radius: 3px;
   height: 10px;
   position: relative;
@@ -1462,8 +1537,8 @@ h3 {
 }
 
 .folderGlyph::before {
-  background: #edf0f3;
-  border: 1px solid rgba(25, 28, 33, 0.12);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
   border-bottom: 0;
   border-radius: 3px 3px 0 0;
   content: "";
@@ -1475,7 +1550,7 @@ h3 {
 }
 
 .fileGlyph {
-  background: rgba(255, 255, 255, 0.82);
+  background: var(--surface-strong);
   border-radius: 2px;
   height: 13px;
   width: 10px;
@@ -1498,21 +1573,21 @@ h3 {
 }
 
 .glassKicker {
-  color: #777e87;
+  color: var(--text-muted);
   font-size: var(--fs-body);
   font-weight: 700;
   text-transform: uppercase;
 }
 
 .glassInspector strong {
-  color: #16191d;
+  color: var(--text);
   font-size: var(--fs-title);
   line-height: 1.2;
   overflow-wrap: anywhere;
 }
 
 .glassInspector p {
-  color: #555c66;
+  color: var(--text-secondary);
   font-size: var(--fs-body);
   line-height: 1.25;
   margin: 0;
@@ -1532,10 +1607,10 @@ h3 {
 }
 
 .glassMeta span {
-  background: rgba(245, 246, 247, 0.82);
-  border: 1px solid rgba(25, 28, 33, 0.07);
+  background: var(--surface-tint);
+  border: 1px solid var(--border);
   border-radius: 999px;
-  color: #656c75;
+  color: var(--text-secondary);
   font-size: var(--fs-body);
   font-weight: 700;
   padding: 3px 6px;
@@ -1556,21 +1631,21 @@ h3 {
 
 .status-active,
 .status-succeeded {
-  background: #eef6f2;
-  color: #2f6b50;
+  background: var(--success-tint);
+  color: var(--success);
 }
 
 .status-failed,
 .status-blocked {
-  background: #faeeee;
-  color: #8d3d3d;
+  background: var(--danger-tint);
+  color: var(--danger-2);
 }
 
 .status-needs_approval,
 .status-unknown,
 .status-pending {
-  background: #f0f1f2;
-  color: #626973;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
 }
 
 @media (max-width: 980px) {
@@ -1597,4 +1672,68 @@ h3 {
   .connectionLayer {
     display: none;
   }
+}
+
+
+/* ---- Dark theme ------------------------------------------------------- */
+/* Monotone, desaturated dark theme — neutral charcoal surfaces, soft off-white
+   ink, and muted (never neon) accents that read as a whisper of colour. */
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0c0c0e;
+  --bg-elevated: #161618;
+  --shell-top: rgba(32, 32, 36, 0.5);
+  --shell-bottom: rgba(8, 8, 10, 0.92);
+  --panel-grad: rgba(15, 15, 17, 0.9);
+  --scrim: rgba(0, 0, 0, 0.62);
+  --surface-strong: rgba(31, 31, 35, 0.86);
+  --surface-soft: rgba(255, 255, 255, 0.04);
+  --surface-tint: rgba(255, 255, 255, 0.028);
+  --surface-tint-faint: rgba(255, 255, 255, 0.018);
+  --border: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --border-contrast: rgba(255, 255, 255, 0.3);
+  --fill-subtle: rgba(255, 255, 255, 0.05);
+  --fill-hover: rgba(255, 255, 255, 0.08);
+  --node-hover: rgba(255, 255, 255, 0.08);
+  --control-fill: rgba(255, 255, 255, 0.2);
+  --control-fill-hover: rgba(255, 255, 255, 0.36);
+  --dot-fill: rgba(255, 255, 255, 0.22);
+  --tick-fill: rgba(255, 255, 255, 0.3);
+  --text: #e7e8ea;
+  --text-heading: #f3f3f5;
+  --text-secondary: #b3b4b7;
+  --text-muted: #898a8e;
+  --text-faint: #66676b;
+  --action-bg: #e8e8ea;
+  --action-fg: #161617;
+  --status-dot: #56565a;
+  --tick-empty: #202022;
+  --tick-work: #303033;
+  --tick-decision: #404043;
+  --tick-claim: #29292c;
+  --danger: #cd9590;
+  --danger-2: #c69b97;
+  --danger-solid: #a86560;
+  --danger-bg: rgba(170, 95, 88, 0.16);
+  --danger-bg-2: rgba(170, 95, 88, 0.12);
+  --danger-border: rgba(170, 95, 88, 0.32);
+  --danger-border-soft: rgba(170, 95, 88, 0.26);
+  --danger-border-strong: rgba(170, 95, 88, 0.48);
+  --danger-bar: rgba(178, 104, 96, 0.82);
+  --danger-tint: rgba(170, 95, 88, 0.13);
+  --success: #8bad97;
+  --success-solid: #6a967c;
+  --success-tint: rgba(120, 158, 132, 0.13);
+  --success-bar: rgba(124, 162, 138, 0.68);
+  --warn-bg: rgba(140, 122, 78, 0.16);
+  --warn-border: rgba(165, 146, 98, 0.28);
+  --warn-text: #c8b78d;
+  --bar-neutral: rgba(150, 150, 154, 0.42);
+  --bar-work: rgba(170, 172, 176, 0.5);
+  --bar-info: rgba(138, 150, 168, 0.5);
+  --bar-coord: rgba(164, 154, 172, 0.5);
+  --shadow-color: rgba(0, 0, 0, 0.5);
+  --card-bg: rgba(23, 23, 26, 0.72);
+  --card-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
 }

@@ -91,6 +91,21 @@ export function DashboardApp() {
   const [showHandoff, setShowHandoff] = useState(false);
   const [handoffCopied, setHandoffCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    if (typeof window === "undefined") return "light";
+    const saved = window.localStorage.getItem("abb-theme");
+    if (saved === "light" || saved === "dark") return saved;
+    return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  });
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      window.localStorage.setItem("abb-theme", theme);
+    } catch {
+      // Private-mode storage failures are non-fatal — the theme still applies.
+    }
+  }, [theme]);
 
   useEffect(() => {
     let active = true;
@@ -272,6 +287,15 @@ export function DashboardApp() {
               {riskMomentCount} risk {riskMomentCount === 1 ? "moment" : "moments"}
             </button>
           ) : null}
+          <button
+            className="themeToggle"
+            onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+            type="button"
+            aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+            title={theme === "dark" ? "Light mode" : "Dark mode"}
+          >
+            {theme === "dark" ? "☀" : "☾"}
+          </button>
           <button
             className="topbarAction"
             disabled={visibleEvents.length === 0}
