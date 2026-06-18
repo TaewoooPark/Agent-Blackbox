@@ -1728,6 +1728,22 @@ h3 {
   --bar-info: rgba(138, 150, 168, 0.5);
   --bar-coord: rgba(164, 154, 172, 0.5);
   --shadow-color: rgba(0, 0, 0, 0.5);
-  --card-bg: rgba(23, 23, 26, 0.72);
-  --card-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
+  /* Real glass: a translucent pane with a top-edge sheen, low enough opacity to
+     frost the ambient light behind it, plus a stronger blur. */
+  --card-bg: linear-gradient(157deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.012) 62%), rgba(20, 20, 23, 0.55);
+  --card-border-color: rgba(255, 255, 255, 0.14);
+  --card-blur: blur(22px) saturate(125%);
+  --card-shadow:
+    0 16px 50px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+/* Ambient light pools so the frosted panels have something to refract. Soft,
+   off-centre, monotone — reads as lighting in a dark room, not a gradient wash. */
+[data-theme="dark"] .shell {
+  background:
+    radial-gradient(900px 620px at 14% -12%, rgba(255, 255, 255, 0.055), transparent 60%),
+    radial-gradient(820px 760px at 102% 118%, rgba(255, 255, 255, 0.04), transparent 60%),
+    var(--bg);
 }
