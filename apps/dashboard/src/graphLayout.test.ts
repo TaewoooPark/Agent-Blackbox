@@ -448,6 +448,40 @@ describe("dashboard graph helpers", () => {
     ]);
   });
 
+  it("renders a todo update as a coordination moment and collapses repeats", () => {
+    const todo = (seq: number, count: number) =>
+      createTraceEvent(seq, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "todo_updated",
+        summary: "todo.updated",
+        payload: { properties: { todos: Array.from({ length: count }, (_, i) => ({ id: i })) } }
+      });
+    const steps = createWorkflowSteps([todo(1, 2), todo(2, 3)]);
+    expect(steps).toHaveLength(1);
+    expect(steps[0]?.kind).toBe("coordination");
+    expect(steps[0]?.title).toBe("Updated the task list");
+    expect(steps[0]?.branches.filter((b) => b.kind === "evidence")).toHaveLength(2);
+  });
+
+  it("renders a resolved permission as a risk when denied and a decision otherwise", () => {
+    const reply = (seq: number, response: string) =>
+      createTraceEvent(seq, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "permission_replied",
+        summary: "permission.replied",
+        payload: { properties: { response } }
+      });
+    const [granted] = createWorkflowSteps([reply(1, "always")]);
+    const [denied] = createWorkflowSteps([reply(1, "reject")]);
+    expect(granted?.title).toBe("Resolved a permission request");
+    expect(granted?.kind).toBe("decision");
+    expect(denied?.kind).toBe("risk");
+  });
+
   it("does not aggregate a passed test run with a failed one", () => {
     const bash = (seq: number, exit: number) =>
       createTraceEvent(seq, {

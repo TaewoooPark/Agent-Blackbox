@@ -318,10 +318,10 @@ function canAggregateSteps(previous: WorkflowStep, next: WorkflowStep): boolean 
   if (previous.title !== next.title) return false;
   if (previous.agentLabel !== next.agentLabel) return false;
   if (previous.kind === "coordination") {
-    // Collapse repeated identical tool moments ("Used grep" ×6) but never fold
-    // session starts or unique-named skills together — the title guard above
-    // already keeps differently-named actions apart.
-    return previous.title.startsWith("Used ");
+    // Collapse repeated identical coordination moments ("Used grep" ×6, "Updated
+    // the task list" ×3). The title guard above already keeps differently-named
+    // actions (and the unique session start) apart.
+    return true;
   }
   return previous.kind === "change" || previous.kind === "verification" || previous.kind === "context";
 }
@@ -718,6 +718,50 @@ function trunkStepForEvent(event: TraceEvent): WorkflowStep | undefined {
           title: riskTitleForEvent(event),
           description: riskDescriptionForEvent(event),
           tone: "risk"
+        })
+      ]
+    });
+  }
+  if (event.kind === "permission_replied") {
+    const response = stringPayloadPath(event, ["properties.response", "properties.granted", "response"]);
+    const denied = response ? /(reject|deny|denied|^no$|false)/i.test(response) : false;
+    const description = response
+      ? `A pending permission request was resolved (${response}).`
+      : "A pending permission request was resolved.";
+    return makeStep(event, {
+      kind: denied ? "risk" : "decision",
+      title: "Resolved a permission request",
+      description,
+      branches: [
+        makeBranch(event, {
+          kind: denied ? "risk" : "decision",
+          label: "Permission",
+          title: "Resolved a permission request",
+          description,
+          tone: denied ? "risk" : "decision"
+        })
+      ]
+    });
+  }
+  if (event.kind === "todo_updated") {
+    const todos = payloadPath(event, "properties.todos") ?? payloadPath(event, "properties.info.todos");
+    const count = Array.isArray(todos) ? todos.length : undefined;
+    const description =
+      count !== undefined
+        ? `The agent revised its plan — ${count} ${count === 1 ? "item" : "items"}.`
+        : "The agent revised its task list.";
+    return makeStep(event, {
+      kind: "coordination",
+      title: "Updated the task list",
+      description,
+      branches: [
+        makeBranch(event, {
+          kind: "evidence",
+          label: count !== undefined ? `${count} ${count === 1 ? "item" : "items"}` : "Task list",
+          title: "Updated the task list",
+          description,
+          tone: "neutral",
+          detail: "todo"
         })
       ]
     });
