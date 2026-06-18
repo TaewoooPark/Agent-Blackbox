@@ -1,9 +1,11 @@
 import {
+  computeEfficiencyReport,
   evaluatePromiseChecks,
   generateHandoffMarkdown,
   materializeWorkflowGraph,
   replayWorkflowGraphAtSeq,
   replayWorkflowGraphAtTime,
+  type EfficiencyReport,
   type PromiseCheck,
   type TraceEvent,
   type WorkflowGraph,
@@ -31,6 +33,7 @@ export type TraceSnapshot = {
   events: TraceEvent[];
   graph: WorkflowGraph;
   checks: PromiseCheck[];
+  efficiency: EfficiencyReport;
   handoffMarkdown: string;
   replay: {
     mode: "live" | "seq" | "time";
@@ -131,11 +134,13 @@ export async function buildTraceSnapshot(
   const replayedEvents = new Set(graph.appliedEventIds);
   const visibleEvents = events.filter((event) => replayedEvents.has(event.id));
   const checks = evaluatePromiseChecks(visibleEvents);
+  const efficiency = computeEfficiencyReport(visibleEvents);
   const handoffMarkdown = generateHandoffMarkdown(graph, checks);
   return {
     events,
     graph,
     checks,
+    efficiency,
     handoffMarkdown,
     replay: {
       mode: replay.seq !== undefined ? "seq" : replay.at !== undefined ? "time" : "live",
@@ -172,6 +177,10 @@ async function handleRequest(
     }
     if (request.method === "GET" && url.pathname === "/snapshot") {
       sendJson(response, 200, { ok: true, data: await buildTraceSnapshot(eventsFile, replay) });
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/efficiency") {
+      sendJson(response, 200, { ok: true, data: (await buildTraceSnapshot(eventsFile, replay)).efficiency });
       return;
     }
     if (request.method === "GET" && url.pathname === "/audit") {

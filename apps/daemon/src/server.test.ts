@@ -147,6 +147,15 @@ describe("trace daemon", () => {
       const handoffPayload = (await handoffResponse.json()) as { ok: boolean; data: { markdown: string } };
       expect(handoffPayload.data.markdown).toContain("## Promise Checks");
 
+      const efficiencyResponse = await fetch(`http://127.0.0.1:${daemon.port}/efficiency`);
+      const efficiencyPayload = (await efficiencyResponse.json()) as {
+        ok: boolean;
+        data: { overallScore: number; metrics: { id: string }[] };
+      };
+      expect(efficiencyPayload.ok).toBe(true);
+      expect(typeof efficiencyPayload.data.overallScore).toBe("number");
+      expect(efficiencyPayload.data.metrics.map((m) => m.id)).toContain("redundant-reads");
+
       await expect(buildTraceSnapshot(daemon.eventsFile, { seq: 2 })).resolves.toMatchObject({
         replay: { mode: "seq", seq: 2 },
         graph: { runId: "run-snapshot" }
