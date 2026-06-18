@@ -267,6 +267,73 @@ export function DashboardApp() {
   const filesSelectedAgentIsRoot = selectedAgentLabel !== null && !subagentLabels.has(selectedAgentLabel);
   const filesFocusedStepId = selectedFilePath ? null : selectedStep?.id ?? null;
   const filesHasFocus = Boolean(selectedEventId || selectedFilePath || selectedAgentLabel);
+
+  // Connection lines from a moment node (in the map) to the file it touched (in
+  // the co-pilot). Measured at the workspace level so they span both columns
+  // instead of being clipped to the map canvas.
+  const workspaceRef = useRef<HTMLElement | null>(null);
+  const [fileEdges, setFileEdges] = useState<{ id: string; path: string; stepId: string; pathD: string }[]>([]);
+
+  useLayoutEffect(() => {
+    const workspace = workspaceRef.current;
+    if (!workspace) return undefined;
+    const measure = () => {
+      const wsRect = workspace.getBoundingClientRect();
+      const stepEls = new Map<string, HTMLElement>();
+      const fileEls = new Map<string, HTMLElement>();
+      workspace.querySelectorAll<HTMLElement>("[data-step-id]").forEach((el) => {
+        if (el.dataset.stepId) stepEls.set(el.dataset.stepId, el);
+      });
+      workspace.querySelectorAll<HTMLElement>("[data-file-anchor-path]").forEach((el) => {
+        if (el.dataset.fileAnchorPath) fileEls.set(el.dataset.fileAnchorPath, el);
+      });
+      const edges = fileConnections.flatMap((connection) => {
+        const stepEl = stepEls.get(connection.stepId);
+        const fileEl = fileEls.get(connection.path);
+        if (!stepEl || !fileEl) return [];
+        const s = stepEl.getBoundingClientRect();
+        const f = fileEl.getBoundingClientRect();
+        const startX = s.right - wsRect.left;
+        const startY = s.top + s.height / 2 - wsRect.top;
+        const endX = f.left - wsRect.left;
+        const endY = f.top + f.height / 2 - wsRect.top;
+        const bend = Math.max(40, Math.min(180, (endX - startX) / 2));
+        return [
+          {
+            id: `${connection.stepId}__${connection.path}`,
+            path: connection.path,
+            stepId: connection.stepId,
+            pathD: `M ${startX} ${startY} C ${startX + bend} ${startY}, ${endX - bend} ${endY}, ${endX} ${endY}`
+          }
+        ];
+      });
+      setFileEdges(edges);
+    };
+    let frame = 0;
+    let burstUntil = 0;
+    const run = () => {
+      frame = 0;
+      measure();
+      if (Date.now() < burstUntil) frame = window.requestAnimationFrame(run);
+    };
+    const schedule = () => {
+      burstUntil = Math.max(burstUntil, Date.now() + 420);
+      if (!frame) frame = window.requestAnimationFrame(run);
+    };
+    schedule();
+    const observer = new ResizeObserver(schedule);
+    observer.observe(workspace);
+    window.addEventListener("agent-blackbox:layout", schedule);
+    window.addEventListener("resize", schedule);
+    workspace.addEventListener("scroll", schedule, true);
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener("agent-blackbox:layout", schedule);
+      window.removeEventListener("resize", schedule);
+      workspace.removeEventListener("scroll", schedule, true);
+    };
+  }, [fileConnections]);
   const chooseRun = (runId: string | null) => {
     setSelectedRunId(runId);
     // A selection or replay position from the previous run is meaningless in the
@@ -392,7 +459,14 @@ export function DashboardApp() {
         </div>
       ) : null}
 
-      <section className="workspace">
+      <section className="workspace" ref={workspaceRef}>
+        <svg className={`fileEdgeLayer ${filesHasFocus ? "hasFocus" : ""}`} aria-hidden="true">
+          {fileEdges.map((edge) => {
+            const focused =
+              edge.path === selectedFilePath || (filesFocusedStepId !== null && edge.stepId === filesFocusedStepId);
+            return <path className={focused ? "fileEdge focused" : "fileEdge"} d={edge.pathD} key={edge.id} />;
+          })}
+        </svg>
         <aside className="lanes" aria-label="Agent lanes">
           <h2>Agents</h2>
           {agentNodes.length === 0 ? <p className="muted">No agent lanes yet.</p> : null}

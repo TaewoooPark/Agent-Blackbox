@@ -353,6 +353,39 @@ button.statusChip:hover {
   min-height: 0;
   overflow: hidden;
   padding: 0 14px 8px;
+  position: relative;
+}
+
+/* Spans the whole workspace so a moment→file line reaches from the map into the
+   co-pilot's FILES panel without being clipped to the map canvas. */
+.fileEdgeLayer {
+  height: 100%;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+  position: absolute;
+  width: 100%;
+  z-index: 5;
+}
+
+.fileEdge {
+  fill: none;
+  opacity: 0.16;
+  stroke: var(--text);
+  stroke-linecap: round;
+  stroke-width: 1.1;
+  transition:
+    opacity 140ms ease,
+    stroke-width 140ms ease;
+}
+
+.fileEdgeLayer.hasFocus .fileEdge:not(.focused) {
+  opacity: 0.04;
+}
+
+.fileEdge.focused {
+  opacity: 0.85;
+  stroke-width: 1.8;
 }
 
 .lanes {
