@@ -1920,9 +1920,9 @@ function stepDisplayTitle(step: WorkflowStep, fileCount: number): string {
     const runs = step.branches.filter((branch) => branch.kind === "verification").length;
     if (runs > 1) return `${step.title} ×${runs}`;
   }
-  if (step.kind === "coordination" && step.title.startsWith("Used ")) {
-    // Count only the tool/skill evidence branches — file reads can attach to the
-    // same moment as contextual branches and must not inflate the repeat count.
+  if (step.kind === "coordination") {
+    // Count only the tool/skill/todo evidence branches — file reads can attach to
+    // the same moment as contextual branches and must not inflate the count.
     const runs = step.branches.filter((branch) => branch.kind === "evidence").length;
     if (runs > 1) return `${step.title} ×${runs}`;
   }
