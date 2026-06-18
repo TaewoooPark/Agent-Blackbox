@@ -38,6 +38,25 @@ describe("context efficiency report", () => {
     expect(m.status).toBe("bad");
   });
 
+  it("flags amplification even when the edit rounds to ~0 tokens", () => {
+    const report = computeEfficiencyReport([
+      ev(1, "file_read", { source: "tool.after", path: "$PROJECT/huge.ts", chars: 400_000 }),
+      ev(2, "file_edit", { source: "tool.after", path: "$PROJECT/huge.ts", chars: 1 })
+    ]);
+    const m = metric(report, "read-amplification");
+    expect(m.status).toBe("bad");
+  });
+
+  it("escalates a single file re-read many times to bad by reclaimable magnitude", () => {
+    const events = Array.from({ length: 10 }, (_, i) =>
+      ev(i + 1, "file_read", { source: "tool.after", path: "$PROJECT/x.ts", chars: 8000 })
+    );
+    const m = metric(computeEfficiencyReport(events), "redundant-reads");
+    expect(m.value).toBe(1); // one distinct path
+    expect(m.reclaimableTokens).toBe(18_000); // 9 extra reads × 2000
+    expect(m.status).toBe("bad");
+  });
+
   it("flags repeated failing commands as retry waste", () => {
     const report = computeEfficiencyReport([
       ev(1, "bash", { source: "tool.after", command: "npm test", exitCode: 1, outputChars: 4000 }),
