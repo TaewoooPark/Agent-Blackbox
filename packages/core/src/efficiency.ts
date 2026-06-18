@@ -231,7 +231,13 @@ export function computeEfficiencyReport(events: TraceEvent[]): EfficiencyReport 
         }
       }
     }
-    const { score, status } = lowerIsBetter(reReadPaths, 0, 2);
+    let { score, status } = lowerIsBetter(reReadPaths, 0, 2);
+    // Re-reading one file many times can reclaim as much as several files would —
+    // escalate by magnitude, not just by the count of distinct files.
+    if (reclaimable >= 10_000 && status !== "bad") {
+      status = "bad";
+      score = Math.min(score, 30);
+    }
     metrics.push({
       weight: 2,
       metric: {
@@ -253,8 +259,10 @@ export function computeEfficiencyReport(events: TraceEvent[]): EfficiencyReport 
   }
 
   // --- 4. read amplification (read tokens ÷ edited tokens) -------------------
-  if (totalEditTokens > 0) {
-    const ratio = totalReadTokens / totalEditTokens;
+  // Fire whenever edits exist (even a one-line edit) — clamp the denominator so a
+  // huge read against a tiny edit, the worst case, still surfaces.
+  if (edits.length > 0 && totalReadTokens > 0) {
+    const ratio = totalReadTokens / Math.max(totalEditTokens, 1);
     const { score, status } = lowerIsBetter(ratio, 40, 120);
     metrics.push({
       weight: 2,
