@@ -1,7 +1,7 @@
 import { computeEfficiencyReport, createTraceEvent } from "@agent-blackbox/core";
 import { describe, expect, it } from "vitest";
 
-import { buildDigest, generateSuggestions } from "./suggestionProvider.js";
+import { buildDigest, generateSuggestions, isQuotaError, orderFreePool } from "./suggestionProvider.js";
 
 const ev = (seq: number, kind: Parameters<typeof createTraceEvent>[1]["kind"], payload: Record<string, unknown>) =>
   createTraceEvent(seq, { host: "opencode", runId: "r", sessionId: "s", kind, payload: payload as never });
@@ -45,5 +45,28 @@ describe("suggestion provider", () => {
     const result = await generateSuggestions(report, { mode: "ollama", baseUrl: "http://127.0.0.1:9" });
     expect(result.provider).toBe("deterministic");
     expect(result.suggestions.length).toBeGreaterThan(0);
+  });
+
+  it("rotates the free pool by cursor and skips cooling-down models", () => {
+    const pool = [{ model: "a" }, { model: "b" }, { model: "c" }];
+    const now = 1_000_000;
+    // rotation: cursor advances the starting model
+    expect(orderFreePool(pool, new Map(), 0, now).map((e) => e.model)).toEqual(["a", "b", "c"]);
+    expect(orderFreePool(pool, new Map(), 1, now).map((e) => e.model)).toEqual(["b", "c", "a"]);
+    // a cooling-down model is dropped
+    const cooldown = new Map([["a", now + 5000]]);
+    expect(orderFreePool(pool, cooldown, 0, now).map((e) => e.model)).toEqual(["b", "c"]);
+    // expired cooldown is honored again
+    expect(orderFreePool(pool, new Map([["a", now - 1]]), 0, now).map((e) => e.model)).toEqual(["a", "b", "c"]);
+    // everything cooling down → still try the whole pool rather than give up
+    const allCool = new Map([["a", now + 1], ["b", now + 1], ["c", now + 1]]);
+    expect(orderFreePool(pool, allCool, 0, now)).toHaveLength(3);
+  });
+
+  it("recognizes quota/429 errors (for cooldown) vs ordinary failures", () => {
+    expect(isQuotaError(new Error("model -> 429"))).toBe(true);
+    expect(isQuotaError(new Error("you have reached your session usage limit"))).toBe(true);
+    expect(isQuotaError(new Error("rate limit exceeded"))).toBe(true);
+    expect(isQuotaError(new Error("connect ECONNREFUSED 127.0.0.1:9"))).toBe(false);
   });
 });

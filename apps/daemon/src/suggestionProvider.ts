@@ -13,7 +13,7 @@ import { spawn } from "node:child_process";
 // coarse offender labels (file basenames, command verbs) — never file contents,
 // full paths, command lines, prompts, or code.
 
-export type SuggestionMode = "auto" | "off" | "ollama" | "opencode" | "openai-compat";
+export type SuggestionMode = "auto" | "off" | "free" | "ollama" | "opencode" | "openai-compat";
 
 export type SuggestionConfig = {
   mode: SuggestionMode;
@@ -96,15 +96,80 @@ export function buildDigest(report: EfficiencyReport): Digest {
   };
 }
 
+// A curated pool of FREE models across independent quota pools (OpenCode Zen +
+// Ollama cloud + local). `auto`/`free` rotate through it so a real user can keep
+// the AI suggestions running, free, for a long time: one model per call (light),
+// rotated to spread load, with quota errors failing over and cooling the
+// throttled model down. Local llama3.1 has no quota and is the always-on floor.
+type FreePoolEntry = { provider: "ollama" | "opencode"; model: string };
+const FREE_POOL: FreePoolEntry[] = [
+  { provider: "opencode", model: "opencode/deepseek-v4-flash-free" },
+  { provider: "opencode", model: "opencode/north-mini-code-free" },
+  { provider: "ollama", model: "qwen3-coder:480b-cloud" },
+  { provider: "opencode", model: "opencode/mimo-v2.5-free" },
+  { provider: "ollama", model: "gpt-oss:120b-cloud" },
+  { provider: "ollama", model: "llama3.1:8b" }
+];
+const FREE_COOLDOWN_MS = 10 * 60_000; // skip a 429'd model for 10 minutes
+let freeCursor = 0;
+const freeCooldownUntil = new Map<string, number>();
+
+// Order the pool for this call: drop models still cooling down, then rotate by
+// the cursor so consecutive suggestions hit different pools. If everything is
+// cooling down, try the whole pool anyway (better than giving up).
+export function orderFreePool<T extends { model: string }>(
+  pool: T[],
+  cooldownUntil: Map<string, number>,
+  cursor: number,
+  now: number
+): T[] {
+  const fresh = pool.filter((entry) => (cooldownUntil.get(entry.model) ?? 0) <= now);
+  const list = fresh.length > 0 ? fresh : pool;
+  const start = ((cursor % list.length) + list.length) % list.length;
+  return [...list.slice(start), ...list.slice(0, start)];
+}
+
+export function isQuotaError(error: unknown): boolean {
+  const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  return (
+    message.includes("429") ||
+    message.includes("usage limit") ||
+    message.includes("rate limit") ||
+    message.includes("too many requests") ||
+    message.includes("quota")
+  );
+}
+
 export async function generateSuggestions(report: EfficiencyReport, config: SuggestionConfig): Promise<SuggestionResult> {
   const deterministic = buildDeterministicSuggestions(report);
   if (config.mode === "off" || deterministic.length === 0) {
     return { suggestions: deterministic, provider: "deterministic" };
   }
   const digest = buildDigest(report);
-  const order: Exclude<SuggestionMode, "auto" | "off">[] =
-    config.mode === "auto" ? ["ollama", "openai-compat", "opencode"] : [config.mode];
 
+  // auto/free (no pinned model): rotate the free pool, fail over on quota errors,
+  // cool throttled models down. One successful call per suggestion → light + durable.
+  if ((config.mode === "auto" || config.mode === "free") && !config.model) {
+    const order = orderFreePool(FREE_POOL, freeCooldownUntil, freeCursor, Date.now());
+    freeCursor += 1;
+    for (const entry of order) {
+      try {
+        const llm = await callProvider(entry.provider, digest, { ...config, model: entry.model });
+        const validated = validateSuggestions(llm, report);
+        if (validated.length > 0) {
+          return { suggestions: mergeSuggestions(deterministic, validated), provider: entry.model };
+        }
+      } catch (error) {
+        if (isQuotaError(error)) freeCooldownUntil.set(entry.model, Date.now() + FREE_COOLDOWN_MS);
+        // otherwise unavailable/parse error — just try the next model
+      }
+    }
+    return { suggestions: deterministic, provider: "deterministic" };
+  }
+
+  // Explicit provider (or auto/free with a pinned --suggest-model): single chain.
+  const order: ("ollama" | "openai-compat" | "opencode")[] =
+    config.mode === "auto" || config.mode === "free" ? ["ollama"] : [config.mode];
   for (const provider of order) {
     try {
       const llm = await callProvider(provider, digest, config);
@@ -120,7 +185,7 @@ export async function generateSuggestions(report: EfficiencyReport, config: Sugg
 }
 
 async function callProvider(
-  provider: Exclude<SuggestionMode, "auto" | "off">,
+  provider: "ollama" | "openai-compat" | "opencode",
   digest: Digest,
   config: SuggestionConfig
 ): Promise<unknown> {
@@ -141,6 +206,10 @@ async function callOllama(digest: Digest, config: SuggestionConfig): Promise<unk
       { role: "user", content: JSON.stringify(digest) }
     ]
   });
+  // Ollama returns 200 with an {error} body when the cloud quota is hit — surface
+  // it so the caller can fail over and cool the model down.
+  const err = (response as { error?: unknown })?.error;
+  if (err) throw new Error(typeof err === "string" ? err : JSON.stringify(err));
   const content = (response as { message?: { content?: string } })?.message?.content;
   return content ? JSON.parse(content) : undefined;
 }

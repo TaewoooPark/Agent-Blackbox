@@ -131,7 +131,7 @@ function printHelp(): void {
   console.log("");
   console.log("Usage:");
   console.log("  agent-blackbox up [--project <dir>] [--port <port>] [--ui-port <port>]   # plugin + daemon + dashboard, one command");
-  console.log("       [--suggest auto|off|ollama|opencode|openai-compat] [--suggest-model <id>] [--suggest-base-url <url>] [--optimize]");
+  console.log("       [--suggest auto|free|off|ollama|opencode|openai-compat] [--suggest-model <id>] [--suggest-base-url <url>] [--optimize]");
   console.log("  agent-blackbox daemon [--project <dir>] [--port <port>]");
   console.log("  agent-blackbox init-opencode [--project <dir>] [--daemon-url <url>] [--adapter-package <specifier>] [--force] [--optimize]");
   console.log("  agent-blackbox optimize [--project <dir>] [--apply | --check | --revert]   # write/measure/rollback AGENTS.md efficiency memory");
@@ -149,7 +149,7 @@ function readFlag(argv: string[], flag: string): string | undefined {
 }
 
 function readSuggestConfig(argv: string[]): SuggestionConfig {
-  const modes: SuggestionMode[] = ["auto", "off", "ollama", "opencode", "openai-compat"];
+  const modes: SuggestionMode[] = ["auto", "off", "free", "ollama", "opencode", "openai-compat"];
   const raw = readFlag(argv, "--suggest") ?? process.env.AGENT_BLACKBOX_SUGGEST ?? "auto";
   const mode = (modes as string[]).includes(raw) ? (raw as SuggestionMode) : "auto";
   const model = readFlag(argv, "--suggest-model") ?? process.env.AGENT_BLACKBOX_SUGGEST_MODEL;

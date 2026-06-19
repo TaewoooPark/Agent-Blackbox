@@ -110,7 +110,10 @@ Every run gets a score from observed sizes and token snapshots — never the age
 Suggestions are **rule-based by default** (always on, no dependencies). To have them tailored by a model — with **no API key** — point `up` at a local/free model:
 
 ```bash
-# Ollama (recommended): local, no key
+# Free, durable, default: rotate a pool of free models across independent quotas
+npm run up -- --project /path --suggest free
+
+# Ollama: local, no key
 npm run up -- --project /path --suggest ollama --suggest-model qwen2.5-coder
 
 # Any OpenAI-compatible localhost server (LM Studio, llama.cpp)
@@ -120,7 +123,7 @@ npm run up -- --project /path --suggest openai-compat --suggest-base-url http://
 npm run up -- --project /path --suggest opencode --suggest-model opencode/deepseek-v4-flash-free
 ```
 
-`--suggest auto` (the default) probes those in order and falls back to rule-based. Only a **redacted, derived digest** is ever sent, even to a local model: metric statuses, counts, and sizes, plus coarse **offender labels — file basenames and command verbs** (e.g. `billing.ts ×2`, `deploy ×2`) so the advice can name what to fix — but **never file contents, directory paths, command arguments, prompts, or secrets**.
+**`--suggest free`** (and the default `auto`) rotate a curated pool of **free** models across **independent quota pools** — OpenCode Zen (`opencode/*-free`) + Ollama cloud + a local model — one model per call, rotated to spread load, **failing over and cooling down a model that hits a rate limit (429)** for 10 minutes, and falling back to rule-based only if every pool is exhausted. So the AI suggestions stay free and keep working over long sessions without you babysitting a single quota. Only a **redacted, derived digest** is ever sent, even to a local model: metric statuses, counts, and sizes, plus coarse **offender labels — file basenames and command verbs** (e.g. `billing.ts ×2`, `deploy ×2`) so the advice can name what to fix — but **never file contents, directory paths, command arguments, prompts, or secrets**.
 
 ### What the advice is built on
 
