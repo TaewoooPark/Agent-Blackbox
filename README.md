@@ -33,7 +33,7 @@ Agent-Blackbox is a **local-first flight recorder and context-efficiency profile
 [**taewoopark.com** — author site](https://taewoopark.com)
 
 <p align="center">
-  <img src="./docs/screenshots/session-map.jpeg" alt="Agent-Blackbox session map — a real multi-agent OpenCode + oh-my-openagent run ('Add modulo operation to ledger') rendered as a Mark Lombardi narrative structure: each moment is a hollow ring with a serif label, the trunk forks into the Sisyphus ultraworker and a plan subagent branch, and thin sweeping arcs connect each node to the files it touched. Monochrome graphite on paper. The right rail shows a 72 context-efficiency score flagging redundant re-reads and retry waste with reclaimable tokens." width="100%">
+  <img src="./docs/screenshots/session-map.jpeg" alt="Agent-Blackbox session map — a real multi-agent OpenCode + oh-my-openagent ultrawork run ('Add modulo operation to ledger', Claude Sonnet) rendered as a Mark Lombardi narrative structure: 38 moments as hollow rings with serif labels, the trunk forks into the Sisyphus ultraworker and explore subagent branches with two failed-test risk moments, and thin sweeping arcs connect each node to the files it touched. Monochrome graphite on paper. The right rail shows an 80 context-efficiency score flagging redundant re-reads across 9 files with reclaimable tokens." width="100%">
 </p>
 
 ---
@@ -167,21 +167,22 @@ Prefer the dashboard? The **Optimize future runs** button in the right rail open
 
 #### Measured on a real run
 
-A controlled before/after on a real OpenCode run (small JS repo, local `llama3.1:8b`). Run A summarized three files and re-read one; Agent-Blackbox flagged the re-read and pinned *"read `calculator.js` once"* to `AGENTS.md`. Run B — **same task, memory in place** — read each file once:
+A fair before/after on a real **oh-my-openagent `ultrawork`** run (Claude Sonnet driving the whole multi-agent team; same task — *"add a modulo operation end-to-end"*). Run A's explore subagents re-read 9 files; Agent-Blackbox flagged it and pinned *"read `calculator.js`, `parser.js`, `formatter.js` once"* to `AGENTS.md`. Run B — **same task, same model, fresh cold session, only the memory added** — read each once:
 
 | | Before (run A) | After (run B) |
 |---|---|---|
-| Context-efficiency score | 77 | **87** |
-| Peak input | 28k | **17k** |
-| File reads | 4 (`calculator.js` ×2) | **3** (no re-read) |
-| Redundant re-reads | 1 file (~110 reclaimable) | **none** |
-| Tool overhead | 2.0× | **1.0×** |
-| Tokens | 29k | **17k** |
+| Context-efficiency score | 80 | **99** |
+| Redundant re-reads | 9 files (~1.8k reclaimable) | **none** |
+| Total tokens | 939k | **521k** (−44%) |
+| Tool calls / events | 619 | **253** |
+| Yield density | 63/k | **154/k** |
+
+Both runs started from the identical pristine repo (git-reset between them) and a brand-new OpenCode session — no carried context. The redundant-reads elimination (9 files → none) is the memory working directly; OMO is stochastic, so part of the token/event drop is run-to-run variance, but the lever ABB pinned is exactly the waste that disappeared.
 
 <table>
 <tr>
-<td width="50%"><img src="./docs/screenshots/optimize-before.jpeg" alt="Before: context-efficiency panel scoring 77, flagging 'Redundant re-reads — calculator.js ×2 were re-read (~110 reclaimable)', context pressure 28k, tool overhead 2.0×, 29k tokens." width="100%"></td>
-<td width="50%"><img src="./docs/screenshots/optimize-after.jpeg" alt="After: the same panel scoring 87 with 'Redundant re-reads: none', context pressure down to 17k, tool overhead 1.0×, 17k tokens." width="100%"></td>
+<td width="50%"><img src="./docs/screenshots/optimize-before.jpeg" alt="Before: context-efficiency panel scoring 80, flagging 'Redundant re-reads — calculator.js ×3, parser.js ×3, formatter.js ×3 were re-read (~1.8k reclaimable)', read amplification 13×, 939k tokens." width="100%"></td>
+<td width="50%"><img src="./docs/screenshots/optimize-after.jpeg" alt="After: the same panel scoring 99 with 'No waste detected — this run used its context economically', redundant re-reads none, yield density up to 154/k, 521k tokens." width="100%"></td>
 </tr>
 </table>
 
