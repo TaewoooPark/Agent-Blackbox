@@ -84,7 +84,7 @@ Agent-Blackbox は、**コーディングエージェントのためのローカ
 </p>
 
 <p align="center">
-  <img src="./docs/screenshots/replay.jpeg" alt="2分割：タイムラインを中盤までスクラブした再生と、ローカルモデルで最適化した副操縦士。" width="100%">
+  <img src="./docs/screenshots/replay.jpeg" alt="2分割：タイムラインを中盤までスクラブしてその時点まで巻き戻した再生（OMO サブエージェントが展開し、失敗したテストのモーメントがオックスブラッドで表示）と、'Sharpen advice with a model' で無料モデルが生成した範囲読み込み提案を示す副操縦士。" width="100%">
 </p>
 
 ---
@@ -147,7 +147,7 @@ npm run up -- --project /path --suggest opencode --suggest-model opencode/deepse
 実際の OMO `ultrawork` 実行を Agent-Blackbox がライブ記録した様子 — 左に名前付きの専門エージェントレーン、右に回収可能トークンと個別最適化提案付きのコンテキスト効率スコア：
 
 <p align="center">
-  <img src="./docs/screenshots/omo-synergy.jpeg" alt="実際の oh-my-openagent ultrawork セッションをプロファイルする Agent-Blackbox：左の列に名前付きの専門エージェントレーン（Sisyphus, explore, librarian, plan）、中央のセッションマップは幹からサブエージェントの枝に分岐しファイルを弧で接続、右の列にコンテキスト効率スコア・ピークコンテキスト・ツールオーバーヘッド・個別最適化提案を表示。" width="100%">
+  <img src="./docs/screenshots/omo-synergy.jpeg" alt="実際の oh-my-openagent ultrawork セッションをプロファイルする Agent-Blackbox：左の列に名前付きの専門エージェントレーン（Sisyphus - ultraworker, plan）、1 つのレーンを選択するとその枝だけが明るく残り他はフェード、右の列に 72 のコンテキスト効率スコアと冗長な再読込・リトライ浪費のフラグおよび回収可能トークンを表示。" width="100%">
 </p>
 
 ```bash
@@ -155,6 +155,12 @@ npm run up -- --project /path --suggest opencode --suggest-model opencode/deepse
 npm run up -- --project ~/code/my-app --suggest free
 opencode run "ultrawork: refactor the auth module and add tests"   # OMO とレコーダーが同時に動作
 ```
+
+発見を手で移す必要はなく、**ダッシュボードから直接** — 右の列の **Optimize future runs** ボタンを押すと、`AGENTS.md` に書き込まれるブロックを*そのままプレビュー*し（回収可能トークンと対象パス付き）、ワンクリックで適用・更新・取り消しまで行えます。助言ではなく、実際に取り消し可能なファイル変更です：
+
+<p align="center">
+  <img src="./docs/screenshots/optimize-modal.jpeg" alt="Agent-Blackbox ダッシュボードの 'Optimize future runs' ポップアップ：'Not applied' バッジ、対象の AGENTS.md パス、そして書き込まれるメモリブロックのプレビュー（検証済みの 'npm test' コマンドを再利用、calculator.js・parser.js・calculator.test.js は一度だけ読み、以降は変更行範囲のみ再読込）と 'Apply to AGENTS.md'・'Cancel' ボタンが、フェードしたセッションマップの上に表示される。" width="100%">
+</p>
 
 ---
 

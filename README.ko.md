@@ -84,7 +84,7 @@ Agent-Blackbox는 **코딩 에이전트를 위한 로컬 우선(local-first) 플
 </p>
 
 <p align="center">
-  <img src="./docs/screenshots/replay.jpeg" alt="2분할: 타임라인을 중간으로 스크럽한 리플레이, 그리고 로컬 모델로 최적화한 코파일럿." width="100%">
+  <img src="./docs/screenshots/replay.jpeg" alt="2분할: 타임라인을 중간으로 스크럽해 그 시점으로 되감긴 리플레이(OMO 서브에이전트가 펼쳐지고 실패한 테스트 모먼트가 옥스블러드로 표시), 그리고 'Sharpen advice with a model'로 무료 모델이 생성한 범위 읽기 제안을 보여주는 코파일럿." width="100%">
 </p>
 
 ---
@@ -147,7 +147,7 @@ npm run up -- --project /path --suggest opencode --suggest-model opencode/deepse
 실제 OMO `ultrawork` 실행을 Agent-Blackbox가 실시간 기록한 모습 — 좌측엔 명명된 전문 에이전트 레인, 우측엔 회수 가능 토큰과 맞춤 수정안이 붙은 컨텍스트 효율 점수:
 
 <p align="center">
-  <img src="./docs/screenshots/omo-synergy.jpeg" alt="실제 oh-my-openagent ultrawork 세션을 프로파일링하는 Agent-Blackbox: 좌측에 명명된 전문 에이전트 레인(Sisyphus, explore, librarian, plan), 중앙 세션 맵은 트렁크에서 서브에이전트 가지로 갈라지고 파일이 곡선으로 연결되며, 우측에 컨텍스트 효율 점수·피크 컨텍스트·도구 오버헤드·맞춤 최적화 제안이 표시됨." width="100%">
+  <img src="./docs/screenshots/omo-synergy.jpeg" alt="실제 oh-my-openagent ultrawork 세션을 프로파일링하는 Agent-Blackbox: 좌측에 명명된 전문 에이전트 레인(Sisyphus - ultraworker, plan), 한 레인을 선택해 그 가지만 밝게 남고 나머지 맵은 흐려지며, 우측에 72점 컨텍스트 효율 점수와 중복 재읽기·재시도 낭비 플래그, 재확보 가능 토큰이 표시됨." width="100%">
 </p>
 
 ```bash
@@ -155,6 +155,12 @@ npm run up -- --project /path --suggest opencode --suggest-model opencode/deepse
 npm run up -- --project ~/code/my-app --suggest free
 opencode run "ultrawork: refactor the auth module and add tests"   # OMO + 레코더 동시 작동
 ```
+
+발견을 손으로 옮길 필요 없이 **대시보드에서 바로** — 우측 패널의 **Optimize future runs** 버튼을 누르면 `AGENTS.md`에 쓰일 블록을 *그대로 미리보기*(재확보 가능 토큰·대상 경로 포함)하고, 한 번의 클릭으로 적용·갱신·되돌리기까지 합니다. 조언이 아니라 실제로 되돌릴 수 있는 파일 변경입니다:
+
+<p align="center">
+  <img src="./docs/screenshots/optimize-modal.jpeg" alt="Agent-Blackbox 대시보드의 'Optimize future runs' 팝업: 'Not applied' 배지, 대상 AGENTS.md 경로, 그리고 실제로 쓰일 메모리 블록 미리보기(검증된 'npm test' 명령 재사용, calculator.js·parser.js·calculator.test.js는 한 번만 읽고 이후엔 변경 줄 범위만 재읽기)와 'Apply to AGENTS.md'·'Cancel' 버튼이 흐려진 세션 맵 위에 표시됨." width="100%">
+</p>
 
 ---
 
