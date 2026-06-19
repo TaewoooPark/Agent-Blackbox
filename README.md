@@ -120,7 +120,21 @@ npm run up -- --project /path --suggest openai-compat --suggest-base-url http://
 npm run up -- --project /path --suggest opencode --suggest-model opencode/deepseek-v4-flash-free
 ```
 
-`--suggest auto` (the default) probes those in order and falls back to rule-based. Only a **redacted, derived digest** (statuses, counts, sizes — never file contents, paths, or commands) is ever sent, even to a local model.
+`--suggest auto` (the default) probes those in order and falls back to rule-based. Only a **redacted, derived digest** is ever sent, even to a local model: metric statuses, counts, and sizes, plus coarse **offender labels — file basenames and command verbs** (e.g. `billing.ts ×2`, `deploy ×2`) so the advice can name what to fix — but **never file contents, directory paths, command arguments, prompts, or secrets**.
+
+### What the advice is built on
+
+The suggestions aren't generic tips. Both the always-on rule-based floor and the local-model prompt encode a per-metric **fix playbook**, and every action is required to cite the run's own numbers, name the offending file/command, state a concrete mechanism, and give the expected effect. The playbook is distilled from published context-engineering research and production practice:
+
+| Source | What it contributes | Metrics it informs |
+|---|---|---|
+| Anthropic — [Effective context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) | **Compaction** (summarize resolved turns → fresh window), clearing tool outputs already acted on, **sub-agent context isolation** (explore in a child that returns a ~1–2k-token summary), and **just-in-time retrieval** (grep/glob, read on demand instead of pre-loading whole files) | `context-pressure`, `read-amplification`, `redundant-reads`, `yield-density` |
+| Manus — [Context Engineering for AI Agents: Lessons from Building Manus](https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus) | **KV-cache hit rate** as the primary cost lever (cached tokens ≈ 10× cheaper), a byte-stable prompt prefix (no timestamps/volatile data), append-only context, masking tools instead of adding/removing them, the file system as external memory, and **recitation** of the goal each step | `cache-hit`, `large-injections`, `retry-waste` |
+| Liu et al. — [Lost in the Middle: How Language Models Use Long Contexts](https://arxiv.org/abs/2307.03172) | Models systematically **under-use the middle** of long contexts (U-shaped accuracy, ~30%+ degradation) — so advice favors trimming/repositioning and goal recitation over "add more context" | `context-pressure`, `yield-density` |
+| Anthropic — [Building effective agents](https://www.anthropic.com/engineering/building-effective-agents) | Minimal, **non-overlapping tool sets** and unambiguous tool boundaries; batch related actions instead of exploratory call chains | `tool-overhead` |
+| Schulhoff et al. — [The Prompt Report: A Systematic Survey of Prompt Engineering Techniques](https://arxiv.org/abs/2406.06608) | Contrastive few-shot exemplars (a bad-vague vs good-specific pair), grounding answers in the provided numbers, and strict structured output — so even small local models return specific, actionable JSON | *(shapes the advisor prompt itself)* |
+
+Verified end-to-end on a small local model: a redundant-reads finding turns from "read each file once" into **"`calculator.js` was read 2× (~282 reclaimable) — read it once and cache it, then after each edit re-read only the changed line range instead of the whole file."**
 
 ---
 
