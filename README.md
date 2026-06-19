@@ -3,6 +3,13 @@
 **Open your coding agent's black box.**
 
 <p align="center">
+  <b>English</b> ·
+  <a href="./README.ko.md">한국어</a> ·
+  <a href="./README.zh.md">中文</a> ·
+  <a href="./README.ja.md">日本語</a>
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/github/stars/TaewoooPark/Agent-Blackbox?style=flat-square&logo=github&logoColor=white&labelColor=000000&color=333333" alt="GitHub stars">
   <img src="https://img.shields.io/github/last-commit/TaewoooPark/Agent-Blackbox?style=flat-square&labelColor=000000&color=333333" alt="Last commit">
   <img src="https://img.shields.io/github/languages/top/TaewoooPark/Agent-Blackbox?style=flat-square&labelColor=000000&color=333333" alt="Top language">
@@ -15,12 +22,13 @@
   &nbsp;
   <img src="https://img.shields.io/badge/OpenCode-000000?style=flat-square&labelColor=000000&color=000000" alt="OpenCode">
   <img src="https://img.shields.io/badge/Local--first-000000?style=flat-square&labelColor=000000&color=000000" alt="Local-first">
+  <img src="https://img.shields.io/badge/No%20API%20key-000000?style=flat-square&labelColor=000000&color=000000" alt="No API key">
   <img src="https://img.shields.io/badge/Live%20stream-000000?style=flat-square&labelColor=000000&color=000000" alt="Live">
 </p>
 
-Agent-Blackbox is a **local-first flight recorder for coding agents**. It turns every agent run into a **live, replayable operational graph** — what the agent read, changed, ran, decided, delegated, blocked on, and verified — reconstructed from observed events, not from the agent's own summary.
+Agent-Blackbox is a **local-first flight recorder and context-efficiency profiler for coding agents.** It turns every agent run into a **live, replayable operational graph** — what the agent read, changed, ran, decided, delegated, blocked on, and verified — reconstructed from observed events, not from the agent's own summary. Then it **measures how economically that run used its context window** and tells you, concretely, how to make the next one cheaper and faster.
 
-> *"The transcript is what the agent said. The black box is what it did."*
+> *"The transcript is what the agent said. The black box is what it did — and what it cost."*
 
 [**taewoopark.com** — author site](https://taewoopark.com)
 
@@ -30,63 +38,45 @@ Agent-Blackbox is a **local-first flight recorder for coding agents**. It turns 
 
 ---
 
-## Why Agent-Blackbox?
+## Two things at once
 
-You hand a task to a coding agent. It reads a dozen files, runs commands, edits code, sometimes spawns subagents, and hands you back a tidy summary. Today your only window into that work is a scrolling terminal transcript — and a summary you have to take on faith.
+**1 · See what the agent actually did.** A coding agent reads a dozen files, runs commands, edits code, spawns subagents, and hands you back a tidy summary. Your only window into that is a scrolling transcript and a summary you take on faith. Agent-Blackbox replaces it with a structured, evidence-backed **session map** you read at a glance.
 
-Agent-Blackbox replaces that with a structured, evidence-backed record you can actually inspect.
+**2 · See — and shrink — what it cost.** Context is money, latency, and a hard window limit. Agent-Blackbox scores how economically each run used its context (cache reuse, redundant re-reads, read-vs-edit amplification, oversized tool dumps, retry waste) and surfaces **specific optimizations** — rule-based by default, or tailored by a **free, local model with no API key**.
 
 | Reading the transcript | Agent-Blackbox |
 |---|---|
 | Scroll a linear log | A **session map** you read at a glance |
 | Trust the agent's summary | Reconstructed from **observed events** |
-| "It passed the tests" | See the test **fail (red) → fix → pass (green)** |
+| "It passed the tests" | See the **fail → fix → pass** loop |
 | Lose the thread on long runs | **Scrub and replay** any moment in time |
 | One opaque agent | **Subagent genealogy** — who delegated what |
+| No idea what it cost | A **context-efficiency score** + reclaimable tokens |
+| "Why is this run so expensive?" | **Concrete fixes**, optionally written by a local model |
 | Re-read everything to resume | One-click **handoff** summary |
-| Your code & prompts leave the machine | **Local-first**, minimal capture by default |
+| Your code & prompts leave the machine | **Local-first**, minimal capture, **no API key** |
 
 ---
 
 ## Watch it happen — live
 
-The map is not a post-mortem. It is built **as the agent works**: the recorder streams events to a local daemon, and the dashboard updates over a WebSocket — moments appear, files connect, tokens tick, a failure flashes red, the fix turns it green. No refresh, no replay required.
+The map is not a post-mortem. It is built **as the agent works**: the recorder streams events to a local daemon, and the dashboard updates over a WebSocket — moments appear, files connect by sweeping arcs, tokens tick, a failed test marks oxblood, the fix resolves it. No refresh, no replay required.
 
 That is the whole idea: **open the black box while the flight is still in the air.**
 
 ---
 
-## Philosophy — observe, don't trust the narrator
-
-The gap between what an agent *says* and what it *does* is where bugs, overconfidence, and unverified claims live. Agent-Blackbox is built on one principle:
-
-> **Derive the truth from observed events, never from free-form self-report.**
-
-- **Behavior, not narration.** Every node on the map is an event the agent actually emitted — a read, an edit, a command and its exit code, a delegation — not a sentence it wrote about itself.
-- **A flight recorder, not a chat log.** When an agent takes consequential actions on real code, you want a faithful, replayable record that is independent of the pilot's account.
-- **Local-first by default.** Traces stay on your machine. Raw prompts, secrets, and private file contents are redacted unless you explicitly opt in.
-- **Host-agnostic core.** A canonical event + graph core with thin host adapters, so the same black box can sit behind any agent harness — OpenCode is the first.
-
----
-
-## Features
-
-```
-   ┌──────────────┬─────────────────────────────────┬──────────────┐
-   │ agent lanes  │          session map            │  file panel  │
-   │ + tokens     │   (live operational graph)      │ (top-right)  │
-   │ + timeline   │   read → edit → fail → fix → ✓   │              │
-   └──────────────┴─────────────────────────────────┴──────────────┘
-```
+## What you get
 
 - **Live session map** — the run forms in real time as a spine of meaningful moments; consecutive repeats aggregate (`Created 12 files`, `Tests passed ×6`) so even large runs stay scannable.
-- **Narrative-structure aesthetic** — a flat, monochrome "Mark Lombardi" diagram: hollow ring nodes, sweeping ring-to-ring arcs, serif labels. Pure graphite on paper (light) or silverpoint on ink (dark); the lone accent is **oxblood, used only for risk/failure**.
+- **Narrative-structure aesthetic** — a flat, monochrome "Mark Lombardi" diagram: hollow ring nodes, sweeping ring-to-ring arcs, serif labels. Graphite on paper (light) or silverpoint on ink (dark); the lone accent is **oxblood, used only for risk/failure**.
 - **Replay** — drag the navigation-chart timeline to any sequence point; the graph and files reflect state at exactly that moment.
-- **Click to focus** — select any moment for a detail popover (evidence, files, tokens); click a file to highlight every moment that touched it, with the connection arcs drawn from each node's ring.
+- **Click to focus** — select any moment for a detail popover (evidence, files, tokens); select an agent to isolate its lane; click a file to highlight every moment that touched it, with arcs drawn from each node's ring.
 - **Subagent genealogy** — real delegations (the `task` tool / child sessions) fork into their own branch, attributed to the subagent that did the work.
-- **Handoff export** — generate a structured continuation summary (objective, files in play, decisions, commands, failures, blockers, next safe action) and copy it as Markdown.
+- **Context efficiency** — a live score + metric meters (context pressure, cache hit, redundant reads, read amplification, large injections, retry waste, yield density) with one-tap optimization notations — **rule-based, or routed to a free/local model (no API key)**.
+- **Handoff export** — a structured continuation summary (objective, files in play, decisions, commands, failures, blockers, next safe action), one click to copy as Markdown.
 - **Run picker** — one project log can hold many runs; the console follows the most recently *active* run and lets you pin any past one.
-- **Context efficiency** — a live score for how economically the run used its context window (cache reuse, redundant re-reads, read-vs-edit amplification, oversized tool outputs, retry waste, yield density), with one-tap optimization suggestions — rule-based by default, or routed to a **free/local model** (no API key).
+- **Full event coverage** — whichever model you run, every action is captured (reads, edits, bash, skills, custom/MCP tools, permissions, todos, subagents) — keyed off the host event, never the model.
 - **One-command bootstrap** — `npm run up` installs the recorder plugin, starts the daemon, and serves the dashboard.
 
 <p align="center">
@@ -97,58 +87,31 @@ The gap between what an agent *says* and what it *does* is where bugs, overconfi
   <img src="./docs/screenshots/focus.jpeg" alt="Two-panel view of focusing. Left: clicking a moment dims the map to that node and opens a detail popover below it (evidence, files, tokens, replay). Right: selecting an agent isolates its lane — that agent's branch and moments stay lit while the rest of the diagram recedes." width="100%">
 </p>
 
----
-
-## How it works
-
-```
- opencode run ──hooks──▶  recorder plugin  ──events──▶   daemon   ──/stream──▶  dashboard
-                          redact + normalize            NDJSON log            live session map
-                          (host adapter)                + graph/replay        (this UI)
-```
-
-- **`packages/core`** — canonical `TraceEvent`s, the workflow graph model, redaction, replay, audit, and handoff generation.
-- **`packages/opencode-adapter`** — a thin OpenCode plugin that turns host events and tool calls into canonical, redacted events and ships them to the daemon (best-effort, with retries).
-- **`apps/daemon`** — ingests events to a local NDJSON log, materializes the graph, replays it to any point, and pushes live snapshots over WebSocket.
-- **`apps/dashboard`** — the operator console that renders the live session map, replay, inspector, and handoff.
-
----
-
-## Quickstart
-
-```bash
-npm install
-npm run build
-
-# One command: install the recorder plugin, start the daemon, serve the dashboard
-npm run up -- --project /path/to/your/project
-```
-
-Then run your agent inside that project (the `up` output prints the exact line):
-
-```bash
-AGENT_BLACKBOX_DAEMON_URL=http://127.0.0.1:47831 \
-  opencode run --dir /path/to/your/project \
-  "Read the relevant code, run the tests, and summarize the result."
-```
-
-Open the dashboard URL it printed (default `http://127.0.0.1:5173/`) and watch the run assemble itself live. When you need to continue the run elsewhere — a teammate, the next agent, or the same agent after a context reset — export a structured **handoff**:
-
 <p align="center">
-  <img src="./docs/screenshots/handoff.jpeg" alt="Agent-Blackbox handoff summary — a solid paper card over the dimmed session map listing the run's objective, what was observed (events, nodes, edges), files in play, decisions, commands / verification, blockers, and the next safe action, with a one-click Copy markdown button." width="100%">
+  <img src="./docs/screenshots/replay.jpeg" alt="Two-panel view. Left: replay — the timeline scrubbed to mid-run, the diagram rewound to that sequence point as five subagents fan out from the prompt. Right: the context-efficiency co-pilot after Optimize with a local model, showing tailored notations (Stabilize prompt prefix, Deduplicate file reads) generated by a local Ollama model with no API key." width="100%">
 </p>
 
 ---
 
-## Context efficiency
+## Context efficiency — the part that pays for itself
 
-The **CONTEXT** panel scores how economically each run used its context window — derived from observed sizes and token snapshots, never the agent's self-report. Flagged metrics get one-tap, concrete optimization tips.
+Every run gets a score from observed sizes and token snapshots — never the agent's self-report. Each flagged metric expands into a concrete fix.
 
-Suggestions are **rule-based by default** (always available, no dependencies). To get them tailored by a model — with **no API key** — point `up` at a local/free model:
+| Metric | What it catches |
+|---|---|
+| **Context pressure** | how large the prompt grew at its peak |
+| **Cache hit ratio** | how much of the prompt was served from cache |
+| **Redundant re-reads** | the same file pulled in more than once (with reclaimable tokens) |
+| **Read amplification** | reading far more than was edited — read the slice, not the file |
+| **Large injections** | a single tool output flooding the window |
+| **Retry waste** | failing commands re-run before the cause was fixed |
+| **Yield density** | how much concrete change each 1k tokens produced |
+
+Suggestions are **rule-based by default** (always on, no dependencies). To have them tailored by a model — with **no API key** — point `up` at a local/free model:
 
 ```bash
-# Ollama (recommended): no key, runs locally
-npm run up -- --project /path/to/project --suggest ollama --suggest-model llama3.1
+# Ollama (recommended): local, no key
+npm run up -- --project /path --suggest ollama --suggest-model qwen2.5-coder
 
 # Any OpenAI-compatible localhost server (LM Studio, llama.cpp)
 npm run up -- --project /path --suggest openai-compat --suggest-base-url http://127.0.0.1:1234
@@ -158,6 +121,82 @@ npm run up -- --project /path --suggest opencode --suggest-model opencode/deepse
 ```
 
 `--suggest auto` (the default) probes those in order and falls back to rule-based. Only a **redacted, derived digest** (statuses, counts, sizes — never file contents, paths, or commands) is ever sent, even to a local model.
+
+---
+
+## Quickstart
+
+```bash
+git clone https://github.com/TaewoooPark/Agent-Blackbox
+cd Agent-Blackbox
+npm install
+npm run build
+
+# One command: install the recorder plugin, start the daemon, serve the dashboard
+npm run up -- --project /path/to/your/project
+```
+
+Open the dashboard URL it prints (default `http://127.0.0.1:5173/`), then run your agent inside that project (the `up` output prints the exact line):
+
+```bash
+AGENT_BLACKBOX_DAEMON_URL=http://127.0.0.1:47831 \
+  opencode run --dir /path/to/your/project \
+  "Read the relevant code, run the tests, and summarize the result."
+```
+
+The map assembles itself live. That's it.
+
+### Recipes
+
+```bash
+# Just watch a run — point it at any project and go
+npm run up -- --project ~/code/my-app
+
+# Optimize: run something heavy, then read the context score + fixes in the right rail
+npm run up -- --project ~/code/my-app --suggest ollama --suggest-model qwen2.5-coder
+
+# Multi-agent: delegate, and watch each subagent fork into its own lane
+AGENT_BLACKBOX_DAEMON_URL=http://127.0.0.1:47831 opencode run --dir ~/code/my-app \
+  "Delegate exploration, implementation, and tests to subagents, then summarize."
+
+# Resume elsewhere: open the run, click Handoff, copy the Markdown into the next session
+
+# Pick a different port if 47831/5173 are taken
+npm run up -- --project ~/code/my-app --port 48000 --ui-port 4000
+```
+
+When you need to continue the run elsewhere — a teammate, the next agent, or the same agent after a context reset — export a structured **handoff**:
+
+<p align="center">
+  <img src="./docs/screenshots/handoff.jpeg" alt="Agent-Blackbox handoff summary — a solid paper card over the dimmed session map listing the run's objective, what was observed (events, nodes, edges), files in play, decisions, commands / verification, blockers, and the next safe action, with a one-click Copy markdown button." width="100%">
+</p>
+
+---
+
+## How it works
+
+```
+ opencode run ──hooks──▶  recorder plugin  ──events──▶   daemon   ──/stream──▶  dashboard
+                          redact + normalize            NDJSON log            live session map
+                          (host adapter)                + graph/replay        + efficiency
+                                                        + efficiency report   (this UI)
+```
+
+- **`packages/core`** — canonical `TraceEvent`s, the workflow graph model, redaction, replay, audit, handoff generation, and the context-efficiency engine.
+- **`packages/opencode-adapter`** — a thin OpenCode plugin that turns host events and tool calls into canonical, redacted events (with content *sizes*, never content) and ships them to the daemon, best-effort with retries.
+- **`apps/daemon`** — ingests events to a local NDJSON log, materializes the graph, replays it to any point, computes the efficiency report, routes suggestions, and pushes live snapshots over WebSocket.
+- **`apps/dashboard`** — the operator console: live session map, replay, inspector, efficiency co-pilot, and handoff.
+
+---
+
+## Philosophy — observe, don't trust the narrator
+
+> **Derive the truth from observed events, never from free-form self-report.**
+
+- **Behavior, not narration.** Every node is an event the agent actually emitted — a read, an edit, a command and its exit code, a delegation — not a sentence it wrote about itself.
+- **Cost is evidence too.** The efficiency score and every suggestion come from observed sizes and token snapshots, not from the model's account of its own thrift.
+- **Local-first, no key.** Traces stay on your machine. Raw prompts, secrets, and file contents are redacted by default; even the optional model suggestions run locally and receive only a redacted digest.
+- **Host-agnostic core.** A canonical event + graph core with thin host adapters, so the same black box can sit behind any agent harness — OpenCode is the first.
 
 ---
 
@@ -181,10 +220,10 @@ npm run up -- --project /path --suggest opencode --suggest-model opencode/deepse
 
 ```text
 apps/
-  daemon/             local ingest, replay, static dashboard, and websocket daemon
-  dashboard/          operator console (live session map, replay, inspector, handoff)
+  daemon/             local ingest, replay, efficiency, suggestion routing, static dashboard, websocket
+  dashboard/          operator console (session map, replay, inspector, efficiency, handoff)
 packages/
-  core/               canonical events, graph model, redaction, replay, audit, handoff
+  core/               canonical events, graph model, redaction, replay, audit, handoff, efficiency
   storage/            NDJSON persistence
   opencode-adapter/   OpenCode plugin / SDK bridge
 ```
@@ -201,10 +240,21 @@ npm run build
 
 ## Roadmap
 
-- More host adapters beyond OpenCode (PI, Claude Code, and other harnesses) on the same canonical core.
+- More host adapters beyond OpenCode (Claude Code, PI, and other harnesses) on the same canonical core.
 - Deeper audit: claim-vs-evidence verification and risky-command surfacing.
-- Richer multi-agent fleets and cross-run views.
+- Cross-run efficiency trends and fleet-wide views.
 
 ---
 
-<p align="center"><sub>Local-first. Observe, don't trust the narrator.</sub></p>
+## Contact
+
+<p align="center">
+  <a href="https://github.com/TaewoooPark"><img src="https://img.shields.io/badge/-GitHub-181717?style=for-the-badge&logo=github&logoColor=white&cacheSeconds=3600" alt="GitHub"></a>
+  <a href="https://x.com/theoverstrcture"><img src="https://img.shields.io/badge/-X-000000?style=for-the-badge&logo=x&logoColor=white&cacheSeconds=3600" alt="X (Twitter)"></a>
+  <a href="https://www.linkedin.com/in/taewoo-park-427a05352"><img src="https://img.shields.io/badge/-LinkedIn-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white&cacheSeconds=3600" alt="LinkedIn"></a>
+  <a href="https://www.instagram.com/t.wo0_x/"><img src="https://img.shields.io/badge/-Instagram-E4405F?style=for-the-badge&logo=instagram&logoColor=white&cacheSeconds=3600" alt="Instagram"></a>
+  <a href="https://taewoopark.com"><img src="https://img.shields.io/badge/-taewoopark.com-000000?style=for-the-badge&logo=safari&logoColor=white&cacheSeconds=3600" alt="Personal site"></a>
+  <a href="mailto:ptw151125@kaist.ac.kr"><img src="https://img.shields.io/badge/-Email-D14836?style=for-the-badge&logo=gmail&logoColor=white&cacheSeconds=3600" alt="Email"></a>
+</p>
+
+<p align="center"><sub>Local-first. No API key. Observe, don't trust the narrator.</sub></p>
