@@ -67,4 +67,58 @@ describe("optimize (AGENTS.md efficiency memory)", () => {
     await runOptimize({ projectDir: dir, mode: "revert" });
     expect(await readFile(agentsMd, "utf8")).toBe(prefix);
   });
+
+  it("detects a new run by timestamp even when the runId is reused", async () => {
+    const first = wasteful("pinned", "2026-06-01T00:00:00.000Z");
+    await seed(first);
+    await runOptimize({ projectDir: dir, mode: "apply" });
+
+    // A second run that reused the same runId (e.g. AGENT_BLACKBOX_RUN_ID pinned), newer ts.
+    const second = [
+      ev(11, "pinned", "2026-06-02T00:00:00.000Z", "file_read", { source: "tool.after", path: "$PROJECT/src/calc.ts", chars: 80_000 }),
+      ev(12, "pinned", "2026-06-02T00:00:00.000Z", "file_read", { source: "tool.after", path: "$PROJECT/src/calc.ts", chars: 80_000 }),
+      ev(13, "pinned", "2026-06-02T00:00:00.000Z", "file_edit", { source: "tool.after", path: "$PROJECT/src/calc.ts", chars: 100 })
+    ];
+    await writeFile(
+      join(dir, ".agent-blackbox", "events.ndjson"),
+      `${[...first, ...second].map((e) => JSON.stringify(e)).join("\n")}\n`,
+      "utf8"
+    );
+    const checked = await runOptimize({ projectDir: dir, mode: "check" });
+    expect(checked.action).not.toMatch(/no new run/i); // newer ts → treated as a new run despite same runId
+  });
+
+  it("on check, reports which metric cleared and keeps the memory on improvement", async () => {
+    const first = wasteful("r1", "2026-06-01T00:00:00.000Z"); // redundant-reads flagged
+    await seed(first);
+    await runOptimize({ projectDir: dir, mode: "apply" });
+
+    // A cleaner, newer run (a single edit, no re-reads) → redundant-reads clears.
+    const second = [ev(20, "r2", "2026-06-02T00:00:00.000Z", "file_edit", { source: "tool.after", path: "$PROJECT/a.ts", chars: 200 })];
+    await writeFile(
+      join(dir, ".agent-blackbox", "events.ndjson"),
+      `${[...first, ...second].map((e) => JSON.stringify(e)).join("\n")}\n`,
+      "utf8"
+    );
+    const checked = await runOptimize({ projectDir: dir, mode: "check" });
+    expect(checked.action).toMatch(/cleared.*redundant-reads/i);
+    expect(checked.action).toMatch(/kept/i);
+    expect(checked.changed).toBe(false);
+  });
+
+  it("revert strips only the managed block, preserving edits made above it", async () => {
+    await seed(wasteful("r", "2026-06-01T00:00:00.000Z"));
+    const agentsMd = join(dir, "AGENTS.md");
+    await writeFile(agentsMd, "# Project\n\nOriginal note.\n", "utf8");
+    await runOptimize({ projectDir: dir, mode: "apply" });
+
+    // The user adds a note above the managed block after apply.
+    const applied = await readFile(agentsMd, "utf8");
+    await writeFile(agentsMd, applied.replace("Original note.", "Original note.\n\nUser added this later."), "utf8");
+
+    await runOptimize({ projectDir: dir, mode: "revert" });
+    const final = await readFile(agentsMd, "utf8");
+    expect(final).toContain("User added this later."); // concurrent edit preserved
+    expect(final).not.toContain("agent-blackbox:efficiency:start"); // our block removed
+  });
 });

@@ -112,6 +112,7 @@ async function main(argv: string[]): Promise<void> {
     const result = await runOptimize({ projectDir, mode });
     console.log(`Agent-Blackbox optimize (${result.mode}) — ${result.agentsMdPath}`);
     if (result.score !== null) console.log(`  Latest run score: ${result.score}${result.baselineScore !== null ? ` (baseline ${result.baselineScore})` : ""}`);
+    if (result.reclaimableTokens && result.reclaimableTokens > 0) console.log(`  Reclaimable waste this run: ~${result.reclaimableTokens} tokens`);
     console.log(`  ${result.action}`);
     if (result.block) {
       console.log("");

@@ -154,7 +154,37 @@ npm run optimize -- --project ~/code/my-app --check
 npm run optimize -- --project ~/code/my-app --revert
 ```
 
-The block is written **between markers at the end of the file**, so the stable prompt-cache prefix is never disturbed. It names the concrete offenders (files to read once, large outputs to scope, verified build/test commands to reuse) and is fully reversible — every write is marked, opt-in, and never silent. Because Agent-Blackbox already scores each run, it can do the one thing pure advice can't: **measure whether the change actually helped, and undo it if not.**
+The block is written **between markers at the end of the file**, so the stable prompt-cache prefix is never disturbed. It names the concrete offenders (files to read once, large outputs to scope, verified build/test commands to reuse) and is fully reversible — every write is marked, opt-in, and never silent.
+
+#### Measured on a real run
+
+A controlled before/after on a real OpenCode run (small JS repo, local `llama3.1:8b`). Run A summarized three files and re-read one; Agent-Blackbox flagged the re-read and pinned *"read `calculator.js` once"* to `AGENTS.md`. Run B — **same task, memory in place** — read each file once:
+
+| | Before (run A) | After (run B) |
+|---|---|---|
+| Context-efficiency score | 77 | **87** |
+| Peak input | 28k | **17k** |
+| File reads | 4 (`calculator.js` ×2) | **3** (no re-read) |
+| Redundant re-reads | 1 file (~110 reclaimable) | **none** |
+| Tool overhead | 2.0× | **1.0×** |
+| Tokens | 29k | **17k** |
+
+<table>
+<tr>
+<td width="50%"><img src="./docs/screenshots/optimize-before.jpeg" alt="Before: context-efficiency panel scoring 77, flagging 'Redundant re-reads — calculator.js ×2 were re-read (~110 reclaimable)', context pressure 28k, tool overhead 2.0×, 29k tokens." width="100%"></td>
+<td width="50%"><img src="./docs/screenshots/optimize-after.jpeg" alt="After: the same panel scoring 87 with 'Redundant re-reads: none', context pressure down to 17k, tool overhead 1.0×, 17k tokens." width="100%"></td>
+</tr>
+</table>
+
+> ⚠️ **This `--check` two-run cycle is a benchmark to *validate the mechanism* — not the production workflow.** Re-running the same task to measure would spend tokens twice. In real use you apply once and the memory pays off on *future, different* tasks in that repo (reused commands, files to read once) with **no extra run**.
+
+#### What's next — value without a second run
+
+The re-run benchmark proves the loop works, but the honest day-to-day signals shouldn't cost a re-run:
+
+- **In-run guardrails** *(the real frontier)* — the recorder already taps `tool.execute.before`; intercept a redundant read or oversized dump **as it's about to happen** (return the already-read content / a scoped result) so the waste never enters the window. Savings land in the *same* run, zero re-run.
+- **Apply-time savings estimate** — surface the reclaimable tokens the memory targets at `--apply`, so the value is visible immediately without measuring twice.
+- **Longitudinal trend** — Agent-Blackbox records every run; chart the efficiency score across your *real* runs and show whether it rises after the memory lands — measurement from actual work, not a benchmark.
 
 ---
 

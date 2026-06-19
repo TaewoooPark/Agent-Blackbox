@@ -1,7 +1,6 @@
 import {
   buildEfficiencyMemory,
   computeEfficiencyReport,
-  hasManagedBlock,
   removeManagedBlock,
   upsertManagedBlock,
   type TraceEvent
@@ -22,6 +21,7 @@ export type OptimizeResult = {
   action: string;
   score: number | null;
   baselineScore: number | null;
+  reclaimableTokens?: number | undefined; // projected savings the memory targets — shown without a re-run
   block: string | null;
   agentsMdPath: string;
   changed: boolean;
@@ -30,9 +30,17 @@ export type OptimizeResult = {
 type OptimizeState = {
   runId: string;
   baselineScore: number;
-  priorContent: string | null; // exact AGENTS.md before apply (null = file did not exist)
+  baselineLatestTs: string; // newest event ts at apply — detects a new run even if runId is reused
+  baselineFlagged: string[]; // metric ids flagged at apply, so --check can show what cleared
+  fileExisted: boolean; // whether AGENTS.md existed before apply (so revert can delete a file we created)
   appliedAt: string;
 };
+
+const flaggedIds = (report: { metrics: { id: string; status: string }[] }): string[] =>
+  report.metrics.filter((m) => m.status !== "good").map((m) => m.id);
+
+// "redundant-reads, context-pressure" → human phrase, or "" when empty.
+const joinIds = (ids: string[]): string => ids.join(", ");
 
 // Only undo on a clear regression — run-to-run scores are noisy across tasks.
 const REVERT_MARGIN = 3;
@@ -44,6 +52,7 @@ export async function runOptimize(options: { projectDir: string; mode: OptimizeM
 
   const events = await loadTraceEvents(eventsFile);
   const { runId, events: runEvents } = latestRun(events);
+  const latestTs = runEvents.reduce((max, e) => (e.ts > max ? e.ts : max), "");
   const report = runEvents.length > 0 ? computeEfficiencyReport(runEvents) : null;
   const score = report ? report.overallScore : null;
 
@@ -59,6 +68,7 @@ export async function runOptimize(options: { projectDir: string; mode: OptimizeM
       action: block ? "Preview only — re-run with --apply to write this to AGENTS.md." : "This run is clean — nothing worth pinning.",
       score,
       baselineScore: null,
+      reclaimableTokens: report?.reclaimableTokens,
       block,
       agentsMdPath,
       changed: false
@@ -66,18 +76,28 @@ export async function runOptimize(options: { projectDir: string; mode: OptimizeM
   }
 
   if (options.mode === "apply") {
-    if (!block || score === null || runId === null) {
+    if (!block || !report || score === null || runId === null) {
       return { mode: "apply", action: "This run is clean — nothing to apply.", score, baselineScore: null, block: null, agentsMdPath, changed: false };
     }
     const prior = await readMaybe(agentsMdPath);
     const next = upsertManagedBlock(prior ?? "", block);
     await writeFile(agentsMdPath, next, "utf8");
-    await writeState(statePath, { runId, baselineScore: score, priorContent: prior, appliedAt: new Date().toISOString() });
+    await writeState(statePath, {
+      runId: runId ?? "",
+      baselineScore: score,
+      baselineLatestTs: latestTs,
+      baselineFlagged: flaggedIds(report),
+      fileExisted: prior !== null,
+      appliedAt: new Date().toISOString()
+    });
     return {
       mode: "apply",
-      action: `Wrote efficiency memory to AGENTS.md (baseline score ${score}). Run your agent again, then \`optimize --check\` to confirm it helped.`,
+      action:
+        `Wrote efficiency memory to AGENTS.md — targets ~${report.reclaimableTokens} reclaimable tokens on similar future runs (no re-run needed).` +
+        ` Optional: re-run the same task + \`optimize --check\` to benchmark the gain.`,
       score,
       baselineScore: score,
+      reclaimableTokens: report.reclaimableTokens,
       block,
       agentsMdPath,
       changed: prior !== next
@@ -92,10 +112,12 @@ export async function runOptimize(options: { projectDir: string; mode: OptimizeM
   if (runId === null) {
     return { mode: "check", action: "No runs recorded yet.", score, baselineScore: state.baselineScore, block: null, agentsMdPath, changed: false };
   }
-  if (runId === state.runId) {
+  // A new run is "newer activity since apply" by timestamp — robust even if the
+  // runId was pinned/reused via AGENT_BLACKBOX_RUN_ID.
+  if (latestTs <= state.baselineLatestTs) {
     return {
       mode: "check",
-      action: `No new run since apply (still '${runId}'). Run your agent with the memory in place, then re-check.`,
+      action: "No new run since apply. Run your agent with the memory in place, then re-check.",
       score,
       baselineScore: state.baselineScore,
       block: null,
@@ -104,22 +126,30 @@ export async function runOptimize(options: { projectDir: string; mode: OptimizeM
     };
   }
   const delta = (score ?? 0) - state.baselineScore;
+  const nowFlagged = report ? flaggedIds(report) : [];
+  const baseFlagged = state.baselineFlagged ?? [];
+  const cleared = baseFlagged.filter((id) => !nowFlagged.includes(id));
+  const appeared = nowFlagged.filter((id) => !baseFlagged.includes(id));
+  const metricDiff = [cleared.length ? `cleared ${joinIds(cleared)}` : "", appeared.length ? `new ${joinIds(appeared)}` : ""]
+    .filter(Boolean)
+    .join("; ");
+  const diffSuffix = metricDiff ? ` [${metricDiff}]` : "";
   if (delta < -REVERT_MARGIN) {
-    await restore(agentsMdPath, state.priorContent);
+    const changed = await restore(agentsMdPath, state.fileExisted);
     await rm(statePath, { force: true });
     return {
       mode: "check",
-      action: `Score dropped ${state.baselineScore} → ${score ?? "?"} (Δ${delta}) on the new run — rolled the memory back.`,
+      action: `Score dropped ${state.baselineScore} → ${score ?? "?"} (Δ${delta})${diffSuffix} on the new run — rolled the memory back.`,
       score,
       baselineScore: state.baselineScore,
       block: null,
       agentsMdPath,
-      changed: true
+      changed
     };
   }
   return {
     mode: "check",
-    action: `Score ${state.baselineScore} → ${score ?? "?"} (Δ${delta >= 0 ? "+" : ""}${delta}) — kept the memory.`,
+    action: `Score ${state.baselineScore} → ${score ?? "?"} (Δ${delta >= 0 ? "+" : ""}${delta})${diffSuffix} — kept the memory.`,
     score,
     baselineScore: state.baselineScore,
     block: null,
@@ -130,22 +160,32 @@ export async function runOptimize(options: { projectDir: string; mode: OptimizeM
 
 async function revert(agentsMdPath: string, statePath: string, score: number | null): Promise<OptimizeResult> {
   const state = await readState(statePath);
-  const current = await readMaybe(agentsMdPath);
-  if (state) {
-    await restore(agentsMdPath, state.priorContent);
-    await rm(statePath, { force: true });
-    return { mode: "revert", action: "Restored AGENTS.md to its pre-apply state.", score, baselineScore: state.baselineScore, block: null, agentsMdPath, changed: true };
-  }
-  if (current !== null && hasManagedBlock(current)) {
-    await writeFile(agentsMdPath, removeManagedBlock(current), "utf8");
-    return { mode: "revert", action: "Removed the managed efficiency block from AGENTS.md.", score, baselineScore: null, block: null, agentsMdPath, changed: true };
-  }
-  return { mode: "revert", action: "Nothing to revert.", score, baselineScore: null, block: null, agentsMdPath, changed: false };
+  const changed = await restore(agentsMdPath, state ? state.fileExisted : true);
+  if (state) await rm(statePath, { force: true });
+  return {
+    mode: "revert",
+    action: changed ? "Removed the managed efficiency block from AGENTS.md." : "Nothing to revert.",
+    score,
+    baselineScore: state ? state.baselineScore : null,
+    block: null,
+    agentsMdPath,
+    changed
+  };
 }
 
-async function restore(agentsMdPath: string, priorContent: string | null): Promise<void> {
-  if (priorContent === null) await rm(agentsMdPath, { force: true });
-  else await writeFile(agentsMdPath, priorContent, "utf8");
+// Roll back by stripping ONLY our managed block, preserving any edits made to the
+// rest of AGENTS.md since apply. If that empties a file we created, delete it.
+async function restore(agentsMdPath: string, fileExisted: boolean): Promise<boolean> {
+  const current = await readMaybe(agentsMdPath);
+  if (current === null) return false;
+  const next = removeManagedBlock(current);
+  if (next === current) return false;
+  if (next.trim() === "" && !fileExisted) {
+    await rm(agentsMdPath, { force: true });
+    return true;
+  }
+  await writeFile(agentsMdPath, next, "utf8");
+  return true;
 }
 
 function latestRun(events: TraceEvent[]): { runId: string | null; events: TraceEvent[] } {
