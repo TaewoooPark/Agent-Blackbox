@@ -6,6 +6,7 @@ export type InitOpenCodeOptions = {
   daemonUrl?: string;
   adapterPackage?: string;
   force?: boolean;
+  optimize?: boolean;
 };
 
 export type InitOpenCodeResult = {
@@ -37,7 +38,7 @@ export async function initOpenCodeProject(options: InitOpenCodeOptions): Promise
     throw new Error(`${pluginPath} already exists. Re-run with --force to overwrite it.`);
   }
 
-  await writeFile(pluginPath, renderOpenCodePlugin({ adapterImport, daemonUrl }), "utf8");
+  await writeFile(pluginPath, renderOpenCodePlugin({ adapterImport, daemonUrl, optimize: options.optimize ?? false }), "utf8");
   await writePackageJson(packageJsonPath, adapterPackage, adapterImport);
   return {
     pluginPath,
@@ -47,11 +48,11 @@ export async function initOpenCodeProject(options: InitOpenCodeOptions): Promise
   };
 }
 
-export function renderOpenCodePlugin(options: { adapterImport: string; daemonUrl: string }): string {
+export function renderOpenCodePlugin(options: { adapterImport: string; daemonUrl: string; optimize?: boolean }): string {
   return `import { createOpenCodePlugin } from "${options.adapterImport}";
 
 export const AgentBlackbox = createOpenCodePlugin({
-  daemonUrl: process.env.AGENT_BLACKBOX_DAEMON_URL ?? "${options.daemonUrl}"
+  daemonUrl: process.env.AGENT_BLACKBOX_DAEMON_URL ?? "${options.daemonUrl}"${options.optimize ? ",\n  optimize: true" : ""}
 });
 `;
 }

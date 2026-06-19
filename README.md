@@ -178,13 +178,18 @@ A controlled before/after on a real OpenCode run (small JS repo, local `llama3.1
 
 > ⚠️ **This `--check` two-run cycle is a benchmark to *validate the mechanism* — not the production workflow.** Re-running the same task to measure would spend tokens twice. In real use you apply once and the memory pays off on *future, different* tasks in that repo (reused commands, files to read once) with **no extra run**.
 
-#### What's next — value without a second run
+### In-run optimizer — cut the waste live, no re-run *(opt-in)*
 
-The re-run benchmark proves the loop works, but the honest day-to-day signals shouldn't cost a re-run:
+The AGENTS.md memory above pays off on *future* tasks. The in-run optimizer cuts waste **inside the current run** — the recorder stops being purely passive and serves re-reads cheaply through the OpenCode tool hooks. Enable it with `AGENT_BLACKBOX_OPTIMIZE=1` (or `--optimize` at install); off by default.
 
-- **In-run guardrails** *(the real frontier)* — the recorder already taps `tool.execute.before`; intercept a redundant read or oversized dump **as it's about to happen** (return the already-read content / a scoped result) so the waste never enters the window. Savings land in the *same* run, zero re-run.
-- **Apply-time savings estimate** — surface the reclaimable tokens the memory targets at `--apply`, so the value is visible immediately without measuring twice.
-- **Longitudinal trend** — Agent-Blackbox records every run; chart the efficiency score across your *real* runs and show whether it rises after the memory lands — measurement from actual work, not a benchmark.
+- **Re-reads served as a no-op or a diff.** When the agent re-reads a file it already read this run, the `tool.execute.after` hook rewrites the result: *unchanged* → a one-line "reuse your earlier copy" note; *edited* → only the changed line range. Measured on a 120-line file: **96% fewer tokens on an unchanged re-read, 94% on an edited one** — in the same run, zero re-run.
+- **Correct by construction.** Re-reads are never blocked (you might genuinely need one). The no-op/diff only fires when **no compaction has happened since** the file was last served — so the content is provably still in context. After a compaction the full file is served again, because the agent may have lost it.
+- **Working-set memory injected live.** Via `experimental.chat.system.transform`, a tiny always-current block (hot files + verified commands, derived from observed events) is appended to the system prompt, so the agent recalls instead of re-reading.
+
+#### What's next
+
+- **Longitudinal trend** — Agent-Blackbox records every run; chart the efficiency score across your *real* runs and show whether it rises after the memory + optimizer land — measurement from actual work, not a benchmark.
+- **Diff-serving across compaction** — keep a small local content cache so even post-compaction re-reads can be served as diffs (today they fall back to full).
 
 ---
 

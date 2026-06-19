@@ -93,5 +93,6 @@ export function resolveRecorderOptions(options: OpenCodeRecorderOptions): OpenCo
   if (options.homeDir) resolved.homeDir = options.homeDir;
   if (options.projectDir) resolved.projectDir = options.projectDir;
   if (typeof options.rawStored === "boolean") resolved.rawStored = options.rawStored;
+  if (typeof options.optimize === "boolean") resolved.optimize = options.optimize;
   return resolved;
 }

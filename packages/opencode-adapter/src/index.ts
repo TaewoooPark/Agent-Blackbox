@@ -8,6 +8,16 @@ import {
   subagentSessionFromEvent,
   type OpenCodeNormalizerContext
 } from "./normalize.js";
+import {
+  buildWorkingSetBlock,
+  decideReadServe,
+  hashContent,
+  isReadTool,
+  isReusableCommand,
+  readArgPath,
+  type ReadCacheEntry,
+  type WorkingSetFile
+} from "./optimize.js";
 import { createTraceSink, resolveRecorderOptions } from "./sink.js";
 import type {
   OpenCodePluginContext,
@@ -36,10 +46,12 @@ export async function createOpenCodeRecorder(
     ...(resolved.eventsFile ? { eventsFile: resolved.eventsFile } : {}),
     ...(resolved.sink ? { sink: resolved.sink } : {})
   });
+  const optimize = resolved.optimize ?? process.env.AGENT_BLACKBOX_OPTIMIZE === "1";
   const factory = createOpenCodeEventFactory({
     runId,
     sink,
     defaultSessionId: "unknown-session",
+    optimize,
     ...(resolved.homeDir ? { homeDir: resolved.homeDir } : {}),
     projectDir: resolved.projectDir ?? directory,
     ...(cliPrompt ? { cliPrompt } : {}),
@@ -55,6 +67,15 @@ export async function createOpenCodeRecorder(
     },
     "tool.execute.after": async (input, output) => {
       await factory.writeToolAfter(input, output);
+    },
+    // In-run actuator (opt-in). A compaction means the agent may have lost content,
+    // so we reset the "still in context" generation; the system transform injects
+    // the working-set memory. Both no-op when optimize is off.
+    "experimental.session.compacting": async () => {
+      factory.onCompaction();
+    },
+    "experimental.chat.system.transform": async (_input, output) => {
+      factory.injectWorkingSet(output);
     }
   };
 }
@@ -70,6 +91,7 @@ function createOpenCodeEventFactory(options: {
   runId: string;
   sink: TraceSink;
   defaultSessionId: string;
+  optimize: boolean;
   homeDir?: string;
   projectDir?: string;
   cliPrompt?: string;
@@ -78,6 +100,42 @@ function createOpenCodeEventFactory(options: {
   let seq = 0;
   const promptSessions = new Set<string>();
   const subagentSessions = new Map<string, { agent: string; parentId: string }>();
+
+  // --- in-run optimizer state (only used when options.optimize) ---------------
+  const readCache = new Map<string, ReadCacheEntry>(); // `${sessionId}::${path}` -> last served
+  const wsFiles = new Map<string, WorkingSetFile>(); // path -> read/edit counts
+  const wsCommands: string[] = [];
+  let compactionGen = 0; // bumped on every compaction → invalidates "still in context"
+  const bumpFile = (path: string, kind: "read" | "edit", hash?: string) => {
+    const f = wsFiles.get(path) ?? { path, reads: 0, edits: 0 };
+    if (kind === "read") f.reads += 1;
+    else f.edits += 1;
+    if (hash) f.hash = hash;
+    wsFiles.set(path, f);
+  };
+  const optimizeReadAfter = (input: Record<string, unknown>, output: Record<string, unknown>): void => {
+    const tool = input.tool;
+    const path = readArgPath(input.args);
+    if (isEditTool(tool) && path) bumpFile(path, "edit");
+    if (isBashTool(tool)) {
+      const command = readString(input.args, "command");
+      const exit = readExitCode(output);
+      if (command && isReusableCommand(command) && (exit === 0 || exit === undefined)) {
+        if (!wsCommands.includes(command)) wsCommands.push(command);
+      }
+    }
+    if (!isReadTool(tool) || !path) return;
+    const current = typeof output.output === "string" ? output.output : "";
+    if (!current) return;
+    const key = `${readString(input, "sessionID") ?? "s"}::${path}`;
+    const hash = hashContent(current);
+    const decision = decideReadServe(readCache.get(key), { hash, content: current }, compactionGen, path);
+    readCache.set(key, { hash, content: current, gen: compactionGen });
+    bumpFile(path, "read", hash);
+    if (decision.mode !== "full" && typeof decision.output === "string") {
+      output.output = decision.output; // serve no-op/diff instead of full bytes
+    }
+  };
   const attributeToSubagent = (event: TraceEvent): TraceEvent => {
     const owner = subagentSessions.get(event.sessionId);
     if (!owner) return event;
@@ -120,9 +178,48 @@ function createOpenCodeEventFactory(options: {
       await options.sink.write(attributeToSubagent(normalizeToolBefore(input, output, nextContext())));
     },
     async writeToolAfter(input: Record<string, unknown>, output: Record<string, unknown>): Promise<void> {
+      // Optimize BEFORE recording so the trace (and the efficiency score) reflect
+      // the leaner output the model actually received.
+      if (options.optimize) optimizeReadAfter(input, output);
       await options.sink.write(attributeToSubagent(normalizeToolAfter(input, output, nextContext())));
+    },
+    onCompaction(): void {
+      if (options.optimize) compactionGen += 1;
+    },
+    injectWorkingSet(output: Record<string, unknown>): void {
+      if (!options.optimize) return;
+      const block = buildWorkingSetBlock([...wsFiles.values()], wsCommands);
+      if (!block) return;
+      const system = output.system;
+      if (Array.isArray(system)) system.push(block); // append → keep the cacheable prefix stable
     }
   };
+}
+
+function isEditTool(tool: unknown): boolean {
+  return typeof tool === "string" && ["edit", "write", "patch", "multiedit", "apply_patch"].includes(tool.toLowerCase());
+}
+
+function isBashTool(tool: unknown): boolean {
+  return typeof tool === "string" && ["bash", "shell", "sh", "run", "command"].includes(tool.toLowerCase());
+}
+
+function readString(record: unknown, key: string): string | undefined {
+  if (!record || typeof record !== "object") return undefined;
+  const value = (record as Record<string, unknown>)[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+function readExitCode(output: Record<string, unknown>): number | undefined {
+  const direct = output.exitCode ?? output.exit;
+  if (typeof direct === "number") return direct;
+  const meta = output.metadata;
+  if (meta && typeof meta === "object") {
+    const m = meta as Record<string, unknown>;
+    const v = m.exitCode ?? m.exit;
+    if (typeof v === "number") return v;
+  }
+  return undefined;
 }
 
 export function detectOpenCodeRunPrompt(argv: string[]): string | undefined {

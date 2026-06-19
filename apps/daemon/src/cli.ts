@@ -39,7 +39,7 @@ async function main(argv: string[]): Promise<void> {
     const suggest = readSuggestConfig(argv);
 
     try {
-      const result = await initOpenCodeProject({ projectDir, daemonUrl, adapterPackage, force: false });
+      const result = await initOpenCodeProject({ projectDir, daemonUrl, adapterPackage, force: false, optimize: argv.includes("--optimize") });
       console.log(`✓ OpenCode recorder plugin installed: ${result.pluginPath}`);
     } catch (error) {
       if (error instanceof Error && error.message.includes("already exists")) {
@@ -93,7 +93,8 @@ async function main(argv: string[]): Promise<void> {
       projectDir,
       ...(daemonUrl ? { daemonUrl } : {}),
       ...(adapterPackage ? { adapterPackage } : {}),
-      force: argv.includes("--force")
+      force: argv.includes("--force"),
+      optimize: argv.includes("--optimize")
     });
     console.log(`OpenCode plugin written: ${result.pluginPath}`);
     console.log(`OpenCode package config written: ${result.packageJsonPath}`);
@@ -130,9 +131,9 @@ function printHelp(): void {
   console.log("");
   console.log("Usage:");
   console.log("  agent-blackbox up [--project <dir>] [--port <port>] [--ui-port <port>]   # plugin + daemon + dashboard, one command");
-  console.log("       [--suggest auto|off|ollama|opencode|openai-compat] [--suggest-model <id>] [--suggest-base-url <url>]");
+  console.log("       [--suggest auto|off|ollama|opencode|openai-compat] [--suggest-model <id>] [--suggest-base-url <url>] [--optimize]");
   console.log("  agent-blackbox daemon [--project <dir>] [--port <port>]");
-  console.log("  agent-blackbox init-opencode [--project <dir>] [--daemon-url <url>] [--adapter-package <specifier>] [--force]");
+  console.log("  agent-blackbox init-opencode [--project <dir>] [--daemon-url <url>] [--adapter-package <specifier>] [--force] [--optimize]");
   console.log("  agent-blackbox optimize [--project <dir>] [--apply | --check | --revert]   # write/measure/rollback AGENTS.md efficiency memory");
   console.log("  agent-blackbox handoff <events.ndjson>");
   console.log("  agent-blackbox replay <events.ndjson>");
