@@ -116,7 +116,21 @@ npm run up -- --project /path --suggest openai-compat --suggest-base-url http://
 npm run up -- --project /path --suggest opencode --suggest-model opencode/deepseek-v4-flash-free
 ```
 
-`--suggest auto`(기본)는 위 순서로 탐지 후 규칙 기반으로 폴백합니다. 로컬 모델에도 **redact된 파생 다이제스트**(상태·횟수·크기 — 파일 내용·경로·명령은 절대 안 보냄)만 전송됩니다.
+`--suggest auto`(기본)는 위 순서로 탐지 후 규칙 기반으로 폴백합니다. 로컬 모델에도 **redact된 파생 다이제스트**만 전송됩니다: 지표 상태·횟수·크기, 그리고 거친 **가해자 라벨 — 파일 basename과 명령 verb**(예: `billing.ts ×2`, `deploy ×2` — 무엇을 고칠지 짚기 위함) — 하지만 **파일 내용·디렉터리 경로·명령 인자·프롬프트·비밀은 절대 보내지 않습니다**.
+
+### 조언의 근거 자료
+
+제안은 일반적인 팁이 아닙니다. 항상 켜진 규칙 기반 floor와 로컬 모델 프롬프트 모두 지표별 **수정 플레이북**을 내장하며, 모든 조언은 이 실행의 실제 숫자를 인용하고, 문제된 파일/명령을 지목하고, 구체적 메커니즘과 기대 효과를 명시하도록 강제됩니다. 플레이북은 다음의 컨텍스트 엔지니어링 연구·프로덕션 사례에서 정제했습니다:
+
+| 자료 | 기여 내용 | 관련 지표 |
+|---|---|---|
+| Anthropic — [Effective context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) | **컴팩션**(완료된 턴을 요약 → 새 윈도 시작), 이미 처리한 도구 출력 비우기, **서브에이전트 컨텍스트 격리**(자식에서 탐색 후 ~1–2k 토큰 요약만 반환), **just-in-time 검색**(grep/glob로 필요할 때 읽기, 전체 파일 사전 로드 지양) | `context-pressure`, `read-amplification`, `redundant-reads`, `yield-density` |
+| Manus — [Context Engineering for AI Agents: Lessons from Building Manus](https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus) | **KV-캐시 적중률**이 핵심 비용 레버(캐시 토큰 ≈ 10× 저렴), byte-stable 프롬프트 프리픽스(타임스탬프·휘발 데이터 금지), append-only 컨텍스트, 툴 추가/제거 대신 마스킹, 파일시스템을 외부 메모리로, 매 스텝 목표 **recitation** | `cache-hit`, `large-injections`, `retry-waste` |
+| Liu 외 — [Lost in the Middle: How Language Models Use Long Contexts](https://arxiv.org/abs/2307.03172) | 모델이 긴 컨텍스트의 **중간을 체계적으로 덜 활용**(U자 정확도, ~30%+ 저하) → "더 넣기"보다 트리밍/재배치·목표 recitation을 권고 | `context-pressure`, `yield-density` |
+| Anthropic — [Building effective agents](https://www.anthropic.com/engineering/building-effective-agents) | 최소·**비중복 툴셋**과 명확한 툴 경계; 탐색적 호출 체인 대신 관련 동작 배치 | `tool-overhead` |
+| Schulhoff 외 — [The Prompt Report: A Systematic Survey of Prompt Engineering Techniques](https://arxiv.org/abs/2406.06608) | 대조 few-shot(나쁜-막연 vs 좋은-구체), 제공된 숫자에 근거, 엄격한 구조화 출력 — 작은 로컬 모델도 구체적이고 실행 가능한 JSON을 반환 | *(어드바이저 프롬프트 자체를 설계)* |
+
+작은 로컬 모델에서 종단 검증: 중복 읽기 발견이 "파일을 한 번만 읽으세요"에서 **"`calculator.js`가 2회 읽혔습니다(~282 회수 가능) — 한 번만 읽고 캐시한 뒤, 편집 후에는 전체 파일이 아니라 변경된 라인 범위만 다시 읽으세요."** 로 바뀝니다.
 
 ---
 

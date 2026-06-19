@@ -116,7 +116,21 @@ npm run up -- --project /path --suggest openai-compat --suggest-base-url http://
 npm run up -- --project /path --suggest opencode --suggest-model opencode/deepseek-v4-flash-free
 ```
 
-`--suggest auto`（既定）は上記を順に探し、ルールベースへフォールバックします。ローカルモデルにも、送られるのは**マスキング済みの派生ダイジェスト**（状態・件数・サイズのみ—ファイル内容・パス・コマンドは決して送りません）だけです。
+`--suggest auto`（既定）は上記を順に探し、ルールベースへフォールバックします。ローカルモデルにも送られるのは**マスキング済みの派生ダイジェスト**だけです：指標の状態・件数・サイズに加え、粗い**オフェンダーラベル—ファイルの basename とコマンドの動詞**（例：`billing.ts ×2`、`deploy ×2`。何を直すべきか示すため）—ただし**ファイル内容・ディレクトリパス・コマンド引数・プロンプト・秘密は決して送りません**。
+
+### 助言の根拠
+
+助言は一般論ではありません。常時オンのルールベースの土台もローカルモデルのプロンプトも、指標ごとの**修正プレイブック**を内蔵し、すべての助言はこの実行の実数値を引用し、問題のファイル/コマンドを名指しし、具体的なメカニズムと期待効果を述べるよう強制されます。プレイブックは以下のコンテキストエンジニアリング研究・本番事例から抽出しています：
+
+| 出典 | 貢献 | 関連指標 |
+|---|---|---|
+| Anthropic — [Effective context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) | **コンパクション**（解決済みのターンを要約 → 新しいウィンドウで再開）、処理済みツール出力のクリア、**サブエージェントのコンテキスト分離**（子で探索し ~1–2k トークンの要約のみ返す）、**ジャストインタイム取得**（grep/glob で必要時に読み、全ファイルの事前ロードを避ける） | `context-pressure`、`read-amplification`、`redundant-reads`、`yield-density` |
+| Manus — [Context Engineering for AI Agents: Lessons from Building Manus](https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus) | **KV キャッシュ命中率**が主要なコストレバー（キャッシュ済みトークンは約 10× 安い）、プロンプト接頭辞をバイト単位で安定（タイムスタンプ・揮発データを置かない）、追記のみのコンテキスト、ツールの追加/削除でなくマスキング、ファイルシステムを外部メモリに、各ステップで目標の**リサイテーション** | `cache-hit`、`large-injections`、`retry-waste` |
+| Liu ほか — [Lost in the Middle: How Language Models Use Long Contexts](https://arxiv.org/abs/2307.03172) | モデルは長いコンテキストの**中間を体系的に活用しきれない**（U 字の精度、30%+ 低下）—— ゆえに「足す」より刈り込み/再配置・目標のリサイテーションを推奨 | `context-pressure`、`yield-density` |
+| Anthropic — [Building effective agents](https://www.anthropic.com/engineering/building-effective-agents) | 最小で**重複のないツールセット**と明確なツール境界；探索的な呼び出しの連鎖でなく関連動作をまとめる | `tool-overhead` |
+| Schulhoff ほか — [The Prompt Report: A Systematic Survey of Prompt Engineering Techniques](https://arxiv.org/abs/2406.06608) | 対比的な few-shot（悪い・曖昧 vs 良い・具体）、与えた数値への接地、厳密な構造化出力 —— 小型ローカルモデルでも具体的で実行可能な JSON を返させる | *（助言プロンプト自体を形作る）* |
+
+小型ローカルモデルでエンドツーエンド検証済み：「重複読み込み」の指摘が「各ファイルは一度だけ読む」から **「`calculator.js` を 2 回読み込み（約 282 回収可能）—— 一度だけ読んでキャッシュし、編集後はファイル全体ではなく変更された行範囲のみ再読する。」** に変わります。
 
 ---
 

@@ -116,7 +116,21 @@ npm run up -- --project /path --suggest openai-compat --suggest-base-url http://
 npm run up -- --project /path --suggest opencode --suggest-model opencode/deepseek-v4-flash-free
 ```
 
-`--suggest auto`（默认）按上述顺序探测，并回退到规则。即便对本地模型，也只发送**脱敏的派生摘要**（状态、计数、尺寸 —— 绝不发送文件内容、路径或命令）。
+`--suggest auto`（默认）按上述顺序探测，并回退到规则。即便对本地模型，也只发送**脱敏的派生摘要**：指标的状态、计数、尺寸，以及粗粒度的**问题标签 —— 文件名（basename）与命令动词**（如 `billing.ts ×2`、`deploy ×2`，以便建议能指出要修复的对象）—— 但**绝不发送文件内容、目录路径、命令参数、提示词或密钥**。
+
+### 建议的依据
+
+这些建议不是泛泛之谈。常驻的规则兜底与本地模型提示词都内置了**按指标的修复手册**，且每条建议都被要求引用本次运行的真实数字、点名问题文件/命令、给出具体机制与预期效果。该手册提炼自以下上下文工程研究与生产实践：
+
+| 来源 | 贡献 | 相关指标 |
+|---|---|---|
+| Anthropic — [Effective context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) | **压缩（compaction）**（将已完成的轮次汇总 → 开启新窗口）、清理已处理的工具输出、**子智能体上下文隔离**（在子代理中探索后只回传 ~1–2k 词元的摘要）、**按需检索**（用 grep/glob 即用即取，避免预载整文件） | `context-pressure`、`read-amplification`、`redundant-reads`、`yield-density` |
+| Manus — [Context Engineering for AI Agents: Lessons from Building Manus](https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus) | **KV 缓存命中率**是首要成本杠杆（缓存词元约便宜 10×）、保持提示前缀逐字节稳定（勿放时间戳/易变数据）、仅追加的上下文、用屏蔽（mask）代替增删工具、把文件系统当外部记忆、每步**复述（recitation）**目标 | `cache-hit`、`large-injections`、`retry-waste` |
+| Liu 等 — [Lost in the Middle: How Language Models Use Long Contexts](https://arxiv.org/abs/2307.03172) | 模型会**系统性地忽视长上下文的中段**（U 形准确率，下降 30%+）—— 故建议倾向于裁剪/重排与目标复述，而非"塞更多" | `context-pressure`、`yield-density` |
+| Anthropic — [Building effective agents](https://www.anthropic.com/engineering/building-effective-agents) | 精简、**不重叠的工具集**与清晰的工具边界；把相关动作批处理，而非探索式的调用链 | `tool-overhead` |
+| Schulhoff 等 — [The Prompt Report: A Systematic Survey of Prompt Engineering Techniques](https://arxiv.org/abs/2406.06608) | 对比式少样本（差而泛 vs 好而具体）、让答案锚定所给数字、严格的结构化输出 —— 让小型本地模型也能返回具体、可执行的 JSON | *（用于塑造建议器提示词本身）* |
+
+已在小型本地模型上端到端验证：一条"重复读取"的建议从"每个文件只读一次"变为 **"`calculator.js` 被读取 2 次（约可回收 282）—— 读取一次并缓存，之后每次编辑只重读发生变化的行区间，而非整个文件。"**
 
 ---
 
