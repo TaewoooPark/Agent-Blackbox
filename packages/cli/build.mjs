@@ -51,4 +51,4 @@ await build({
 // 3. The dashboard static bundle.
 cpSync(dashboard, resolve(out, "dashboard"), { recursive: true });
 
-console.log("✓ built @taewoopark/agent-blackbox → dist/ (cli.js, agent-blackbox.plugin.mjs, dashboard/)");
+console.log("✓ built @taewooopark/agent-blackbox → dist/ (cli.js, agent-blackbox.plugin.mjs, dashboard/)");

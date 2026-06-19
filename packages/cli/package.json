@@ -1,5 +1,5 @@
 {
-  "name": "@taewoopark/agent-blackbox",
+  "name": "@taewooopark/agent-blackbox",
   "version": "0.42.0",
   "description": "Local-first flight recorder + context-efficiency profiler for coding agents (OpenCode). Run with npx.",
   "type": "module",
