@@ -41,6 +41,9 @@ const eventKindMap: Record<string, TraceEventKind> = {
  *  - `message.part.delta`: per-token streaming chunks (the resulting message is
  *    still captured via `message.updated` / `message.part.updated`).
  *  - registry/lifecycle chatter emitted mostly at startup.
+ *  - `tui.*`: terminal-UI chrome (toasts, prompts). Multi-agent harnesses such
+ *    as oh-my-openagent fire `tui.toast.show` heavily for status babysitting;
+ *    these are session-less UI events with no trace signal.
  */
 const ignoredEventTypes = new Set<string>([
   "message.part.delta",
@@ -52,10 +55,13 @@ const ignoredEventTypes = new Set<string>([
   "reference.updated"
 ]);
 
+const ignoredEventPrefixes = ["tui."];
+
 export function shouldRecordOpenCodeEvent(rawEvent: unknown): boolean {
   const type = readString(asRecord(rawEvent), ["type"]);
   if (!type) return true;
-  return !ignoredEventTypes.has(type);
+  if (ignoredEventTypes.has(type)) return false;
+  return !ignoredEventPrefixes.some((prefix) => type.startsWith(prefix));
 }
 
 // A subagent's session is announced by a `session.created` whose info carries a
@@ -71,7 +77,22 @@ export function subagentSessionFromEvent(
   const parentId = readString(info, ["parentID", "parentId"]);
   const sessionId = readString(info, ["id"]) ?? readString(properties, ["sessionID", "sessionId"]);
   if (!parentId || !sessionId) return null;
-  return { agent: readString(info, ["agent"]) ?? "subagent", parentId, sessionId };
+  const agent =
+    readString(info, ["agent"]) ??
+    agentFromSubagentTitle(readString(info, ["title"])) ??
+    "subagent";
+  return { agent, parentId, sessionId };
+}
+
+// Harnesses that spawn child sessions via the SDK (rather than naming the agent
+// on the session info) encode it in the session title, e.g. oh-my-openagent's
+// `"Research documentation (@librarian subagent)"`. Recover that name so each
+// lane shows the real specialist (explore, librarian, oracle, …) instead of a
+// generic "subagent".
+export function agentFromSubagentTitle(title: string | undefined): string | undefined {
+  if (!title) return undefined;
+  const match = title.match(/@([A-Za-z0-9][\w-]*)/);
+  return match ? match[1] : undefined;
 }
 
 export function normalizeOpenCodeEvent(rawEvent: unknown, context: OpenCodeNormalizerContext): TraceEvent {
