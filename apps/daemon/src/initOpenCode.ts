@@ -1,5 +1,6 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 
 export type InitOpenCodeOptions = {
   projectDir: string;
@@ -27,6 +28,54 @@ type PackageJson = {
 
 const defaultAdapterPackage = "@agent-blackbox/opencode-adapter";
 const defaultDaemonUrl = "http://127.0.0.1:47831";
+
+// OpenCode auto-loads every file in ~/.config/opencode/plugins/ for ALL sessions
+// (any folder, the terminal, or the desktop app) — not just the project you
+// happened to scaffold. Dropping the self-contained recorder here is what
+// connects Agent-Blackbox to how people actually use OpenCode.
+// https://opencode.ai/docs/plugins/  (XDG_CONFIG_HOME respected.)
+export function globalOpenCodeDir(): string {
+  const xdg = process.env.XDG_CONFIG_HOME;
+  return xdg && xdg.length > 0 ? join(xdg, "opencode") : join(homedir(), ".config", "opencode");
+}
+
+export function globalRecorderPath(): string {
+  return join(globalOpenCodeDir(), "plugins", "agent-blackbox.js");
+}
+
+/**
+ * Install the recorder into OpenCode's GLOBAL plugin directory so every session
+ * streams to the daemon — no per-project scaffolding, no `--dir`, works with the
+ * OpenCode app too. Requires the self-contained bundle (the npx distribution
+ * ships it; from source run `npm run build:cli` first). Idempotent: re-running
+ * re-stamps the daemon URL.
+ */
+export async function installGlobalRecorder(options: {
+  daemonUrl: string;
+  pluginBundlePath: string;
+}): Promise<{ pluginPath: string }> {
+  if (!(await pathExists(options.pluginBundlePath))) {
+    throw new Error(
+      "Self-contained recorder bundle not found. Use the published npx package, or build it from source with `npm run build:cli`."
+    );
+  }
+  const pluginPath = globalRecorderPath();
+  const bundle = (await readFile(options.pluginBundlePath, "utf8")).replaceAll("__ABB_DAEMON_URL__", options.daemonUrl);
+  await mkdir(dirname(pluginPath), { recursive: true });
+  await writeFile(pluginPath, bundle, "utf8");
+  return { pluginPath };
+}
+
+export async function uninstallGlobalRecorder(): Promise<{ pluginPath: string; removed: boolean }> {
+  const pluginPath = globalRecorderPath();
+  try {
+    await rm(pluginPath);
+    return { pluginPath, removed: true };
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") return { pluginPath, removed: false };
+    throw error;
+  }
+}
 
 export async function initOpenCodeProject(options: InitOpenCodeOptions): Promise<InitOpenCodeResult> {
   const adapterPackage = options.adapterPackage ?? defaultAdapterPackage;

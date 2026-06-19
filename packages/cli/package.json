@@ -1,13 +1,26 @@
 {
   "name": "@taewooopark/agent-blackbox",
-  "version": "0.44.0",
+  "version": "0.45.0",
   "description": "Local-first flight recorder + context-efficiency profiler for coding agents (OpenCode). Run with npx.",
   "type": "module",
   "license": "MIT",
-  "repository": { "type": "git", "url": "git+https://github.com/TaewoooPark/Agent-Blackbox.git" },
-  "bin": { "agent-blackbox": "dist/cli.js" },
-  "files": ["dist"],
-  "engines": { "node": ">=20" },
-  "dependencies": { "ws": "^8.21.0" },
-  "scripts": { "bundle": "node build.mjs" }
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TaewoooPark/Agent-Blackbox.git"
+  },
+  "bin": {
+    "agent-blackbox": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "ws": "^8.21.0"
+  },
+  "scripts": {
+    "bundle": "node build.mjs"
+  }
 }

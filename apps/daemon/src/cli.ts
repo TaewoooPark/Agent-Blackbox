@@ -2,11 +2,12 @@
 import { evaluatePromiseChecks, generateHandoffMarkdown, materializeWorkflowGraph } from "@agent-blackbox/core";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { startDashboardServer } from "./dashboardServer.js";
 import { AGENT_BLACKBOX_DAEMON_VERSION, describeDaemon } from "./index.js";
-import { initOpenCodeProject } from "./initOpenCode.js";
+import { initOpenCodeProject, installGlobalRecorder, uninstallGlobalRecorder } from "./initOpenCode.js";
 import { runOptimize, type OptimizeMode } from "./optimize.js";
 import { buildReplaySummary, loadTraceEvents, startTraceDaemon } from "./server.js";
 import type { SuggestionConfig, SuggestionMode } from "./suggestionProvider.js";
@@ -24,6 +25,14 @@ const dashboardDistDir =
   resolve(repoRoot, "apps/dashboard/dist");
 // When present (npx build), the recorder is written self-contained from this bundle.
 const pluginBundlePath = firstExisting([resolve(cliDir, "agent-blackbox.plugin.mjs")]);
+
+// Where global-mode recordings live — one store for every project's OpenCode
+// sessions (XDG_DATA_HOME respected), since the global recorder isn't tied to a
+// single project. Kept separate from any project's own .agent-blackbox/.
+function globalDataDir(): string {
+  const xdg = process.env.XDG_DATA_HOME;
+  return xdg && xdg.length > 0 ? join(xdg, "agent-blackbox") : join(homedir(), ".local", "share", "agent-blackbox");
+}
 
 void main(args);
 
@@ -44,13 +53,48 @@ async function main(argv: string[]): Promise<void> {
   }
 
   if (command === "up") {
-    const projectDir = resolve(readFlag(argv, "--project") ?? process.cwd());
+    const projectFlag = readFlag(argv, "--project");
+    // No --project → GLOBAL mode: record every OpenCode session (any folder, the
+    // terminal, or the app), the way people actually use OpenCode. --project keeps
+    // the old project-scoped behavior.
+    const global = projectFlag === undefined;
     const port = Number(readFlag(argv, "--port") ?? "47831");
     const uiPort = Number(readFlag(argv, "--ui-port") ?? "5173");
     const daemonUrl = `http://127.0.0.1:${port}`;
-    const adapterPackage = readFlag(argv, "--adapter-package") ?? `file:${resolve(repoRoot, "packages/opencode-adapter")}`;
     const suggest = readSuggestConfig(argv);
 
+    let daemon: Awaited<ReturnType<typeof startTraceDaemon>>;
+    if (global) {
+      if (!pluginBundlePath) {
+        throw new Error(
+          "Global install needs the self-contained recorder bundle. Use the published npx package, or `npm run build:cli` then `node packages/cli/dist/cli.js up`.\n" +
+            "(Or scope to one project with: agent-blackbox up --project <dir>.)"
+        );
+      }
+      const { pluginPath } = await installGlobalRecorder({ daemonUrl, pluginBundlePath });
+      const dataDir = globalDataDir();
+      const eventsFile = join(dataDir, "events.ndjson");
+      daemon = await startTraceDaemon({ projectDir: dataDir, port, eventsFile, suggest });
+      const ui = await startDashboardServer({ distDir: dashboardDistDir, port: uiPort, daemonUrl });
+      const dashboardUrl = `http://127.0.0.1:${ui.port}`;
+      console.log(`✓ Global OpenCode recorder installed: ${pluginPath}`);
+      console.log(`✓ Agent-Blackbox is up (recording all OpenCode sessions)`);
+      console.log(`  Dashboard:  ${dashboardUrl}`);
+      console.log(`  Daemon API: ${daemonUrl}  (trace: ${daemon.eventsFile})`);
+      console.log(`  Suggestions: ${suggest.mode}${suggest.model ? ` (${suggest.model})` : ""}`);
+      console.log("");
+      if (!argv.includes("--no-open")) openInBrowser(dashboardUrl);
+      console.log("Now use OpenCode however you already do — the dashboard fills in live:");
+      console.log("  opencode                 # in any folder (terminal), or");
+      console.log("  the OpenCode desktop app # open any project");
+      console.log("");
+      console.log("Stop recording any time with:  agent-blackbox uninstall");
+      console.log("Press Ctrl+C to stop the daemon + dashboard.");
+      return;
+    }
+
+    const projectDir = resolve(projectFlag);
+    const adapterPackage = readFlag(argv, "--adapter-package") ?? `file:${resolve(repoRoot, "packages/opencode-adapter")}`;
     try {
       const result = await initOpenCodeProject({
         projectDir,
@@ -69,7 +113,7 @@ async function main(argv: string[]): Promise<void> {
       }
     }
 
-    const daemon = await startTraceDaemon({ projectDir, port, suggest });
+    daemon = await startTraceDaemon({ projectDir, port, suggest });
     const ui = await startDashboardServer({ distDir: dashboardDistDir, port: uiPort, daemonUrl });
 
     const dashboardUrl = `http://127.0.0.1:${ui.port}`;
@@ -81,9 +125,29 @@ async function main(argv: string[]): Promise<void> {
     console.log("");
     if (!argv.includes("--no-open")) openInBrowser(dashboardUrl);
     console.log("Now run your agent in that project, e.g.:");
-    console.log(`  AGENT_BLACKBOX_DAEMON_URL=${daemonUrl} opencode run --dir ${projectDir} "Read the code, run tests, summarize."`);
+    console.log(`  opencode    # in ${projectDir} (the project-local recorder streams here)`);
     console.log("");
     console.log("Press Ctrl+C to stop.");
+    return;
+  }
+
+  if (command === "install") {
+    const port = Number(readFlag(argv, "--port") ?? "47831");
+    const daemonUrl = `http://127.0.0.1:${port}`;
+    if (!pluginBundlePath) {
+      throw new Error("Global install needs the self-contained recorder bundle. Use the published npx package, or `npm run build:cli` first.");
+    }
+    const { pluginPath } = await installGlobalRecorder({ daemonUrl, pluginBundlePath });
+    console.log(`✓ Global OpenCode recorder installed: ${pluginPath}`);
+    console.log(`  Every OpenCode session (any folder, terminal, or the app) now streams to ${daemonUrl}.`);
+    console.log(`  Start the dashboard with:  agent-blackbox up`);
+    console.log(`  Remove with:               agent-blackbox uninstall`);
+    return;
+  }
+
+  if (command === "uninstall") {
+    const { pluginPath, removed } = await uninstallGlobalRecorder();
+    console.log(removed ? `✓ Removed global OpenCode recorder: ${pluginPath}` : `Nothing to remove — ${pluginPath} is not present.`);
     return;
   }
 
@@ -152,8 +216,11 @@ function printHelp(): void {
   console.log(describeDaemon());
   console.log("");
   console.log("Usage:");
-  console.log("  agent-blackbox up [--project <dir>] [--port <port>] [--ui-port <port>]   # plugin + daemon + dashboard, one command");
-  console.log("       [--suggest auto|free|off|ollama|opencode|openai-compat] [--suggest-model <id>] [--suggest-base-url <url>] [--optimize] [--no-open]");
+  console.log("  agent-blackbox up                       # GLOBAL: record every OpenCode session (any folder / the app) + daemon + dashboard");
+  console.log("  agent-blackbox up --project <dir>        # scope the recorder to one project instead");
+  console.log("       [--port <port>] [--ui-port <port>] [--suggest auto|free|off|ollama|opencode|openai-compat] [--suggest-model <id>] [--optimize] [--no-open]");
+  console.log("  agent-blackbox install [--port <port>]   # install the global recorder only (no daemon)");
+  console.log("  agent-blackbox uninstall                 # remove the global recorder");
   console.log("  agent-blackbox daemon [--project <dir>] [--port <port>]");
   console.log("  agent-blackbox init-opencode [--project <dir>] [--daemon-url <url>] [--adapter-package <specifier>] [--force] [--optimize]");
   console.log("  agent-blackbox optimize [--project <dir>] [--apply | --check | --revert]   # write/measure/rollback AGENTS.md efficiency memory");

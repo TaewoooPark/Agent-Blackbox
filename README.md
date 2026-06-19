@@ -111,16 +111,16 @@ Suggestions are **rule-based by default** (always on, no dependencies). To have 
 
 ```bash
 # Free, durable, default: rotate a pool of free models across independent quotas
-npm run up -- --project /path --suggest free
+npx @taewooopark/agent-blackbox up --suggest free
 
 # Ollama: local, no key
-npm run up -- --project /path --suggest ollama --suggest-model qwen2.5-coder
+npx @taewooopark/agent-blackbox up --suggest ollama --suggest-model qwen2.5-coder
 
 # Any OpenAI-compatible localhost server (LM Studio, llama.cpp)
-npm run up -- --project /path --suggest openai-compat --suggest-base-url http://127.0.0.1:1234
+npx @taewooopark/agent-blackbox up --suggest openai-compat --suggest-base-url http://127.0.0.1:1234
 
 # Reuse OpenCode's free model via your installed binary
-npm run up -- --project /path --suggest opencode --suggest-model opencode/deepseek-v4-flash-free
+npx @taewooopark/agent-blackbox up --suggest opencode --suggest-model opencode/deepseek-v4-flash-free
 ```
 
 **`--suggest free`** (and the default `auto`) rotate a curated pool of **free** models across **independent quota pools** — OpenCode Zen (`opencode/*-free`) + Ollama cloud + a local model — one model per call, rotated to spread load, **failing over and cooling down a model that hits a rate limit (429)** for 10 minutes, and falling back to rule-based only if every pool is exhausted. So the AI suggestions stay free and keep working over long sessions without you babysitting a single quota. Only a **redacted, derived digest** is ever sent, even to a local model: metric statuses, counts, and sizes, plus coarse **offender labels — file basenames and command verbs** (e.g. `billing.ts ×2`, `deploy ×2`) so the advice can name what to fix — but **never file contents, directory paths, command arguments, prompts, or secrets**.
@@ -220,58 +220,66 @@ A real OMO `ultrawork` run, recorded live by Agent-Blackbox — named specialist
 </p>
 
 ```bash
-# OMO installs globally; Agent-Blackbox records the project. Run OMO, watch :5173.
-npm run up -- --project ~/code/my-app --suggest free
-opencode run "ultrawork: refactor the auth module and add tests"   # OMO + recorder both active
+# Both install globally — start ABB once, then run OMO however you like. Watch :5173.
+npx @taewooopark/agent-blackbox up --suggest free
+opencode "ultrawork: refactor the auth module and add tests"   # OMO + recorder both active
 ```
 
 ---
 
 ## Quickstart
 
-**Fastest — no clone, no build** (needs Node 20+ and [OpenCode](https://opencode.ai)):
+**One command — records every OpenCode session** (needs Node 20+ and [OpenCode](https://opencode.ai)):
 
 ```bash
-npx @taewooopark/agent-blackbox up --project /path/to/your/project
+npx @taewooopark/agent-blackbox up
 ```
 
-That one command fetches the recorder + dashboard, installs the recorder plugin into your project, starts the daemon, and **opens the dashboard in your browser** (`http://127.0.0.1:5173/`; add `--no-open` to skip). Then run your agent inside that project (the command's output prints the exact line):
+That installs the recorder into OpenCode's **global** plugin directory (`~/.config/opencode/plugins/`), starts the daemon, and **opens the dashboard** (`http://127.0.0.1:5173/`; add `--no-open` to skip). Now use OpenCode exactly the way you already do — the map fills in live:
+
+```bash
+opencode          # in any folder (terminal)
+# …or open any project in the OpenCode desktop app
+```
+
+No per-project setup, no `--dir`, no env var — any session, any folder, the app included. Stop recording any time with `npx @taewooopark/agent-blackbox uninstall`.
 
 <details>
-<summary><b>Or run from source</b> (development / contributing)</summary>
+<summary><b>Scope it to one project, or run from source</b></summary>
 
 ```bash
+# Record just one project (recorder lands in <dir>/.opencode instead of globally)
+npx @taewooopark/agent-blackbox up --project /path/to/your/project
+
+# From source (development / contributing)
 git clone https://github.com/TaewoooPark/Agent-Blackbox
-cd Agent-Blackbox && npm install
-npm start -- --project /path/to/your/project
+cd Agent-Blackbox && npm install && npm run build:cli
+node packages/cli/dist/cli.js up
 ```
 </details>
-
-```bash
-AGENT_BLACKBOX_DAEMON_URL=http://127.0.0.1:47831 \
-  opencode run --dir /path/to/your/project \
-  "Read the relevant code, run the tests, and summarize the result."
-```
 
 The map assembles itself live. That's it.
 
 ### Recipes
 
 ```bash
-# Just watch a run — point it at any project and go
-npm run up -- --project ~/code/my-app
+# Just watch — start it once, then use OpenCode anywhere (terminal or app)
+npx @taewooopark/agent-blackbox up
+opencode   # in any folder; the dashboard fills in live
 
-# Optimize: run something heavy, then read the context score + fixes in the right rail
-npm run up -- --project ~/code/my-app --suggest ollama --suggest-model qwen2.5-coder
+# Optimize: route tailored fixes to a free/local model, then read the right rail
+npx @taewooopark/agent-blackbox up --suggest ollama --suggest-model qwen2.5-coder
 
-# Multi-agent: delegate, and watch each subagent fork into its own lane
-AGENT_BLACKBOX_DAEMON_URL=http://127.0.0.1:47831 opencode run --dir ~/code/my-app \
-  "Delegate exploration, implementation, and tests to subagents, then summarize."
+# Multi-agent: just delegate in your normal session — each subagent forks into its own lane
+opencode "Delegate exploration, implementation, and tests to subagents, then summarize."
 
 # Resume elsewhere: open the run, click Handoff, copy the Markdown into the next session
 
-# Pick a different port if 47831/5173 are taken
-npm run up -- --project ~/code/my-app --port 48000 --ui-port 4000
+# Pick a different port if 47831/5173 are taken (the recorder is re-stamped to match)
+npx @taewooopark/agent-blackbox up --port 48000 --ui-port 4000
+
+# Stop recording (removes the global recorder)
+npx @taewooopark/agent-blackbox uninstall
 ```
 
 When you need to continue the run elsewhere — a teammate, the next agent, or the same agent after a context reset — export a structured **handoff**:
