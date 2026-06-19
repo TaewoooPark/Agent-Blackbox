@@ -52,3 +52,12 @@ export type { PromiseCheck, PromiseCheckSeverity, PromiseCheckStatus } from "./a
 export { evaluatePromiseChecks, generateHandoffMarkdown } from "./audit.js";
 export type { EfficiencyMetric, EfficiencyReport, EfficiencyStatus, Suggestion } from "./efficiency.js";
 export { buildDeterministicSuggestions, computeEfficiencyReport } from "./efficiency.js";
+export type { EfficiencyMemoryOptions } from "./efficiencyMemory.js";
+export {
+  buildEfficiencyMemory,
+  EFFICIENCY_MEMORY_END,
+  EFFICIENCY_MEMORY_START,
+  hasManagedBlock,
+  removeManagedBlock,
+  upsertManagedBlock
+} from "./efficiencyMemory.js";

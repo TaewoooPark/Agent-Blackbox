@@ -12,6 +12,7 @@
     "build": "npm run build --workspaces --if-present",
     "check": "npm run typecheck && npm test",
     "lint": "npm run typecheck",
+    "optimize": "node apps/daemon/dist/cli.js optimize",
     "test": "vitest run",
     "typecheck": "tsc -b",
     "up": "node apps/daemon/dist/cli.js up"

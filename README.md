@@ -136,6 +136,26 @@ The suggestions aren't generic tips. Both the always-on rule-based floor and the
 
 Verified end-to-end on a small local model: a redundant-reads finding turns from "read each file once" into **"`calculator.js` was read 2× (~282 reclaimable) — read it once and cache it, then after each edit re-read only the changed line range instead of the whole file."**
 
+### Close the loop — write the fix back *(experimental)*
+
+Advice you have to re-apply by hand is friction. `optimize` turns the last run's findings into a small, **cache-safe** memory block in your project's `AGENTS.md` — the file the agent already reads as context — so the *next* run avoids the waste before it happens. It's the actuator half of the recorder: observe → diagnose → **write → measure → roll back if it didn't help.**
+
+```bash
+# Preview what it would write (no changes)
+npm run optimize -- --project ~/code/my-app
+
+# Apply: append a managed block to AGENTS.md + record the baseline score
+npm run optimize -- --project ~/code/my-app --apply
+
+# After the next run, confirm it helped — auto-rolls-back on a clear score drop
+npm run optimize -- --project ~/code/my-app --check
+
+# Undo at any time
+npm run optimize -- --project ~/code/my-app --revert
+```
+
+The block is written **between markers at the end of the file**, so the stable prompt-cache prefix is never disturbed. It names the concrete offenders (files to read once, large outputs to scope, verified build/test commands to reuse) and is fully reversible — every write is marked, opt-in, and never silent. Because Agent-Blackbox already scores each run, it can do the one thing pure advice can't: **measure whether the change actually helped, and undo it if not.**
+
 ---
 
 ## Quickstart

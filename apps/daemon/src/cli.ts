@@ -5,6 +5,7 @@ import { dirname, resolve } from "node:path";
 import { startDashboardServer } from "./dashboardServer.js";
 import { AGENT_BLACKBOX_DAEMON_VERSION, describeDaemon } from "./index.js";
 import { initOpenCodeProject } from "./initOpenCode.js";
+import { runOptimize, type OptimizeMode } from "./optimize.js";
 import { buildReplaySummary, loadTraceEvents, startTraceDaemon } from "./server.js";
 import type { SuggestionConfig, SuggestionMode } from "./suggestionProvider.js";
 
@@ -99,6 +100,27 @@ async function main(argv: string[]): Promise<void> {
     return;
   }
 
+  if (command === "optimize") {
+    const projectDir = resolve(readFlag(argv, "--project") ?? process.cwd());
+    const mode: OptimizeMode = argv.includes("--apply")
+      ? "apply"
+      : argv.includes("--check")
+        ? "check"
+        : argv.includes("--revert")
+          ? "revert"
+          : "preview";
+    const result = await runOptimize({ projectDir, mode });
+    console.log(`Agent-Blackbox optimize (${result.mode}) — ${result.agentsMdPath}`);
+    if (result.score !== null) console.log(`  Latest run score: ${result.score}${result.baselineScore !== null ? ` (baseline ${result.baselineScore})` : ""}`);
+    console.log(`  ${result.action}`);
+    if (result.block) {
+      console.log("");
+      console.log(result.block);
+    }
+    if (mode === "check") console.log("\nNote: scores compare different runs, so this is a heuristic — auto-revert only fires on a clear drop.");
+    return;
+  }
+
   printHelp();
 }
 
@@ -110,6 +132,7 @@ function printHelp(): void {
   console.log("       [--suggest auto|off|ollama|opencode|openai-compat] [--suggest-model <id>] [--suggest-base-url <url>]");
   console.log("  agent-blackbox daemon [--project <dir>] [--port <port>]");
   console.log("  agent-blackbox init-opencode [--project <dir>] [--daemon-url <url>] [--adapter-package <specifier>] [--force]");
+  console.log("  agent-blackbox optimize [--project <dir>] [--apply | --check | --revert]   # write/measure/rollback AGENTS.md efficiency memory");
   console.log("  agent-blackbox handoff <events.ndjson>");
   console.log("  agent-blackbox replay <events.ndjson>");
   console.log("  agent-blackbox --version");
