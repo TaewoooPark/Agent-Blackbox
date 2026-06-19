@@ -755,6 +755,255 @@ h3 {
   line-height: 1.4;
 }
 
+/* The actuator is the lead CTA (inverted ink — the boldest move in a monochrome
+   system); "Sharpen advice" stays a quiet secondary so the two read as distinct. */
+.optimizeButton {
+  background: var(--text-heading);
+  border: 1px solid var(--text-heading);
+  border-radius: var(--card-radius);
+  color: var(--bg);
+  cursor: pointer;
+  display: grid;
+  gap: 1px;
+  padding: 7px 10px;
+  text-align: left;
+  transition: opacity 120ms ease;
+}
+
+.optimizeButton:hover:not(:disabled) {
+  opacity: 0.86;
+}
+
+.optimizeButton:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.optimizeButtonLabel {
+  font-size: var(--fs-body);
+  font-weight: 700;
+}
+
+.optimizeButtonHint {
+  font-size: var(--fs-label);
+  opacity: 0.8;
+}
+
+.optimizeOverlay {
+  align-items: center;
+  background: var(--scrim);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 40px;
+  position: fixed;
+  z-index: 60;
+}
+
+.optimizePanel {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--card-radius);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 84vh;
+  overflow: hidden;
+  padding: 18px;
+  width: min(560px, 92vw);
+}
+
+.optimizeHeader {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.optimizeHeaderText h2 {
+  font-size: var(--fs-title);
+  margin: 0 0 4px;
+}
+
+.optimizeSub {
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.optimizeSub code {
+  background: var(--surface-strong);
+  border-radius: 2px;
+  padding: 0 3px;
+}
+
+.optimizeClose {
+  background: transparent;
+  border: 1px solid var(--card-border-color);
+  border-radius: var(--card-radius);
+  color: var(--text-muted);
+  cursor: pointer;
+  flex: none;
+  font-size: var(--fs-body);
+  line-height: 1;
+  padding: 4px 7px;
+}
+
+.optimizeClose:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--text-heading);
+}
+
+.optimizeClose:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.optimizeStatus {
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.optimizeStatus.error {
+  color: var(--danger);
+}
+
+.optimizeStatus.done {
+  color: var(--text-heading);
+}
+
+.optimizeMeta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.optimizeBadge {
+  border: 1px solid var(--card-border-color);
+  border-radius: 999px;
+  font-size: var(--fs-label);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  text-transform: uppercase;
+}
+
+.optimizeBadge.on {
+  background: var(--text-heading);
+  border-color: var(--text-heading);
+  color: var(--bg);
+}
+
+.optimizeBadge.off {
+  color: var(--text-muted);
+}
+
+.optimizeReclaim {
+  color: var(--text-secondary);
+  font-size: var(--fs-label);
+}
+
+.optimizePath {
+  color: var(--text-muted);
+  font-size: var(--fs-label);
+  margin-left: auto;
+}
+
+.optimizeBlockLabel {
+  color: var(--text-muted);
+  font-size: var(--fs-label);
+  letter-spacing: 0.05em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.optimizeBlock {
+  background: var(--surface-soft);
+  border: 1px solid var(--card-border-color);
+  border-radius: var(--card-radius);
+  color: var(--text);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.55;
+  margin: 0;
+  overflow: auto;
+  padding: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.optimizeFooter {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.optimizeApply {
+  background: var(--text-heading);
+  border: 1px solid var(--text-heading);
+  border-radius: var(--card-radius);
+  color: var(--bg);
+  cursor: pointer;
+  font-size: var(--fs-body);
+  font-weight: 700;
+  padding: 6px 12px;
+}
+
+.optimizeApply:hover:not(:disabled) {
+  opacity: 0.86;
+}
+
+.optimizeApply:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.optimizeRevert {
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--card-radius);
+  color: var(--danger);
+  cursor: pointer;
+  font-size: var(--fs-body);
+  font-weight: 700;
+  padding: 6px 12px;
+}
+
+.optimizeRevert:hover:not(:disabled) {
+  border-color: var(--danger-border-strong);
+}
+
+.optimizeRevert:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.optimizeCancel {
+  background: transparent;
+  border: 1px solid var(--card-border-color);
+  border-radius: var(--card-radius);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: var(--fs-body);
+  margin-left: auto;
+  padding: 6px 12px;
+}
+
+.optimizeCancel:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--text-heading);
+}
+
+.optimizeCancel:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
 .contextTokensToggle {
   align-items: center;
   background: transparent;

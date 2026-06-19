@@ -1,5 +1,5 @@
 import { createTraceEvent } from "@agent-blackbox/core";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WebSocket, type RawData } from "ws";
@@ -175,6 +175,81 @@ describe("trace daemon", () => {
       expect(response.status).toBe(400);
       expect(payload.ok).toBe(false);
       expect(payload.error.message).toContain("seq");
+    } finally {
+      await daemon.close();
+    }
+  });
+
+  it("previews, applies, and reverts the AGENTS.md efficiency memory over HTTP", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "agent-blackbox-daemon-"));
+    const daemon = await startTraceDaemon({ projectDir: tempDir, port: 0 });
+    const base = `http://127.0.0.1:${daemon.port}`;
+    const agentsMd = join(tempDir, "AGENTS.md");
+    try {
+      // A wasteful run: same file read twice then edited → redundant-reads fires,
+      // so there's a memory block worth pinning.
+      const events = [
+        createTraceEvent(1, {
+          host: "opencode",
+          runId: "run-opt",
+          sessionId: "s",
+          kind: "file_read",
+          payload: { source: "tool.after", path: "$PROJECT/src/calc.ts", chars: 80_000 }
+        }),
+        createTraceEvent(2, {
+          host: "opencode",
+          runId: "run-opt",
+          sessionId: "s",
+          kind: "file_read",
+          payload: { source: "tool.after", path: "$PROJECT/src/calc.ts", chars: 80_000 }
+        }),
+        createTraceEvent(3, {
+          host: "opencode",
+          runId: "run-opt",
+          sessionId: "s",
+          kind: "file_edit",
+          payload: { source: "tool.after", path: "$PROJECT/src/calc.ts", chars: 100 }
+        })
+      ];
+      for (const event of events) {
+        const ingest = await fetch(`${base}/events`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(event)
+        });
+        expect(ingest.status).toBe(202);
+      }
+
+      // Preview writes nothing but returns the exact block + applied=false.
+      const preview = (await (await fetch(`${base}/optimize`)).json()) as {
+        ok: boolean;
+        data: { block: string | null; applied: boolean; changed: boolean };
+      };
+      expect(preview.ok).toBe(true);
+      expect(preview.data.block).toContain("Context-efficiency notes");
+      expect(preview.data.applied).toBe(false);
+      await expect(readFile(agentsMd, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+
+      // Apply writes the managed block and reports applied=true.
+      const applied = (await (await fetch(`${base}/optimize/apply`, { method: "POST" })).json()) as {
+        ok: boolean;
+        data: { applied: boolean; changed: boolean };
+      };
+      expect(applied.data.applied).toBe(true);
+      expect(applied.data.changed).toBe(true);
+      expect(await readFile(agentsMd, "utf8")).toContain("agent-blackbox:efficiency:start");
+
+      // A fresh preview now sees the block in place.
+      const reread = (await (await fetch(`${base}/optimize`)).json()) as { data: { applied: boolean } };
+      expect(reread.data.applied).toBe(true);
+
+      // Revert strips it back out.
+      const reverted = (await (await fetch(`${base}/optimize/revert`, { method: "POST" })).json()) as {
+        data: { applied: boolean; changed: boolean };
+      };
+      expect(reverted.data.applied).toBe(false);
+      expect(reverted.data.changed).toBe(true);
+      await expect(readFile(agentsMd, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await daemon.close();
     }

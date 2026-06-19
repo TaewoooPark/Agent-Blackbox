@@ -15,6 +15,7 @@ import { appendTraceEvent, readTraceEvents } from "@agent-blackbox/storage";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
+import { runOptimize } from "./optimize.js";
 import { generateSuggestions, type SuggestionConfig } from "./suggestionProvider.js";
 
 export type TraceDaemonOptions = {
@@ -55,7 +56,7 @@ export async function startTraceDaemon(options: TraceDaemonOptions): Promise<Run
   const suggestConfig: SuggestionConfig = options.suggest ?? { mode: "auto" };
   const clients = new Set<WebSocket>();
   const server = createServer((request, response) => {
-    void handleRequest(request, response, eventsFile, clients, suggestConfig);
+    void handleRequest(request, response, eventsFile, clients, suggestConfig, options.projectDir);
   });
   const streamServer = new WebSocketServer({ noServer: true });
   server.on("upgrade", (request, socket, head) => {
@@ -158,7 +159,8 @@ async function handleRequest(
   response: ServerResponse,
   eventsFile: string,
   clients: Set<WebSocket>,
-  suggestConfig: SuggestionConfig
+  suggestConfig: SuggestionConfig,
+  projectDir: string
 ): Promise<void> {
   try {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
@@ -208,6 +210,21 @@ async function handleRequest(
           : (await buildTraceSnapshot(eventsFile, replay)).efficiency;
       const result = await generateSuggestions(report, suggestConfig);
       sendJson(response, 200, { ok: true, data: result });
+      return;
+    }
+    // The actuator, exposed to the dashboard. GET previews the AGENTS.md memory
+    // block (no write); POST .../apply writes it; POST .../revert removes it.
+    // Every write is to a marked, reversible region — see optimize.ts.
+    if (request.method === "GET" && url.pathname === "/optimize") {
+      sendJson(response, 200, { ok: true, data: await runOptimize({ projectDir, eventsFile, mode: "preview" }) });
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/optimize/apply") {
+      sendJson(response, 200, { ok: true, data: await runOptimize({ projectDir, eventsFile, mode: "apply" }) });
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/optimize/revert") {
+      sendJson(response, 200, { ok: true, data: await runOptimize({ projectDir, eventsFile, mode: "revert" }) });
       return;
     }
     if (request.method === "POST" && url.pathname === "/events") {

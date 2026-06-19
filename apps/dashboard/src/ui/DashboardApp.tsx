@@ -195,6 +195,7 @@ export function DashboardApp() {
   const [metricHighlight, setMetricHighlight] = useState<{ ids: string[]; nonce: number }>({ ids: [], nonce: 0 });
   const [aiState, setAiState] = useState<{ suggestions: Suggestion[]; provider: string } | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [showOptimize, setShowOptimize] = useState(false);
 
   // Stale AI advice shouldn't bleed across runs; deterministic suggestions track live.
   useEffect(() => {
@@ -376,7 +377,9 @@ export function DashboardApp() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      if (showHandoff) {
+      if (showOptimize) {
+        setShowOptimize(false);
+      } else if (showHandoff) {
         setShowHandoff(false);
       } else {
         clearFocus();
@@ -384,7 +387,7 @@ export function DashboardApp() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [showHandoff]);
+  }, [showHandoff, showOptimize]);
 
   return (
     <main className="shell">
@@ -481,6 +484,8 @@ export function DashboardApp() {
         </div>
       ) : null}
 
+      {showOptimize ? <OptimizeModal onClose={() => setShowOptimize(false)} /> : null}
+
       {error ? (
         <div className="banner">
           Can’t reach the trace daemon at {daemonUrl} ({error}). Start it with <code>npm run up</code> (or{" "}
@@ -554,6 +559,7 @@ export function DashboardApp() {
             aiProvider={aiState?.provider ?? null}
             aiLoading={aiLoading}
             onRequestAi={requestAiSuggestions}
+            onOptimize={() => setShowOptimize(true)}
             onSelectMetric={(metric) =>
               setMetricHighlight((current) => ({ ids: metric.evidenceEventIds, nonce: current.nonce + 1 }))
             }
@@ -2156,6 +2162,7 @@ function ContextPanel({
   aiProvider,
   aiLoading,
   onRequestAi,
+  onOptimize,
   onSelectMetric
 }: {
   report: EfficiencyReport;
@@ -2164,6 +2171,7 @@ function ContextPanel({
   aiProvider: string | null;
   aiLoading: boolean;
   onRequestAi: () => void;
+  onOptimize: () => void;
   onSelectMetric: (metric: EfficiencyMetric) => void;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -2196,14 +2204,18 @@ function ContextPanel({
       </div>
 
       <div className="contextAi">
+        <button className="optimizeButton" type="button" onClick={onOptimize} disabled={fixCount === 0}>
+          <span className="optimizeButtonLabel">Optimize future runs</span>
+          <span className="optimizeButtonHint">Write a reversible memory to AGENTS.md →</span>
+        </button>
         <button className="contextAiButton" type="button" onClick={onRequestAi} disabled={aiLoading || fixCount === 0}>
-          {aiLoading ? "Optimizing…" : aiProvider ? "Re-run AI suggestions" : "Optimize with a local model"}
+          {aiLoading ? "Sharpening…" : aiProvider ? "Re-run suggestions" : "Sharpen advice with a model"}
         </button>
         {aiProvider ? (
           <span className="contextAiNote">
             {aiProvider === "deterministic"
               ? "No free/local model reachable — showing rule-based tips. Configure --suggest."
-              : `Tailored by ${aiProvider} (free).`}
+              : `Suggestions tailored by ${aiProvider} (free).`}
           </span>
         ) : null}
       </div>
@@ -2287,6 +2299,141 @@ function ContextPanel({
         </div>
       ) : null}
     </section>
+  );
+}
+
+// Shape returned by the daemon's /optimize endpoints (mirror of OptimizeResult).
+type OptimizePreview = {
+  action: string;
+  score: number | null;
+  reclaimableTokens?: number;
+  block: string | null;
+  agentsMdPath: string;
+  applied: boolean;
+};
+
+const shortenPath = (path: string): string => {
+  const parts = path.split("/").filter(Boolean);
+  return parts.length <= 3 ? path : `…/${parts.slice(-3).join("/")}`;
+};
+
+// The actuator's UI: previews the exact AGENTS.md memory block ABB would write
+// from the last run, and lets you apply or revert it — a real, reversible change,
+// not just advice. Separate from the "Sharpen advice" suggestion flow on purpose.
+function OptimizeModal({ onClose }: { onClose: () => void }) {
+  const [preview, setPreview] = useState<OptimizePreview | null>(null);
+  const [applied, setApplied] = useState(false);
+  const [note, setNote] = useState<{ text: string; tone: "done" | "error" } | null>(null);
+  const [phase, setPhase] = useState<"loading" | "ready" | "working" | "error">("loading");
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`${daemonUrl}/optimize`);
+        const json = (await res.json()) as { ok: boolean; data?: OptimizePreview };
+        if (cancelled) return;
+        if (!json.ok || !json.data) throw new Error("daemon error");
+        setPreview(json.data);
+        setApplied(json.data.applied);
+        setPhase("ready");
+      } catch {
+        if (!cancelled) setPhase("error");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const act = async (mode: "apply" | "revert") => {
+    setPhase("working");
+    setNote(null);
+    try {
+      const res = await fetch(`${daemonUrl}/optimize/${mode}`, { method: "POST" });
+      const json = (await res.json()) as { ok: boolean; data?: OptimizePreview };
+      if (!json.ok || !json.data) throw new Error("daemon error");
+      setApplied(json.data.applied);
+      setNote({ text: json.data.action, tone: "done" });
+      setPhase("ready");
+    } catch {
+      setNote({ text: "That didn’t go through — the daemon may have stopped. Try again.", tone: "error" });
+      setPhase("ready");
+    }
+  };
+
+  const hasBlock = Boolean(preview?.block);
+  const reclaim = preview?.reclaimableTokens ?? 0;
+  const working = phase === "working";
+
+  return (
+    <div
+      className="optimizeOverlay"
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget && !working) onClose();
+      }}
+      role="presentation"
+    >
+      <aside className="optimizePanel" aria-label="Optimize future runs" aria-modal="true" role="dialog">
+        <div className="optimizeHeader">
+          <div className="optimizeHeaderText">
+            <h2>Optimize future runs</h2>
+            <p className="optimizeSub">
+              Writes a cache-safe, reversible note to <code>AGENTS.md</code> that your agent reads on its{" "}
+              <strong>next</strong> run — turning this run’s wasted context into a rule it won’t repeat. This is a real
+              file change, not advice.
+            </p>
+          </div>
+          <button className="optimizeClose" type="button" onClick={onClose} aria-label="Close" disabled={working}>
+            ✕
+          </button>
+        </div>
+
+        {phase === "loading" ? (
+          <p className="optimizeStatus">Reading the last run…</p>
+        ) : phase === "error" ? (
+          <p className="optimizeStatus error">Couldn’t reach the daemon. Is it still running?</p>
+        ) : !hasBlock ? (
+          <p className="optimizeStatus">
+            This run is already lean — there’s nothing worth pinning yet. Run a heavier task and reopen this.
+          </p>
+        ) : (
+          <>
+            <div className="optimizeMeta">
+              <span className={`optimizeBadge ${applied ? "on" : "off"}`}>{applied ? "Applied" : "Not applied"}</span>
+              {reclaim > 0 ? (
+                <span className="optimizeReclaim">~{formatTokenNumber(reclaim)} tokens targeted / run</span>
+              ) : null}
+              <code className="optimizePath" title={preview?.agentsMdPath}>
+                {shortenPath(preview?.agentsMdPath ?? "")}
+              </code>
+            </div>
+            <p className="optimizeBlockLabel">What gets written</p>
+            <pre className="optimizeBlock">{preview?.block}</pre>
+          </>
+        )}
+
+        {note ? <p className={`optimizeStatus ${note.tone}`}>{note.text}</p> : null}
+
+        <div className="optimizeFooter">
+          {hasBlock && phase !== "loading" && phase !== "error" ? (
+            <>
+              <button className="optimizeApply" type="button" onClick={() => void act("apply")} disabled={working}>
+                {working ? "Writing…" : applied ? "Update from latest run" : "Apply to AGENTS.md"}
+              </button>
+              {applied ? (
+                <button className="optimizeRevert" type="button" onClick={() => void act("revert")} disabled={working}>
+                  Revert
+                </button>
+              ) : null}
+            </>
+          ) : null}
+          <button className="optimizeCancel" type="button" onClick={onClose} disabled={working}>
+            {applied ? "Close" : "Cancel"}
+          </button>
+        </div>
+      </aside>
+    </div>
   );
 }
 

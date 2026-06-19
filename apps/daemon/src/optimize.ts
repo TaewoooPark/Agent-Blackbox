@@ -1,6 +1,7 @@
 import {
   buildEfficiencyMemory,
   computeEfficiencyReport,
+  hasManagedBlock,
   removeManagedBlock,
   upsertManagedBlock,
   type TraceEvent
@@ -25,6 +26,7 @@ export type OptimizeResult = {
   block: string | null;
   agentsMdPath: string;
   changed: boolean;
+  applied: boolean; // does AGENTS.md currently hold our managed block? (so a caller can show apply vs revert)
 };
 
 type OptimizeState = {
@@ -45,8 +47,25 @@ const joinIds = (ids: string[]): string => ids.join(", ");
 // Only undo on a clear regression — run-to-run scores are noisy across tasks.
 const REVERT_MARGIN = 3;
 
-export async function runOptimize(options: { projectDir: string; mode: OptimizeMode }): Promise<OptimizeResult> {
-  const eventsFile = join(options.projectDir, ".agent-blackbox", "events.ndjson");
+// Public entry: run the actuator, then stamp `applied` by reading AGENTS.md back —
+// so callers (CLI, daemon HTTP, dashboard) get a single source of truth for
+// whether our managed block is currently present, regardless of mode.
+export async function runOptimize(options: {
+  projectDir: string;
+  mode: OptimizeMode;
+  eventsFile?: string;
+}): Promise<OptimizeResult> {
+  const result = await computeOptimize(options);
+  const content = await readMaybe(result.agentsMdPath);
+  return { ...result, applied: content !== null && hasManagedBlock(content) };
+}
+
+async function computeOptimize(options: {
+  projectDir: string;
+  mode: OptimizeMode;
+  eventsFile?: string;
+}): Promise<Omit<OptimizeResult, "applied">> {
+  const eventsFile = options.eventsFile ?? join(options.projectDir, ".agent-blackbox", "events.ndjson");
   const agentsMdPath = join(options.projectDir, "AGENTS.md");
   const statePath = join(options.projectDir, ".agent-blackbox", "optimization.json");
 
@@ -158,7 +177,11 @@ export async function runOptimize(options: { projectDir: string; mode: OptimizeM
   };
 }
 
-async function revert(agentsMdPath: string, statePath: string, score: number | null): Promise<OptimizeResult> {
+async function revert(
+  agentsMdPath: string,
+  statePath: string,
+  score: number | null
+): Promise<Omit<OptimizeResult, "applied">> {
   const state = await readState(statePath);
   const changed = await restore(agentsMdPath, state ? state.fileExisted : true);
   if (state) await rm(statePath, { force: true });
