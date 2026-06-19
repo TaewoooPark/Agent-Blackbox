@@ -95,6 +95,31 @@ describe("OpenCode event normalization", () => {
     expect(event.sessionId).toBe("session-1");
   });
 
+  it("maps agent and model switches to their own kinds", () => {
+    const ctx = { runId: "run-opencode", seq: 1, defaultSessionId: "fallback-session" };
+    expect(normalizeOpenCodeEvent({ type: "session.next.agent.switched", properties: { agent: "hephaestus" } }, ctx).kind).toBe("agent_switched");
+    expect(normalizeOpenCodeEvent({ type: "session.next.model.switched", properties: { model: { id: "gpt-5.5" } } }, ctx).kind).toBe("model_switched");
+  });
+
+  it("surfaces an unmapped event as a labeled host_event instead of dropping it", () => {
+    const event = normalizeOpenCodeEvent(
+      { type: "some.brand.new.event", properties: { sessionID: "session-1" } },
+      { runId: "run-opencode", seq: 1, defaultSessionId: "fallback-session" }
+    );
+    expect(event.kind).toBe("host_event");
+    expect(event.summary).toBe("some.brand.new.event"); // the raw type stays visible
+  });
+
+  it("drops known noise families (diff, mcp, watcher, lsp, pty) before they reach the graph", () => {
+    for (const type of ["session.diff", "mcp.tools.changed", "file.watcher.updated", "lsp.client.diagnostics", "pty.updated"]) {
+      expect(shouldRecordOpenCodeEvent({ type })).toBe(false);
+    }
+    // real signals still pass
+    for (const type of ["session.compacted", "command.executed", "session.next.model.switched", "file.edited"]) {
+      expect(shouldRecordOpenCodeEvent({ type })).toBe(true);
+    }
+  });
+
   it("redacts secrets from tool payloads", () => {
     const event = normalizeToolBefore(
       {

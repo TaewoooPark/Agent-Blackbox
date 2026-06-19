@@ -76,7 +76,7 @@ That is the whole idea: **open the black box while the flight is still in the ai
 - **Context efficiency** — a live score + metric meters (context pressure, cache hit, redundant reads, read amplification, large injections, retry waste, yield density) with one-tap optimization notations — **rule-based, or routed to a free/local model (no API key)**.
 - **Handoff export** — a structured continuation summary (objective, files in play, decisions, commands, failures, blockers, next safe action), one click to copy as Markdown.
 - **Run picker** — one project log can hold many runs; the console follows the most recently *active* run and lets you pin any past one.
-- **Full event coverage** — whichever model you run, every action is captured (reads, edits, bash, skills, custom/MCP tools, permissions, todos, subagents) — keyed off the host event, never the model.
+- **Full event coverage** — whichever model you run, every action is captured (reads, edits, bash, skills, custom/MCP tools, permissions, todos, subagents, **slash commands, `/compact` context compaction, agent/model switches**) — keyed off the host event, never the model. Known noise (LSP, pty, file-watcher, MCP registry) is filtered; anything not yet modeled still surfaces as a labeled node, so nothing is silently dropped.
 - **One-command bootstrap** — `npm run up` installs the recorder plugin, starts the daemon, and serves the dashboard.
 
 <p align="center">

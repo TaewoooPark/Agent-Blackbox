@@ -818,6 +818,60 @@ function trunkStepForEvent(event: TraceEvent): WorkflowStep | undefined {
       ]
     });
   }
+  if (event.kind === "agent_switched") {
+    const name = switchedAgentName(event);
+    return makeStep(event, {
+      kind: "coordination",
+      title: `Switched to ${name}`,
+      description: `The active agent changed to ${name}.`,
+      branches: [
+        makeBranch(event, {
+          kind: "agent",
+          label: name,
+          title: `Switched to ${name}`,
+          description: `The active agent changed to ${name}.`,
+          tone: "neutral",
+          detail: "agent"
+        })
+      ]
+    });
+  }
+  if (event.kind === "model_switched") {
+    const name = switchedModelName(event);
+    return makeStep(event, {
+      kind: "coordination",
+      title: `Switched model to ${name}`,
+      description: `The model changed to ${name}.`,
+      branches: [
+        makeBranch(event, {
+          kind: "evidence",
+          label: name,
+          title: `Switched model to ${name}`,
+          description: `The model changed to ${name}.`,
+          tone: "neutral",
+          detail: "model"
+        })
+      ]
+    });
+  }
+  if (event.kind === "host_event") {
+    const label = hostEventLabel(event);
+    return makeStep(event, {
+      kind: "context",
+      title: `OpenCode: ${label}`,
+      description: `An OpenCode event (${label}) that isn't specifically modeled yet — shown so nothing is silently dropped.`,
+      branches: [
+        makeBranch(event, {
+          kind: "evidence",
+          label,
+          title: `OpenCode: ${label}`,
+          description: `Unmodeled OpenCode event: ${label}.`,
+          tone: "neutral",
+          detail: "event"
+        })
+      ]
+    });
+  }
   if (event.kind === "git_commit") {
     return makeStep(event, {
       kind: "change",
@@ -1016,6 +1070,9 @@ function visibleTextForEvent(event: TraceEvent): string | undefined {
   if (event.kind === "handoff_generated") return "Prepared a handoff";
   if (event.kind === "context_compacted") return "Context compacted";
   if (event.kind === "command_run") return `Ran ${slashCommandName(event)}`;
+  if (event.kind === "agent_switched") return `Switched to ${switchedAgentName(event)}`;
+  if (event.kind === "model_switched") return `Switched model to ${switchedModelName(event)}`;
+  if (event.kind === "host_event") return `OpenCode: ${hostEventLabel(event)}`;
   return undefined;
 }
 
@@ -1220,6 +1277,22 @@ function slashCommandName(event: TraceEvent): string {
   const raw = stringPayloadPath(event, ["properties.name", "name"]);
   if (!raw) return "a command";
   return raw.startsWith("/") ? raw : `/${raw}`;
+}
+
+function switchedAgentName(event: TraceEvent): string {
+  return stringPayloadPath(event, ["properties.agent", "agent"]) ?? "an agent";
+}
+
+function switchedModelName(event: TraceEvent): string {
+  return (
+    stringPayloadPath(event, ["properties.model.id", "properties.model.modelID", "properties.modelID", "model.id"]) ??
+    "a model"
+  );
+}
+
+// A labeled fallback for OpenCode events we don't model yet (summary holds the raw type).
+function hostEventLabel(event: TraceEvent): string {
+  return event.summary || stringPayloadPath(event, ["type", "properties.type"]) || "event";
 }
 
 function filePathForEvent(event: TraceEvent): string | undefined {

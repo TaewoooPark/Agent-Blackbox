@@ -33,9 +33,14 @@ const eventKindMap: Record<string, TraceEventKind> = {
   "command.executed": "command_run",
   // Context compaction is published as `session.compacted` at the end of a compact.
   "session.compacted": "context_compacted",
+  "session.next.compaction.ended": "context_compacted", // experimental engine equivalent
   "permission.asked": "permission_asked",
+  "permission.updated": "permission_asked", // SDK union name for a permission request
   "permission.replied": "permission_replied",
-  "todo.updated": "todo_updated"
+  "todo.updated": "todo_updated",
+  // The active agent / model changed mid-run (multi-model harnesses route per task).
+  "session.next.agent.switched": "agent_switched",
+  "session.next.model.switched": "model_switched"
 };
 
 /**
@@ -55,11 +60,35 @@ const ignoredEventTypes = new Set<string>([
   "plugin.added",
   "plugin.removed",
   "integration.updated",
-  "installation.updated",
-  "reference.updated"
+  "reference.updated",
+  "models-dev.refreshed",
+  "global.disposed",
+  // High-volume or no-signal session chatter: `session.diff` is the cumulative
+  // running diff (actual edits are captured as file_edit), `session.deleted` is
+  // teardown, and the experimental compaction start/delta are superseded by the
+  // `*.ended` node.
+  "session.diff",
+  "session.deleted",
+  "session.next.compaction.started",
+  "session.next.compaction.delta"
 ]);
 
-const ignoredEventPrefixes = ["tui."];
+// Whole noise families (LSP diagnostics, pty/terminal chrome, MCP registry,
+// filesystem watcher, VCS/workspace/worktree/project/server/installation
+// lifecycle). Dropped before they reach the graph.
+const ignoredEventPrefixes = [
+  "tui.",
+  "lsp.",
+  "pty.",
+  "mcp.",
+  "vcs.",
+  "file.watcher.",
+  "workspace.",
+  "worktree.",
+  "project.",
+  "server.",
+  "installation."
+];
 
 export function shouldRecordOpenCodeEvent(rawEvent: unknown): boolean {
   const type = readString(asRecord(rawEvent), ["type"]);
@@ -102,7 +131,10 @@ export function agentFromSubagentTitle(title: string | undefined): string | unde
 export function normalizeOpenCodeEvent(rawEvent: unknown, context: OpenCodeNormalizerContext): TraceEvent {
   const raw = asRecord(rawEvent);
   const type = readString(raw, ["type"]) ?? "unknown";
-  const kind = eventKindMap[type] ?? "session_updated";
+  // Anything not explicitly mapped or ignored surfaces as a labeled host_event
+  // node rather than vanishing into a generic session_updated — so a new/unhandled
+  // OpenCode event type is visible (and reportable), never silently dropped.
+  const kind = eventKindMap[type] ?? "host_event";
   const payload = normalizePayload(minimizeOpenCodeEventPayload(raw, type), context);
   const sessionId = extractSessionId(raw, context.defaultSessionId);
   const agentId = extractAgentId(raw);

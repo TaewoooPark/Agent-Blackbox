@@ -43,7 +43,10 @@ export const traceEventKinds = [
   "git_commit",
   "git_push",
   "context_compacted",
-  "command_run"
+  "command_run",
+  "agent_switched",
+  "model_switched",
+  "host_event"
 ] as const;
 
 export type TraceEventKind = (typeof traceEventKinds)[number];

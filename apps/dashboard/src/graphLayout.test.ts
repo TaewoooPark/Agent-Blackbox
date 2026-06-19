@@ -178,6 +178,40 @@ describe("dashboard graph helpers", () => {
     expect(steps[1]?.kind).toBe("context"); // compaction reads as a context-management moment
   });
 
+  it("renders agent/model switches and an unmodeled host_event as visible nodes", () => {
+    const events = [
+      createTraceEvent(1, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "agent_switched",
+        payload: { type: "session.next.agent.switched", properties: { agent: "hephaestus" } }
+      }),
+      createTraceEvent(2, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "model_switched",
+        payload: { type: "session.next.model.switched", properties: { model: { id: "gpt-5.5" } } }
+      }),
+      createTraceEvent(3, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "host_event",
+        summary: "some.brand.new.event",
+        payload: { type: "some.brand.new.event" }
+      })
+    ];
+
+    const steps = createWorkflowSteps(events);
+    expect(steps.map((step) => step.title)).toEqual([
+      "Switched to hephaestus",
+      "Switched model to gpt-5.5",
+      "OpenCode: some.brand.new.event"
+    ]);
+  });
+
   it("attaches reads and subagents as horizontal branches on the next trunk step", () => {
     const events = [
       createTraceEvent(1, {
