@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { evaluatePromiseChecks, generateHandoffMarkdown, materializeWorkflowGraph } from "@agent-blackbox/core";
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { startDashboardServer } from "./dashboardServer.js";
@@ -53,12 +54,14 @@ async function main(argv: string[]): Promise<void> {
     const distDir = resolve(repoRoot, "apps/dashboard/dist");
     const ui = await startDashboardServer({ distDir, port: uiPort, daemonUrl });
 
+    const dashboardUrl = `http://127.0.0.1:${ui.port}`;
     console.log("");
     console.log(`✓ Agent-Blackbox is up for ${projectDir}`);
-    console.log(`  Dashboard:  http://127.0.0.1:${ui.port}`);
+    console.log(`  Dashboard:  ${dashboardUrl}`);
     console.log(`  Daemon API: ${daemonUrl}  (trace: ${daemon.eventsFile})`);
     console.log(`  Suggestions: ${suggest.mode}${suggest.model ? ` (${suggest.model})` : ""}`);
     console.log("");
+    if (!argv.includes("--no-open")) openInBrowser(dashboardUrl);
     console.log("Now run your agent in that project, e.g.:");
     console.log(`  AGENT_BLACKBOX_DAEMON_URL=${daemonUrl} opencode run --dir ${projectDir} "Read the code, run tests, summarize."`);
     console.log("");
@@ -131,13 +134,26 @@ function printHelp(): void {
   console.log("");
   console.log("Usage:");
   console.log("  agent-blackbox up [--project <dir>] [--port <port>] [--ui-port <port>]   # plugin + daemon + dashboard, one command");
-  console.log("       [--suggest auto|free|off|ollama|opencode|openai-compat] [--suggest-model <id>] [--suggest-base-url <url>] [--optimize]");
+  console.log("       [--suggest auto|free|off|ollama|opencode|openai-compat] [--suggest-model <id>] [--suggest-base-url <url>] [--optimize] [--no-open]");
   console.log("  agent-blackbox daemon [--project <dir>] [--port <port>]");
   console.log("  agent-blackbox init-opencode [--project <dir>] [--daemon-url <url>] [--adapter-package <specifier>] [--force] [--optimize]");
   console.log("  agent-blackbox optimize [--project <dir>] [--apply | --check | --revert]   # write/measure/rollback AGENTS.md efficiency memory");
   console.log("  agent-blackbox handoff <events.ndjson>");
   console.log("  agent-blackbox replay <events.ndjson>");
   console.log("  agent-blackbox --version");
+}
+
+// Pop the dashboard open in the default browser so "up" is one step, not two.
+// Best-effort and cross-platform; `--no-open` skips it.
+function openInBrowser(url: string): void {
+  const platform = process.platform;
+  const command = platform === "darwin" ? "open" : platform === "win32" ? "cmd" : "xdg-open";
+  const args = platform === "win32" ? ["/c", "start", "", url] : [url];
+  try {
+    spawn(command, args, { stdio: "ignore", detached: true }).unref();
+  } catch {
+    // No browser/opener available (headless, CI) — the URL is already printed above.
+  }
 }
 
 function readFlag(argv: string[], flag: string): string | undefined {

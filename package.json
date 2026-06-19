@@ -13,6 +13,7 @@
     "check": "npm run typecheck && npm test",
     "lint": "npm run typecheck",
     "optimize": "node apps/daemon/dist/cli.js optimize",
+    "start": "npm run build && node apps/daemon/dist/cli.js up",
     "test": "vitest run",
     "typecheck": "tsc -b",
     "up": "node apps/daemon/dist/cli.js up"
