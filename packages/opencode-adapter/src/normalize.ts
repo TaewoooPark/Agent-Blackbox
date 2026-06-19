@@ -28,7 +28,11 @@ const eventKindMap: Record<string, TraceEventKind> = {
   "message.part.updated": "message",
   "message.part.removed": "message",
   "file.edited": "file_edit",
-  "command.executed": "bash",
+  // `command.executed` is a SLASH/template command (/init, /review, custom, MCP) —
+  // not the bash tool (that arrives via tool.execute.*). Give it its own node.
+  "command.executed": "command_run",
+  // Context compaction is published as `session.compacted` at the end of a compact.
+  "session.compacted": "context_compacted",
   "permission.asked": "permission_asked",
   "permission.replied": "permission_replied",
   "todo.updated": "todo_updated"

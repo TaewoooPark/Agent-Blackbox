@@ -155,6 +155,29 @@ describe("dashboard graph helpers", () => {
     });
   });
 
+  it("renders compaction and slash-command events as their own clear nodes", () => {
+    const events = [
+      createTraceEvent(1, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "command_run",
+        payload: { type: "command.executed", properties: { name: "init" } }
+      }),
+      createTraceEvent(2, {
+        host: "opencode",
+        runId: "run-ui",
+        sessionId: "session-ui",
+        kind: "context_compacted",
+        payload: { type: "session.compacted", properties: { sessionID: "session-ui" } }
+      })
+    ];
+
+    const steps = createWorkflowSteps(events);
+    expect(steps.map((step) => step.title)).toEqual(["Ran /init", "Context compacted"]);
+    expect(steps[1]?.kind).toBe("context"); // compaction reads as a context-management moment
+  });
+
   it("attaches reads and subagents as horizontal branches on the next trunk step", () => {
     const events = [
       createTraceEvent(1, {

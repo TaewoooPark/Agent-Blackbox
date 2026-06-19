@@ -41,7 +41,9 @@ export const traceEventKinds = [
   "handoff_generated",
   "git_status",
   "git_commit",
-  "git_push"
+  "git_push",
+  "context_compacted",
+  "command_run"
 ] as const;
 
 export type TraceEventKind = (typeof traceEventKinds)[number];

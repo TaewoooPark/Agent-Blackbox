@@ -783,6 +783,41 @@ function trunkStepForEvent(event: TraceEvent): WorkflowStep | undefined {
       ]
     });
   }
+  if (event.kind === "context_compacted") {
+    return makeStep(event, {
+      kind: "context",
+      title: "Context compacted",
+      description: "Older turns were summarized and the context window was reset to free space.",
+      branches: [
+        makeBranch(event, {
+          kind: "evidence",
+          label: "Compaction",
+          title: "Context compacted",
+          description: "Older turns were summarized and the context window was reset to free space.",
+          tone: "decision",
+          detail: "compaction"
+        })
+      ]
+    });
+  }
+  if (event.kind === "command_run") {
+    const name = slashCommandName(event);
+    return makeStep(event, {
+      kind: "coordination",
+      title: `Ran ${name}`,
+      description: `The ${name} command was invoked.`,
+      branches: [
+        makeBranch(event, {
+          kind: "evidence",
+          label: name,
+          title: `Ran ${name}`,
+          description: `The ${name} command was invoked.`,
+          tone: "neutral",
+          detail: "command"
+        })
+      ]
+    });
+  }
   if (event.kind === "git_commit") {
     return makeStep(event, {
       kind: "change",
@@ -979,6 +1014,8 @@ function visibleTextForEvent(event: TraceEvent): string | undefined {
   if (event.kind === "git_commit") return "Recorded a commit";
   if (event.kind === "git_push") return "Pushed changes";
   if (event.kind === "handoff_generated") return "Prepared a handoff";
+  if (event.kind === "context_compacted") return "Context compacted";
+  if (event.kind === "command_run") return `Ran ${slashCommandName(event)}`;
   return undefined;
 }
 
@@ -1176,6 +1213,13 @@ function toneForEvent(event: TraceEvent): TimelineTone {
 function stringPayload(event: TraceEvent, key: string): string | undefined {
   const value = event.payload[key];
   return typeof value === "string" ? value : undefined;
+}
+
+// The slash command name from a `command.executed` event, normalized to "/name".
+function slashCommandName(event: TraceEvent): string {
+  const raw = stringPayloadPath(event, ["properties.name", "name"]);
+  if (!raw) return "a command";
+  return raw.startsWith("/") ? raw : `/${raw}`;
 }
 
 function filePathForEvent(event: TraceEvent): string | undefined {

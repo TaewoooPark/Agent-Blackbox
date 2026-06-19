@@ -77,6 +77,24 @@ describe("OpenCode event normalization", () => {
     expect(event.host).toBe("opencode");
   });
 
+  it("maps a slash command to command_run (not bash) and keeps the command name", () => {
+    const event = normalizeOpenCodeEvent(
+      { type: "command.executed", properties: { name: "init", sessionID: "session-1", arguments: "" } },
+      { runId: "run-opencode", seq: 1, defaultSessionId: "fallback-session" }
+    );
+    expect(event.kind).toBe("command_run");
+    expect((event.payload as { properties?: { name?: string } }).properties?.name).toBe("init");
+  });
+
+  it("maps session.compacted to a context_compacted node", () => {
+    const event = normalizeOpenCodeEvent(
+      { type: "session.compacted", properties: { sessionID: "session-1" } },
+      { runId: "run-opencode", seq: 1, defaultSessionId: "fallback-session" }
+    );
+    expect(event.kind).toBe("context_compacted");
+    expect(event.sessionId).toBe("session-1");
+  });
+
   it("redacts secrets from tool payloads", () => {
     const event = normalizeToolBefore(
       {
