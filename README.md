@@ -222,16 +222,23 @@ opencode run "ultrawork: refactor the auth module and add tests"   # OMO + recor
 
 ## Quickstart
 
+**Fastest — no clone, no build** (needs Node 20+ and [OpenCode](https://opencode.ai)):
+
+```bash
+npx @taewooopark/agent-blackbox up --project /path/to/your/project
+```
+
+That one command fetches the recorder + dashboard, installs the recorder plugin into your project, starts the daemon, and **opens the dashboard in your browser** (`http://127.0.0.1:5173/`; add `--no-open` to skip). Then run your agent inside that project (the command's output prints the exact line):
+
+<details>
+<summary><b>Or run from source</b> (development / contributing)</summary>
+
 ```bash
 git clone https://github.com/TaewoooPark/Agent-Blackbox
 cd Agent-Blackbox && npm install
-
-# Build everything, install the recorder plugin, start the daemon + dashboard,
-# and open it in your browser — one command:
 npm start -- --project /path/to/your/project
 ```
-
-The dashboard **opens in your browser automatically** (`http://127.0.0.1:5173/`; add `--no-open` to skip). Then run your agent inside that project (the `up` output prints the exact line):
+</details>
 
 ```bash
 AGENT_BLACKBOX_DAEMON_URL=http://127.0.0.1:47831 \
