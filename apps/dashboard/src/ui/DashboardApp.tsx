@@ -273,12 +273,27 @@ export function DashboardApp() {
   // instead of being clipped to the map canvas.
   const workspaceRef = useRef<HTMLElement | null>(null);
   const [fileEdges, setFileEdges] = useState<{ id: string; path: string; stepId: string; pathD: string }[]>([]);
+  // The map viewport band (workspace-relative) the file lines are clipped to, so
+  // zooming/panning never bleeds a line over the header, topbar, or timeline.
+  const [edgeClip, setEdgeClip] = useState<{ top: number; height: number; width: number }>({
+    top: 0,
+    height: 0,
+    width: 0
+  });
 
   useLayoutEffect(() => {
     const workspace = workspaceRef.current;
     if (!workspace) return undefined;
     const measure = () => {
       const wsRect = workspace.getBoundingClientRect();
+      // The map scrolls/zooms inside its own clipped viewport; clamp the lines to
+      // that band so a zoomed-out-of-view node never trails a line across the rest
+      // of the console.
+      const mapEl = workspace.querySelector<HTMLElement>(".mapCanvas");
+      const mapRect = mapEl ? mapEl.getBoundingClientRect() : wsRect;
+      const clipTop = Math.max(0, mapRect.top - wsRect.top);
+      const clipBottom = Math.min(wsRect.height, mapRect.bottom - wsRect.top);
+      setEdgeClip({ top: clipTop, height: Math.max(0, clipBottom - clipTop), width: wsRect.width });
       const stepEls = new Map<string, HTMLElement>();
       const fileEls = new Map<string, HTMLElement>();
       workspace.querySelectorAll<HTMLElement>("[data-step-id]").forEach((el) => {
@@ -294,9 +309,16 @@ export function DashboardApp() {
         // Originate the file line from the node's ring (now on its right edge).
         const ringEl = stepEl.querySelector<HTMLElement>(".stepMarker, .agentStemDot") ?? stepEl;
         const s = ringEl.getBoundingClientRect();
+        const ringCx = s.left + s.width / 2;
+        const ringCy = s.top + s.height / 2;
+        // Skip lines whose origin ring has been scrolled outside the visible map
+        // viewport (zoom/pan), so we never draw a line from a node that isn't there.
+        if (ringCx < mapRect.left || ringCx > mapRect.right || ringCy < mapRect.top || ringCy > mapRect.bottom) {
+          return [];
+        }
         const f = fileEl.getBoundingClientRect();
-        const startX = s.left + s.width / 2 - wsRect.left;
-        const startY = s.top + s.height / 2 - wsRect.top;
+        const startX = ringCx - wsRect.left;
+        const startY = ringCy - wsRect.top;
         const endX = f.left - wsRect.left;
         const endY = f.top + f.height / 2 - wsRect.top;
         const bend = Math.max(40, Math.min(180, (endX - startX) / 2));
@@ -463,11 +485,18 @@ export function DashboardApp() {
 
       <section className="workspace" ref={workspaceRef}>
         <svg className={`fileEdgeLayer ${filesHasFocus ? "hasFocus" : ""}`} aria-hidden="true">
-          {fileEdges.map((edge) => {
-            const focused =
-              edge.path === selectedFilePath || (filesFocusedStepId !== null && edge.stepId === filesFocusedStepId);
-            return <path className={focused ? "fileEdge focused" : "fileEdge"} d={edge.pathD} key={edge.id} />;
-          })}
+          <defs>
+            <clipPath id="fileEdgeClip">
+              <rect x={0} y={edgeClip.top} width={edgeClip.width} height={edgeClip.height} />
+            </clipPath>
+          </defs>
+          <g clipPath={edgeClip.height > 0 ? "url(#fileEdgeClip)" : undefined}>
+            {fileEdges.map((edge) => {
+              const focused =
+                edge.path === selectedFilePath || (filesFocusedStepId !== null && edge.stepId === filesFocusedStepId);
+              return <path className={focused ? "fileEdge focused" : "fileEdge"} d={edge.pathD} key={edge.id} />;
+            })}
+          </g>
         </svg>
         <aside className="lanes" aria-label="Agent lanes">
           <h2>Agents</h2>
