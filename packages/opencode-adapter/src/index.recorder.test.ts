@@ -56,4 +56,21 @@ describe("OpenCode recorder hooks", () => {
       }
     });
   });
+
+  it("emits the CLI prompt once on the root session, never in subagent sessions", async () => {
+    const events: TraceEvent[] = [];
+    const recorder = await createOpenCodeRecorder(
+      { directory: "/repo" },
+      { cliPrompt: "ultrawork: build it", runId: "run-multi", sink: { async write(event) { events.push(event); } } }
+    );
+
+    await recorder.event({ event: { type: "session.created", properties: { sessionID: "root", info: { id: "root" } } } });
+    await recorder.event({
+      event: { type: "session.created", properties: { sessionID: "child", info: { id: "child", parentID: "root", agent: "explore" } } }
+    });
+
+    const prompts = events.filter((event) => event.summary === "opencode.run.prompt");
+    expect(prompts.length).toBe(1); // not duplicated into the subagent session
+    expect(prompts[0]?.sessionId).toBe("root");
+  });
 });

@@ -98,7 +98,10 @@ function createOpenCodeEventFactory(options: {
   rawStored: boolean;
 }) {
   let seq = 0;
-  const promptSessions = new Set<string>();
+  // The CLI `run` prompt is the single top-level instruction — emit it once, on the
+  // root session only. Without this guard a multi-agent run replays it into every
+  // subagent session ("Prompt received" duplicated per lane).
+  let cliPromptEmitted = false;
   const subagentSessions = new Map<string, { agent: string; parentId: string }>();
 
   // --- in-run optimizer state (only used when options.optimize) ---------------
@@ -169,8 +172,9 @@ function createOpenCodeEventFactory(options: {
       }
       const event = attributeToSubagent(normalizeOpenCodeEvent(rawEvent, nextContext()));
       await options.sink.write(event);
-      if (options.cliPrompt && event.kind === "session_created" && !promptSessions.has(event.sessionId)) {
-        promptSessions.add(event.sessionId);
+      // Only the root session's first creation carries the CLI prompt — never a subagent's.
+      if (options.cliPrompt && !cliPromptEmitted && !subagent && event.kind === "session_created") {
+        cliPromptEmitted = true;
         await options.sink.write(normalizeSyntheticUserPrompt(options.cliPrompt, event, nextContext()));
       }
     },
