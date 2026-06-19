@@ -9,7 +9,9 @@ import { spawn } from "node:child_process";
 // default path: Ollama and OpenAI-compatible localhost servers (LM Studio,
 // llama.cpp) need none, and the OpenCode free model reuses the user's install.
 // Everything degrades gracefully to the always-on deterministic suggestions, and
-// only a redacted, derived digest (no raw code/prompts) ever leaves the process.
+// only a redacted, derived digest leaves the process: metric counts/sizes plus
+// coarse offender labels (file basenames, command verbs) — never file contents,
+// full paths, command lines, prompts, or code.
 
 export type SuggestionMode = "auto" | "off" | "ollama" | "opencode" | "openai-compat";
 
@@ -24,13 +26,35 @@ export type SuggestionResult = {
   provider: string;
 };
 
-const TIMEOUT_MS = 25_000;
-const SYSTEM_PROMPT =
-  "You are a context-efficiency optimizer for AI coding-agent runs. You are given " +
-  "metrics describing how economically a run used its LLM context window. For each " +
-  "flagged metric, give one specific, actionable optimization. Be concrete and brief " +
-  '(one or two sentences, no fluff). Respond ONLY with JSON of the form ' +
-  '{"suggestions":[{"metricId":"<id>","title":"<short>","action":"<advice>"}]}.';
+// On-demand "Optimize" call — give slower local models (and the richer prompt)
+// room to finish before falling back to the deterministic floor.
+const TIMEOUT_MS = 45_000;
+const SYSTEM_PROMPT = `You optimize the context-window economy of AI coding-agent runs. The agent has tools: file read/edit, bash, grep/glob, sub-agents, and prompt caching. You receive a JSON digest of the run's FLAGGED metrics (each: id, value, display, status, detail, reclaimableTokens, offenders). Return ONE concrete fix per flagged metric that the operator can apply on the next run.
+
+# Every action MUST
+- Ground in this run's numbers: cite the metric's display/reclaimable, and name the offenders verbatim when present (e.g. "config.json ×5").
+- Name a concrete mechanism or tool — not a goal. "Reduce context" is banned; "after an edit, re-read only the changed line range instead of the whole file" is right.
+- State the expected effect (fewer tokens / cache hits / fewer steps).
+- Be one or two sentences. Do not restate the metric or give generic advice.
+
+# Fix playbook (match the flagged id)
+- context-pressure: compact resolved turns into a short decisions+open-bugs note and start a fresh window; clear raw tool outputs already acted on; move exploration into a sub-agent that returns a ~1-2k-token summary; keep file paths as references, not full contents.
+- cache-hit: cached tokens are ~10x cheaper — keep the prompt prefix byte-stable (no timestamps/per-run data in the system prompt), append-only (never edit earlier turns), deterministic JSON key order, and mask unused tools instead of adding/removing them mid-run (any change voids the cache downstream).
+- redundant-reads: read each file once and hold it in working memory or a notes file; after an edit re-read only the changed line range, never the whole file again.
+- read-amplification: locate with grep/symbol search, then read only the relevant line range; pre-load a repo map/metadata and fetch on demand instead of whole files.
+- large-injections: scope the command (narrow paths, max-count/head) or pipe it through a summary; or have a sub-agent absorb the big output and return only the distilled result.
+- retry-waste: don't re-run blindly — read the first failure's stderr, fix the root cause, retry once; keep the failed attempt in context so the model doesn't repeat it.
+- yield-density: split into smaller verifiable steps; recite the goal/todo each step to keep it in recent tokens (models under-use the middle of long contexts); offload exploration to a sub-agent to keep the main thread lean.
+- tool-overhead: batch related edits into one change, drop exploratory calls that don't lead to an edit, and trim to a minimal non-overlapping tool set.
+
+# Contrast (do this)
+metricId "redundant-reads", reclaimableTokens ~12000, offenders ["calculator.js ×4"]:
+- BAD: "Avoid reading files multiple times to save context."
+- GOOD: "calculator.js was read 4× (~12k reclaimable) — read it once and cache it, then after each edit re-read only the changed line range instead of the whole file."
+
+# Output
+Respond with ONLY this JSON, one entry per flagged metric, nothing else:
+{"suggestions":[{"metricId":"<id>","title":"<=6 words","action":"<specific fix grounded in this run's numbers/offenders>"}]}`;
 
 // A derived, redacted view of the report — counts, sizes, statuses only. No file
 // paths, no command lines, no file contents. This is all that reaches a model.
@@ -47,6 +71,7 @@ type Digest = {
     display: string;
     detail: string;
     reclaimableTokens?: number;
+    offenders?: string[];
   }[];
 };
 
@@ -65,7 +90,8 @@ export function buildDigest(report: EfficiencyReport): Digest {
         value: Number(m.value.toFixed(3)),
         display: m.display,
         detail: m.detail,
-        ...(m.reclaimableTokens ? { reclaimableTokens: m.reclaimableTokens } : {})
+        ...(m.reclaimableTokens ? { reclaimableTokens: m.reclaimableTokens } : {}),
+        ...(m.offenders && m.offenders.length > 0 ? { offenders: m.offenders } : {})
       }))
   };
 }

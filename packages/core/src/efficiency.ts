@@ -18,6 +18,10 @@ export type EfficiencyMetric = {
   detail: string;
   evidenceEventIds: string[];
   reclaimableTokens?: number;
+  // Coarse, low-sensitivity labels of the specific offenders (file basenames,
+  // command verbs — never full paths or command lines) so advice can name what
+  // to fix, e.g. ["config.json ×5"], ["grep ~12k"]. Top few by impact.
+  offenders?: string[];
 };
 
 export type EfficiencyReport = {
@@ -59,23 +63,24 @@ export function buildDeterministicSuggestions(report: EfficiencyReport): Suggest
 
 function deterministicActionFor(metric: EfficiencyMetric): string | undefined {
   const reclaim = metric.reclaimableTokens ? ` (~${formatTokens(metric.reclaimableTokens)} reclaimable)` : "";
+  const worst = metric.offenders && metric.offenders.length > 0 ? metric.offenders.join(", ") : "";
   switch (metric.id) {
     case "context-pressure":
-      return `Peak input reached ${metric.display}. Trim context: summarise old turns, drop files no longer in play, or start a fresh session for unrelated subtasks.`;
+      return `Peak input hit ${metric.display}. Compact: summarise resolved turns into a short note of decisions + open bugs and start a fresh window, clear raw tool outputs you've already acted on, and push deep exploration into a sub-agent that returns only a ~1-2k-token summary.`;
     case "cache-hit":
-      return `Only ${metric.display} of the prompt was cache-served. Keep the stable prefix (system prompt, pinned files) fixed and put volatile content last so more of it is cache-eligible.`;
+      return `Only ${metric.display} was cache-served, and cached tokens are ~10× cheaper. Keep the prompt prefix byte-stable (no timestamps or per-run data in the system prompt), append new turns instead of editing old ones, and mask unused tools rather than adding/removing them — any change voids the cache from that point on.`;
     case "redundant-reads":
-      return `Read the same file more than once${reclaim}. Read each file once and reuse it; re-read only the changed region after an edit.`;
+      return `${worst ? `${worst} were re-read` : "Files were re-read"}${reclaim}. Read each file once and keep it in working memory or a notes file; after an edit, re-read only the changed line range, not the whole file.`;
     case "read-amplification":
-      return `Pulled in ${metric.display} more text than was edited. Use ranged/targeted reads (line ranges, symbol search) instead of whole files when only a region changes.`;
+      return `Read ${metric.display} more text than was edited${worst ? ` (${worst} dominated)` : ""}. Locate with grep/symbol search first, then read only the relevant line range; load a repo map instead of whole files up front.`;
     case "large-injections":
-      return `A single tool output added ${metric.display}. Scope greps/searches (narrow paths, max-count) or summarise large outputs before continuing.`;
+      return `A single output added ${metric.display}${worst ? ` (${worst})` : ""}. Scope it — narrow paths, add a max-count/head limit, or pipe through a summary — or have a sub-agent absorb it and return just the distilled result.`;
     case "retry-waste":
-      return `Failing commands were re-run${reclaim}. Read the first failure's output and fix the cause before retrying rather than re-running blindly.`;
+      return `${worst ? `${worst} was re-run after failing` : "Failing commands were re-run"}${reclaim}. Read the first failure's stderr and fix the root cause before retrying once; keep the failed attempt in context so the model doesn't repeat it.`;
     case "yield-density":
-      return `A lot of context produced few concrete changes. Break the task into smaller verifiable steps, or delegate exploration to a subagent to keep the main context lean.`;
+      return `A lot of context produced few concrete changes (${metric.display}). Split into smaller verifiable steps, recite the current goal/todo each step to keep it in recent tokens (models under-use the middle of long contexts), and offload exploration to a sub-agent.`;
     case "tool-overhead":
-      return `Many tool calls relative to outcomes. Batch related actions and avoid exploratory calls that don't lead to a change.`;
+      return `Many tool calls per outcome (${metric.display}). Batch related edits into one change, drop exploratory calls that don't lead to an edit, and trim to a minimal non-overlapping tool set.`;
     default:
       return metric.detail;
   }
@@ -84,6 +89,11 @@ function deterministicActionFor(metric: EfficiencyMetric): string | undefined {
 // ~4 chars per token is the usual rough rule; good enough for relative signals.
 const CHARS_PER_TOKEN = 4;
 const estimateTokens = (chars: number): number => Math.round(chars / CHARS_PER_TOKEN);
+
+// Coarse, low-sensitivity labels for offender lists (basename, command verb) —
+// enough to make advice concrete without leaking full paths or command lines.
+const baseName = (path: string): string => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+const commandVerb = (command: string): string => command.trim().split(/\s+/)[0] || command;
 
 type TokenSnapshot = {
   input: number;
@@ -222,15 +232,23 @@ export function computeEfficiencyReport(events: TraceEvent[]): EfficiencyReport 
     let reclaimable = 0;
     const evidence: string[] = [];
     let reReadPaths = 0;
-    for (const list of byPath.values()) {
+    const offenders: { label: string; reclaim: number }[] = [];
+    for (const [path, list] of byPath.entries()) {
       if (list.length > 1) {
         reReadPaths += 1;
+        let extraTokens = 0;
         for (const extra of list.slice(1)) {
           reclaimable += extra.tokens;
+          extraTokens += extra.tokens;
           evidence.push(extra.id);
         }
+        offenders.push({ label: `${baseName(path)} ×${list.length}`, reclaim: extraTokens });
       }
     }
+    const reReadOffenders = offenders
+      .sort((a, b) => b.reclaim - a.reclaim)
+      .slice(0, 3)
+      .map((o) => o.label);
     let { score, status } = lowerIsBetter(reReadPaths, 0, 2);
     // Re-reading one file many times can reclaim as much as several files would —
     // escalate by magnitude, not just by the count of distinct files.
@@ -253,7 +271,8 @@ export function computeEfficiencyReport(events: TraceEvent[]): EfficiencyReport 
             ? "No file was read more than once."
             : `${reReadPaths} file(s) were read again — about ${formatTokens(reclaimable)} of context was reloaded.`,
         evidenceEventIds: evidence,
-        reclaimableTokens: reclaimable
+        reclaimableTokens: reclaimable,
+        ...(reReadOffenders.length > 0 ? { offenders: reReadOffenders } : {})
       }
     });
   }
@@ -264,6 +283,12 @@ export function computeEfficiencyReport(events: TraceEvent[]): EfficiencyReport 
   if (edits.length > 0 && totalReadTokens > 0) {
     const ratio = totalReadTokens / Math.max(totalEditTokens, 1);
     const { score, status } = lowerIsBetter(ratio, 40, 120);
+    const readByPath = new Map<string, number>();
+    for (const r of reads) readByPath.set(r.path, (readByPath.get(r.path) ?? 0) + r.tokens);
+    const topReaders = [...readByPath.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([path, tokens]) => `${baseName(path)} ~${formatTokens(tokens)}`);
     metrics.push({
       weight: 2,
       metric: {
@@ -278,7 +303,8 @@ export function computeEfficiencyReport(events: TraceEvent[]): EfficiencyReport 
           status === "good"
             ? "Reads were roughly proportional to the edits made."
             : `Read ${formatTokens(totalReadTokens)} to write ${formatTokens(totalEditTokens)} — pull in less, use ranged reads.`,
-        evidenceEventIds: reads.slice(0, 5).map((r) => r.id)
+        evidenceEventIds: reads.slice(0, 5).map((r) => r.id),
+        ...(status !== "good" && topReaders.length > 0 ? { offenders: topReaders } : {})
       }
     });
   }
@@ -289,6 +315,7 @@ export function computeEfficiencyReport(events: TraceEvent[]): EfficiencyReport 
     const biggest = sorted[0]?.tokens ?? 0;
     const over5k = sorted.filter((i) => i.tokens >= 5_000);
     const { score, status } = lowerIsBetter(biggest, 5_000, 15_000);
+    const injectionOffenders = over5k.slice(0, 3).map((i) => `${commandVerb(i.label)} ~${formatTokens(i.tokens)}`);
     metrics.push({
       weight: 1.5,
       metric: {
@@ -303,7 +330,8 @@ export function computeEfficiencyReport(events: TraceEvent[]): EfficiencyReport 
           over5k.length === 0
             ? "No single tool output flooded the context."
             : `${over5k.length} output(s) added 5k+ tokens (largest ${formatTokens(biggest)}) — scope greps/reads or summarise.`,
-        evidenceEventIds: over5k.map((i) => i.id)
+        evidenceEventIds: over5k.map((i) => i.id),
+        ...(injectionOffenders.length > 0 ? { offenders: injectionOffenders } : {})
       }
     });
   }
@@ -320,7 +348,8 @@ export function computeEfficiencyReport(events: TraceEvent[]): EfficiencyReport 
     let wasted = 0;
     let retries = 0;
     const evidence: string[] = [];
-    for (const list of byCommand.values()) {
+    const offenders: { label: string; runs: number }[] = [];
+    for (const [command, list] of byCommand.entries()) {
       if (list.length <= 1) continue;
       retries += list.length - 1;
       // Every failed attempt of a command that had to be repeated is wasted context.
@@ -330,7 +359,12 @@ export function computeEfficiencyReport(events: TraceEvent[]): EfficiencyReport 
           evidence.push(attempt.id);
         }
       }
+      offenders.push({ label: `${commandVerb(command)} ×${list.length}`, runs: list.length });
     }
+    const retryOffenders = offenders
+      .sort((a, b) => b.runs - a.runs)
+      .slice(0, 3)
+      .map((o) => o.label);
     const { score, status } = lowerIsBetter(retries, 0, 2);
     metrics.push({
       weight: 2,
@@ -347,7 +381,8 @@ export function computeEfficiencyReport(events: TraceEvent[]): EfficiencyReport 
             ? "No command was re-run after failing."
             : `${retries} re-run(s) of failing commands burned about ${formatTokens(wasted)}.`,
         evidenceEventIds: evidence,
-        reclaimableTokens: wasted
+        reclaimableTokens: wasted,
+        ...(retryOffenders.length > 0 ? { offenders: retryOffenders } : {})
       }
     });
   }
