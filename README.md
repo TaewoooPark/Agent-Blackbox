@@ -38,6 +38,73 @@ Agent-Blackbox is a **local-first flight recorder and context-efficiency profile
 
 ---
 
+## Why Agent-Blackbox
+
+You can't just **ask** the agent what a task cost. A 2026 study of eight frontier models on agentic coding (SWE-bench Verified) found they predict their own token usage with a correlation of just **0.39 — and systematically underestimate** the real bill. Same task, same model: runs vary **up to 30×** in tokens. Expert difficulty ratings barely track real cost. And agentic runs already burn **~1000× more tokens** than ordinary coding, almost all of it *input* context.
+
+> So don't ask — **measure.** Agent-Blackbox replays every run as an observed session map, scores exactly what it cost, and writes the fix back.
+
+<sub>Bai et al., *How Do AI Agents Spend Your Money? Analyzing and Predicting Token Consumption in Agentic Coding Tasks*, [arXiv:2604.22750](https://arxiv.org/abs/2604.22750) (2026).</sub>
+
+---
+
+## Quickstart
+
+**One command — records every OpenCode session** (needs Node 20+ and [OpenCode](https://opencode.ai)):
+
+```bash
+npx @taewooopark/agent-blackbox up
+```
+
+That installs the recorder into OpenCode's **global** plugin directory (`~/.config/opencode/plugins/`), starts the daemon, and **opens the dashboard** (`http://127.0.0.1:5173/`; add `--no-open` to skip). Now use OpenCode exactly the way you already do — the map fills in live:
+
+```bash
+opencode          # in any folder (terminal)
+# …or open any project in the OpenCode desktop app
+```
+
+No per-project setup, no `--dir`, no env var — any session, any folder, the app included. Stop recording any time with `npx @taewooopark/agent-blackbox uninstall`.
+
+<details>
+<summary><b>Scope it to one project, or run from source</b></summary>
+
+```bash
+# Record just one project (recorder lands in <dir>/.opencode instead of globally)
+npx @taewooopark/agent-blackbox up --project /path/to/your/project
+
+# From source (development / contributing)
+git clone https://github.com/TaewoooPark/Agent-Blackbox
+cd Agent-Blackbox && npm install && npm run build:cli
+node packages/cli/dist/cli.js up
+```
+</details>
+
+The map assembles itself live. That's it.
+
+### Recipes
+
+```bash
+# Just watch — start it once, then use OpenCode anywhere (terminal or app)
+npx @taewooopark/agent-blackbox up
+opencode   # in any folder; the dashboard fills in live
+
+# Optimize: route tailored fixes to a free/local model, then read the right rail
+npx @taewooopark/agent-blackbox up --suggest ollama --suggest-model qwen2.5-coder
+
+# Multi-agent: just delegate in your normal session — each subagent forks into its own lane
+opencode "Delegate exploration, implementation, and tests to subagents, then summarize."
+
+# Resume elsewhere: open the run, click Handoff, copy the Markdown into the next session
+
+# Pick a different port if 47831/5173 are taken (the recorder is re-stamped to match)
+npx @taewooopark/agent-blackbox up --port 48000 --ui-port 4000
+
+# Stop recording (removes the global recorder)
+npx @taewooopark/agent-blackbox uninstall
+```
+
+---
+
 ## Two things at once
 
 **1 · See what the agent actually did.** A coding agent reads a dozen files, runs commands, edits code, spawns subagents, and hands you back a tidy summary. Your only window into that is a scrolling transcript and a summary you take on faith. Agent-Blackbox replaces it with a structured, evidence-backed **session map** you read at a glance.
@@ -227,60 +294,7 @@ opencode "ultrawork: refactor the auth module and add tests"   # OMO + recorder 
 
 ---
 
-## Quickstart
-
-**One command — records every OpenCode session** (needs Node 20+ and [OpenCode](https://opencode.ai)):
-
-```bash
-npx @taewooopark/agent-blackbox up
-```
-
-That installs the recorder into OpenCode's **global** plugin directory (`~/.config/opencode/plugins/`), starts the daemon, and **opens the dashboard** (`http://127.0.0.1:5173/`; add `--no-open` to skip). Now use OpenCode exactly the way you already do — the map fills in live:
-
-```bash
-opencode          # in any folder (terminal)
-# …or open any project in the OpenCode desktop app
-```
-
-No per-project setup, no `--dir`, no env var — any session, any folder, the app included. Stop recording any time with `npx @taewooopark/agent-blackbox uninstall`.
-
-<details>
-<summary><b>Scope it to one project, or run from source</b></summary>
-
-```bash
-# Record just one project (recorder lands in <dir>/.opencode instead of globally)
-npx @taewooopark/agent-blackbox up --project /path/to/your/project
-
-# From source (development / contributing)
-git clone https://github.com/TaewoooPark/Agent-Blackbox
-cd Agent-Blackbox && npm install && npm run build:cli
-node packages/cli/dist/cli.js up
-```
-</details>
-
-The map assembles itself live. That's it.
-
-### Recipes
-
-```bash
-# Just watch — start it once, then use OpenCode anywhere (terminal or app)
-npx @taewooopark/agent-blackbox up
-opencode   # in any folder; the dashboard fills in live
-
-# Optimize: route tailored fixes to a free/local model, then read the right rail
-npx @taewooopark/agent-blackbox up --suggest ollama --suggest-model qwen2.5-coder
-
-# Multi-agent: just delegate in your normal session — each subagent forks into its own lane
-opencode "Delegate exploration, implementation, and tests to subagents, then summarize."
-
-# Resume elsewhere: open the run, click Handoff, copy the Markdown into the next session
-
-# Pick a different port if 47831/5173 are taken (the recorder is re-stamped to match)
-npx @taewooopark/agent-blackbox up --port 48000 --ui-port 4000
-
-# Stop recording (removes the global recorder)
-npx @taewooopark/agent-blackbox uninstall
-```
+## Handoff — pick the run up anywhere
 
 When you need to continue the run elsewhere — a teammate, the next agent, or the same agent after a context reset — export a structured **handoff**:
 

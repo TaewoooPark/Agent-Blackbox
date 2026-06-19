@@ -34,6 +34,73 @@ Agent-Blackbox는 **코딩 에이전트를 위한 로컬 우선(local-first) 플
 
 ---
 
+## 왜 Agent-Blackbox인가
+
+에이전트에게 "이 작업 얼마 썼어?"라고 **물어선** 안 됩니다. 2026년 프런티어 모델 8종을 에이전틱 코딩(SWE-bench Verified)에서 분석한 연구에 따르면, 모델이 자기 토큰 사용량을 예측하는 정확도는 상관계수 **0.39에 불과**하고 실제 비용을 **체계적으로 과소평가**합니다. 같은 작업·같은 모델인데도 실행마다 토큰이 **최대 30배** 차이 나고, 전문가의 난이도 평가도 실제 비용과 거의 들어맞지 않습니다. 게다가 에이전틱 실행은 이미 일반 코딩보다 **~1000배 많은 토큰**을 태우며, 대부분이 *입력* 컨텍스트입니다.
+
+> 그러니 묻지 말고 — **재세요.** Agent-Blackbox는 모든 실행을 관측된 세션 맵으로 재구성하고, 비용을 정확히 점수로 매긴 뒤, 고쳐서 되돌려줍니다.
+
+<sub>Bai et al., *How Do AI Agents Spend Your Money? Analyzing and Predicting Token Consumption in Agentic Coding Tasks*, [arXiv:2604.22750](https://arxiv.org/abs/2604.22750) (2026).</sub>
+
+---
+
+## 빠른 시작
+
+**한 줄로 — 모든 OpenCode 세션을 기록** (Node 20+ 와 [OpenCode](https://opencode.ai) 필요):
+
+```bash
+npx @taewooopark/agent-blackbox up
+```
+
+이 명령이 레코더를 OpenCode의 **글로벌** 플러그인 폴더(`~/.config/opencode/plugins/`)에 설치하고, 데몬을 시작하고, **대시보드를 엽니다**(`http://127.0.0.1:5173/`; `--no-open`으로 끄기). 이제 평소 쓰던 그대로 OpenCode를 켜면 맵이 실시간으로 채워집니다:
+
+```bash
+opencode          # 아무 폴더에서 (터미널)
+# …또는 OpenCode 데스크톱 앱에서 아무 프로젝트나 열기
+```
+
+프로젝트별 설정도, `--dir`도, 환경변수도 필요 없습니다 — 어느 세션·어느 폴더든, 앱까지. 기록을 멈추려면 `npx @taewooopark/agent-blackbox uninstall`.
+
+<details>
+<summary><b>한 프로젝트로만 한정하거나, 소스에서 실행</b></summary>
+
+```bash
+# 한 프로젝트만 기록 (레코더가 글로벌 대신 <dir>/.opencode 에 설치됨)
+npx @taewooopark/agent-blackbox up --project /path/to/your/project
+
+# 소스에서 (개발/기여용)
+git clone https://github.com/TaewoooPark/Agent-Blackbox
+cd Agent-Blackbox && npm install && npm run build:cli
+node packages/cli/dist/cli.js up
+```
+</details>
+
+맵이 실시간으로 조립됩니다. 끝.
+
+### 레시피
+
+```bash
+# 그냥 관찰 — 한 번 켜두고 OpenCode를 아무 데서나 사용 (터미널이든 앱이든)
+npx @taewooopark/agent-blackbox up
+opencode   # 아무 폴더에서; 대시보드가 실시간으로 채워짐
+
+# 최적화 — 무료/로컬 모델로 맞춤 수정안을 받아 우측 레일에서 확인
+npx @taewooopark/agent-blackbox up --suggest ollama --suggest-model qwen2.5-coder
+
+# 멀티 에이전트 — 평소 세션에서 위임하면 각 서브에이전트가 자기 레인으로 분기
+opencode "탐색·구현·테스트를 서브에이전트에 위임한 뒤 요약해줘."
+
+# 이어가기 — 실행을 열고 Handoff 클릭, Markdown을 다음 세션에 붙여넣기
+
+# 포트 변경 (47831/5173이 점유된 경우 — 레코더가 자동으로 맞춰 재스탬프됨)
+npx @taewooopark/agent-blackbox up --port 48000 --ui-port 4000
+
+# 기록 중지 (글로벌 레코더 제거)
+npx @taewooopark/agent-blackbox uninstall
+```
+
+---
+
 ## 한 번에 세 가지
 
 **1 · 에이전트가 실제로 한 일을 본다.** 코딩 에이전트는 파일 수십 개를 읽고, 명령을 돌리고, 코드를 고치고, 서브에이전트를 띄운 뒤 깔끔한 요약을 건넵니다. 정작 당신 손에 쥐어지는 건 끝없이 스크롤되는 트랜스크립트와, 믿을 수밖에 없는 그 요약뿐입니다. Agent-Blackbox는 이것을 한눈에 읽히는 **세션 맵**으로 바꿉니다.
@@ -184,60 +251,7 @@ opencode "ultrawork: refactor the auth module and add tests"   # OMO + 레코더
 
 ---
 
-## 빠른 시작
-
-**한 줄로 — 모든 OpenCode 세션을 기록** (Node 20+ 와 [OpenCode](https://opencode.ai) 필요):
-
-```bash
-npx @taewooopark/agent-blackbox up
-```
-
-이 명령이 레코더를 OpenCode의 **글로벌** 플러그인 폴더(`~/.config/opencode/plugins/`)에 설치하고, 데몬을 시작하고, **대시보드를 엽니다**(`http://127.0.0.1:5173/`; `--no-open`으로 끄기). 이제 평소 쓰던 그대로 OpenCode를 켜면 맵이 실시간으로 채워집니다:
-
-```bash
-opencode          # 아무 폴더에서 (터미널)
-# …또는 OpenCode 데스크톱 앱에서 아무 프로젝트나 열기
-```
-
-프로젝트별 설정도, `--dir`도, 환경변수도 필요 없습니다 — 어느 세션·어느 폴더든, 앱까지. 기록을 멈추려면 `npx @taewooopark/agent-blackbox uninstall`.
-
-<details>
-<summary><b>한 프로젝트로만 한정하거나, 소스에서 실행</b></summary>
-
-```bash
-# 한 프로젝트만 기록 (레코더가 글로벌 대신 <dir>/.opencode 에 설치됨)
-npx @taewooopark/agent-blackbox up --project /path/to/your/project
-
-# 소스에서 (개발/기여용)
-git clone https://github.com/TaewoooPark/Agent-Blackbox
-cd Agent-Blackbox && npm install && npm run build:cli
-node packages/cli/dist/cli.js up
-```
-</details>
-
-맵이 실시간으로 조립됩니다. 끝.
-
-### 레시피
-
-```bash
-# 그냥 관찰 — 한 번 켜두고 OpenCode를 아무 데서나 사용 (터미널이든 앱이든)
-npx @taewooopark/agent-blackbox up
-opencode   # 아무 폴더에서; 대시보드가 실시간으로 채워짐
-
-# 최적화 — 무료/로컬 모델로 맞춤 수정안을 받아 우측 레일에서 확인
-npx @taewooopark/agent-blackbox up --suggest ollama --suggest-model qwen2.5-coder
-
-# 멀티 에이전트 — 평소 세션에서 위임하면 각 서브에이전트가 자기 레인으로 분기
-opencode "탐색·구현·테스트를 서브에이전트에 위임한 뒤 요약해줘."
-
-# 이어가기 — 실행을 열고 Handoff 클릭, Markdown을 다음 세션에 붙여넣기
-
-# 포트 변경 (47831/5173이 점유된 경우 — 레코더가 자동으로 맞춰 재스탬프됨)
-npx @taewooopark/agent-blackbox up --port 48000 --ui-port 4000
-
-# 기록 중지 (글로벌 레코더 제거)
-npx @taewooopark/agent-blackbox uninstall
-```
+## 핸드오프 — 어디서든 이어받기
 
 다른 곳에서 이어가야 할 때 — 팀원, 다음 에이전트, 혹은 컨텍스트 리셋 후 같은 에이전트 — 구조화된 **핸드오프**를 내보내세요:
 
