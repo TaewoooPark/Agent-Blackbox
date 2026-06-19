@@ -10,6 +10,7 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
+    "build:cli": "npm run build && node packages/cli/build.mjs",
     "check": "npm run typecheck && npm test",
     "lint": "npm run typecheck",
     "optimize": "node apps/daemon/dist/cli.js optimize",
@@ -27,6 +28,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^6.0.2",
+    "esbuild": "^0.28.1",
     "tsx": "^4.20.3",
     "typescript": "^5.8.3",
     "vitest": "^4.1.9"

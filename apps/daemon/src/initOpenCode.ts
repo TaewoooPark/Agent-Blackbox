@@ -7,6 +7,10 @@ export type InitOpenCodeOptions = {
   adapterPackage?: string;
   force?: boolean;
   optimize?: boolean;
+  // When set (the npx/bundled distribution), the recorder is written as a single
+  // self-contained plugin file with the adapter inlined — no `file:` dep, no
+  // npm install in the user's project.
+  pluginBundlePath?: string;
 };
 
 export type InitOpenCodeResult = {
@@ -36,6 +40,14 @@ export async function initOpenCodeProject(options: InitOpenCodeOptions): Promise
   await mkdir(pluginsDir, { recursive: true });
   if (!options.force && (await pathExists(pluginPath))) {
     throw new Error(`${pluginPath} already exists. Re-run with --force to overwrite it.`);
+  }
+
+  // Self-contained (npx) mode: inline the bundled recorder, no dep to resolve.
+  if (options.pluginBundlePath && (await pathExists(options.pluginBundlePath))) {
+    const bundle = await readFile(options.pluginBundlePath, "utf8");
+    const inlined = bundle.replaceAll("__ABB_DAEMON_URL__", daemonUrl);
+    await writeFile(pluginPath, inlined, "utf8");
+    return { pluginPath, packageJsonPath, adapterPackage, adapterImport };
   }
 
   await writeFile(pluginPath, renderOpenCodePlugin({ adapterImport, daemonUrl, optimize: options.optimize ?? false }), "utf8");

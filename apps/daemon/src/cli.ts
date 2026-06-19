@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { evaluatePromiseChecks, generateHandoffMarkdown, materializeWorkflowGraph } from "@agent-blackbox/core";
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { startDashboardServer } from "./dashboardServer.js";
@@ -11,7 +12,18 @@ import { buildReplaySummary, loadTraceEvents, startTraceDaemon } from "./server.
 import type { SuggestionConfig, SuggestionMode } from "./suggestionProvider.js";
 
 const args = process.argv.slice(2);
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+const cliDir = dirname(fileURLToPath(import.meta.url));
+const repoRoot = resolve(cliDir, "../../..");
+
+// Resolve assets in a layout-agnostic way: the bundled npx package keeps them next
+// to cli.js (dist/dashboard, dist/agent-blackbox.plugin.mjs); the dev tree keeps
+// them at the repo paths. First existing wins.
+const firstExisting = (paths: string[]): string | undefined => paths.find((p) => existsSync(p));
+const dashboardDistDir =
+  firstExisting([resolve(cliDir, "dashboard"), resolve(repoRoot, "apps/dashboard/dist")]) ??
+  resolve(repoRoot, "apps/dashboard/dist");
+// When present (npx build), the recorder is written self-contained from this bundle.
+const pluginBundlePath = firstExisting([resolve(cliDir, "agent-blackbox.plugin.mjs")]);
 
 void main(args);
 
@@ -40,7 +52,14 @@ async function main(argv: string[]): Promise<void> {
     const suggest = readSuggestConfig(argv);
 
     try {
-      const result = await initOpenCodeProject({ projectDir, daemonUrl, adapterPackage, force: false, optimize: argv.includes("--optimize") });
+      const result = await initOpenCodeProject({
+        projectDir,
+        daemonUrl,
+        adapterPackage,
+        force: false,
+        optimize: argv.includes("--optimize"),
+        ...(pluginBundlePath ? { pluginBundlePath } : {})
+      });
       console.log(`✓ OpenCode recorder plugin installed: ${result.pluginPath}`);
     } catch (error) {
       if (error instanceof Error && error.message.includes("already exists")) {
@@ -51,8 +70,7 @@ async function main(argv: string[]): Promise<void> {
     }
 
     const daemon = await startTraceDaemon({ projectDir, port, suggest });
-    const distDir = resolve(repoRoot, "apps/dashboard/dist");
-    const ui = await startDashboardServer({ distDir, port: uiPort, daemonUrl });
+    const ui = await startDashboardServer({ distDir: dashboardDistDir, port: uiPort, daemonUrl });
 
     const dashboardUrl = `http://127.0.0.1:${ui.port}`;
     console.log("");
@@ -97,7 +115,8 @@ async function main(argv: string[]): Promise<void> {
       ...(daemonUrl ? { daemonUrl } : {}),
       ...(adapterPackage ? { adapterPackage } : {}),
       force: argv.includes("--force"),
-      optimize: argv.includes("--optimize")
+      optimize: argv.includes("--optimize"),
+      ...(pluginBundlePath ? { pluginBundlePath } : {})
     });
     console.log(`OpenCode plugin written: ${result.pluginPath}`);
     console.log(`OpenCode package config written: ${result.packageJsonPath}`);
