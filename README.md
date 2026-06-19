@@ -73,7 +73,7 @@ That is the whole idea: **open the black box while the flight is still in the ai
 - **Replay** — drag the navigation-chart timeline to any sequence point; the graph and files reflect state at exactly that moment.
 - **Click to focus** — select any moment for a detail popover (evidence, files, tokens); select an agent to isolate its lane; click a file to highlight every moment that touched it, with arcs drawn from each node's ring.
 - **Subagent genealogy** — real delegations (the `task` tool / child sessions) fork into their own branch, attributed to the subagent that did the work.
-- **Context efficiency** — a live score + metric meters (context pressure, cache hit, redundant reads, read amplification, large injections, retry waste, yield density) with one-tap optimization notations — **rule-based, or routed to a free/local model (no API key)**.
+- **Context efficiency** — a live score + metric meters (context pressure, cache hit, redundant reads, read amplification, large injections, retry waste, yield density) with one-tap optimization notations — **rule-based, or tailored by a free model with no API key**. `--suggest free` rotates a pool of free models across independent quotas (OpenCode Zen + Ollama cloud + local), failing over and cooling down on rate limits, so the AI suggestions stay free and durable over long sessions.
 - **Handoff export** — a structured continuation summary (objective, files in play, decisions, commands, failures, blockers, next safe action), one click to copy as Markdown.
 - **Run picker** — one project log can hold many runs; the console follows the most recently *active* run and lets you pin any past one.
 - **Full event coverage** — whichever model you run, every action is captured (reads, edits, bash, skills, custom/MCP tools, permissions, todos, subagents, **slash commands, `/compact` context compaction, agent/model switches**) — keyed off the host event, never the model. Known noise (LSP, pty, file-watcher, MCP registry) is filtered; anything not yet modeled still surfaces as a labeled node, so nothing is silently dropped.
@@ -193,6 +193,30 @@ The AGENTS.md memory above pays off on *future* tasks. The in-run optimizer cuts
 
 - **Longitudinal trend** — Agent-Blackbox records every run; chart the efficiency score across your *real* runs and show whether it rises after the memory + optimizer land — measurement from actual work, not a benchmark.
 - **Diff-serving across compaction** — keep a small local content cache so even post-compaction re-reads can be served as diffs (today they fall back to full).
+
+---
+
+## Pairs with oh-my-openagent — profile and shrink heavy multi-agent runs
+
+[**oh-my-openagent (OMO)**](https://github.com/code-yeongyu/oh-my-openagent) turns OpenCode into a multi-agent *tokenmaxxer* harness — 11 specialists, parallel execution, a relentless loop that spends tokens hard to ship complex work. Agent-Blackbox is the instrument built for exactly that workload: **OMO floors the accelerator; Agent-Blackbox is the dyno and the telemetry.**
+
+They're both OpenCode plugins and coexist with zero config — run OMO with the recorder installed and the whole team shows up:
+
+- **See the whole team.** Every SDK-spawned subagent (Sisyphus, explore, librarian, plan, oracle…) gets its own lane; delegation forks the trunk; files connect by sweeping arcs. The map was built for runs this complex.
+- **See — and shrink — the cost.** A "tokenmaxxer" run is exactly where context economy matters most. Agent-Blackbox scores it (context pressure, redundant re-reads, read amplification, tool overhead) and names the precise offenders — the cost you can't see from inside the harness.
+- **Close the loop.** Pin the findings to `AGENTS.md` for the next run, and turn on the in-run optimizer (`AGENT_BLACKBOX_OPTIMIZE=1`) to serve a re-read as a no-op/diff — savings inside the *same* run, no re-run.
+
+A real OMO `ultrawork` run, recorded live by Agent-Blackbox — named specialist lanes on the left, and a context-efficiency score with reclaimable tokens and tailored fixes on the right:
+
+<p align="center">
+  <img src="./docs/screenshots/omo-synergy.jpeg" alt="Agent-Blackbox profiling a real oh-my-openagent ultrawork session: the left rail lists named specialist lanes (Sisyphus, explore, librarian, plan), the center session map forks the trunk into subagent branches with files connected by arcs, and the right rail shows a context-efficiency score, peak context, tool overhead, and tailored optimization suggestions." width="100%">
+</p>
+
+```bash
+# OMO installs globally; Agent-Blackbox records the project. Run OMO, watch :5173.
+npm run up -- --project ~/code/my-app --suggest free
+opencode run "ultrawork: refactor the auth module and add tests"   # OMO + recorder both active
+```
 
 ---
 

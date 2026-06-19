@@ -134,6 +134,30 @@ npm run up -- --project /path --suggest opencode --suggest-model opencode/deepse
 
 ---
 
+## oh-my-openagent과 함께 — 무거운 다중 에이전트 실행을 프로파일링하고 줄이기
+
+[**oh-my-openagent (OMO)**](https://github.com/code-yeongyu/oh-my-openagent)는 OpenCode를 다중 에이전트 *tokenmaxxer* 하네스로 바꿉니다 — 11개 전문 에이전트, 병렬 실행, 복잡한 작업을 끝내려 토큰을 적극적으로 쏟아붓는 집요한 루프. Agent-Blackbox는 바로 그 워크로드를 위한 계기판입니다: **OMO가 액셀을 밟고, Agent-Blackbox가 다이노이자 텔레메트리.**
+
+둘 다 OpenCode 플러그인이라 설정 없이 공존합니다 — 레코더가 설치된 상태로 OMO를 돌리면 팀 전체가 나타납니다:
+
+- **팀 전체를 본다.** SDK로 생성된 각 서브에이전트(Sisyphus, explore, librarian, plan, oracle…)가 자기 레인을 갖고, 위임이 트렁크에서 갈라지며, 파일이 곡선으로 연결됩니다. 이 정도 복잡한 실행을 위해 만든 맵입니다.
+- **비용을 보고 — 줄인다.** "tokenmaxxer" 실행이야말로 컨텍스트 경제가 가장 중요한 곳입니다. Agent-Blackbox가 점수화하고(컨텍스트 압력, 중복 재읽기, 읽기 증폭, 도구 오버헤드) 정확한 원인을 짚습니다 — 하네스 내부에선 보이지 않는 비용을.
+- **루프를 닫는다.** 발견을 `AGENTS.md`에 박아 다음 실행에 반영하고, 인-런 최적화기(`AGENT_BLACKBOX_OPTIMIZE=1`)를 켜 재읽기를 노옵/diff로 제공 — *같은 실행 안에서* 절감, 재실행 없이.
+
+실제 OMO `ultrawork` 실행을 Agent-Blackbox가 실시간 기록한 모습 — 좌측엔 명명된 전문 에이전트 레인, 우측엔 회수 가능 토큰과 맞춤 수정안이 붙은 컨텍스트 효율 점수:
+
+<p align="center">
+  <img src="./docs/screenshots/omo-synergy.jpeg" alt="실제 oh-my-openagent ultrawork 세션을 프로파일링하는 Agent-Blackbox: 좌측에 명명된 전문 에이전트 레인(Sisyphus, explore, librarian, plan), 중앙 세션 맵은 트렁크에서 서브에이전트 가지로 갈라지고 파일이 곡선으로 연결되며, 우측에 컨텍스트 효율 점수·피크 컨텍스트·도구 오버헤드·맞춤 최적화 제안이 표시됨." width="100%">
+</p>
+
+```bash
+# OMO는 전역 설치, Agent-Blackbox는 프로젝트를 기록. OMO를 돌리고 :5173에서 확인.
+npm run up -- --project ~/code/my-app --suggest free
+opencode run "ultrawork: refactor the auth module and add tests"   # OMO + 레코더 동시 작동
+```
+
+---
+
 ## 빠른 시작
 
 ```bash

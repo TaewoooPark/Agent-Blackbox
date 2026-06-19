@@ -275,10 +275,11 @@ export function DashboardApp() {
   const [fileEdges, setFileEdges] = useState<{ id: string; path: string; stepId: string; pathD: string }[]>([]);
   // The map viewport band (workspace-relative) the file lines are clipped to, so
   // zooming/panning never bleeds a line over the header, topbar, or timeline.
-  const [edgeClip, setEdgeClip] = useState<{ top: number; height: number; width: number }>({
+  const [edgeClip, setEdgeClip] = useState<{ left: number; top: number; width: number; height: number }>({
+    left: 0,
     top: 0,
-    height: 0,
-    width: 0
+    width: 0,
+    height: 0
   });
 
   useLayoutEffect(() => {
@@ -291,9 +292,18 @@ export function DashboardApp() {
       // of the console.
       const mapEl = workspace.querySelector<HTMLElement>(".mapCanvas");
       const mapRect = mapEl ? mapEl.getBoundingClientRect() : wsRect;
+      // Clip lines to the map viewport (left + top/bottom band, extending right to
+      // the files). A line whose origin scrolls out of view is partially clipped at
+      // the boundary — like a node — rather than vanishing whole.
+      const clipLeft = Math.max(0, mapRect.left - wsRect.left);
       const clipTop = Math.max(0, mapRect.top - wsRect.top);
       const clipBottom = Math.min(wsRect.height, mapRect.bottom - wsRect.top);
-      setEdgeClip({ top: clipTop, height: Math.max(0, clipBottom - clipTop), width: wsRect.width });
+      setEdgeClip({
+        left: clipLeft,
+        top: clipTop,
+        width: Math.max(0, wsRect.width - clipLeft),
+        height: Math.max(0, clipBottom - clipTop)
+      });
       const stepEls = new Map<string, HTMLElement>();
       const fileEls = new Map<string, HTMLElement>();
       workspace.querySelectorAll<HTMLElement>("[data-step-id]").forEach((el) => {
@@ -311,11 +321,6 @@ export function DashboardApp() {
         const s = ringEl.getBoundingClientRect();
         const ringCx = s.left + s.width / 2;
         const ringCy = s.top + s.height / 2;
-        // Skip lines whose origin ring has been scrolled outside the visible map
-        // viewport (zoom/pan), so we never draw a line from a node that isn't there.
-        if (ringCx < mapRect.left || ringCx > mapRect.right || ringCy < mapRect.top || ringCy > mapRect.bottom) {
-          return [];
-        }
         const f = fileEl.getBoundingClientRect();
         const startX = ringCx - wsRect.left;
         const startY = ringCy - wsRect.top;
@@ -487,7 +492,7 @@ export function DashboardApp() {
         <svg className={`fileEdgeLayer ${filesHasFocus ? "hasFocus" : ""}`} aria-hidden="true">
           <defs>
             <clipPath id="fileEdgeClip">
-              <rect x={0} y={edgeClip.top} width={edgeClip.width} height={edgeClip.height} />
+              <rect x={edgeClip.left} y={edgeClip.top} width={edgeClip.width} height={edgeClip.height} />
             </clipPath>
           </defs>
           <g clipPath={edgeClip.height > 0 ? "url(#fileEdgeClip)" : undefined}>
@@ -2197,8 +2202,8 @@ function ContextPanel({
         {aiProvider ? (
           <span className="contextAiNote">
             {aiProvider === "deterministic"
-              ? "No local model reachable — showing rule-based tips. Configure --suggest."
-              : `Tailored by ${aiProvider} (local).`}
+              ? "No free/local model reachable — showing rule-based tips. Configure --suggest."
+              : `Tailored by ${aiProvider} (free).`}
           </span>
         ) : null}
       </div>

@@ -134,6 +134,30 @@ npm run up -- --project /path --suggest opencode --suggest-model opencode/deepse
 
 ---
 
+## 与 oh-my-openagent 搭配 —— 剖析并压缩重型多智能体运行
+
+[**oh-my-openagent (OMO)**](https://github.com/code-yeongyu/oh-my-openagent) 把 OpenCode 变成多智能体 *tokenmaxxer* 框架 —— 11 个专家、并行执行、为交付复杂工作而疯狂消耗词元的持续循环。Agent-Blackbox 正是为这种负载打造的仪表：**OMO 踩满油门，Agent-Blackbox 是测功机与遥测。**
+
+二者都是 OpenCode 插件，零配置共存 —— 装好记录器再跑 OMO，整个团队都会显现：
+
+- **看见整个团队。** 每个由 SDK 派生的子智能体（Sisyphus、explore、librarian、plan、oracle…）各占一条泳道；委派从主干分叉；文件以弧线相连。地图正是为这种复杂度而生。
+- **看见并压缩成本。** "tokenmaxxer" 运行恰恰是上下文经济最关键之处。Agent-Blackbox 为其评分（上下文压力、重复读取、读取放大、工具开销）并点名确切元凶 —— 这是你在框架内部看不见的成本。
+- **闭环。** 把发现写进 `AGENTS.md` 供下次运行使用，并开启运行内优化器（`AGENT_BLACKBOX_OPTIMIZE=1`）把重复读取作为空操作/差分返回 —— 在*同一次*运行内节省，无需重跑。
+
+一次真实的 OMO `ultrawork` 运行，由 Agent-Blackbox 实时记录 —— 左侧是命名的专家泳道，右侧是带可回收词元与定制修复建议的上下文效率评分：
+
+<p align="center">
+  <img src="./docs/screenshots/omo-synergy.jpeg" alt="Agent-Blackbox 剖析一次真实的 oh-my-openagent ultrawork 会话：左栏列出命名的专家泳道（Sisyphus、explore、librarian、plan），中间的会话地图从主干分叉出子智能体分支并以弧线连接文件，右栏显示上下文效率评分、峰值上下文、工具开销与定制优化建议。" width="100%">
+</p>
+
+```bash
+# OMO 全局安装，Agent-Blackbox 记录项目。跑 OMO，在 :5173 查看。
+npm run up -- --project ~/code/my-app --suggest free
+opencode run "ultrawork: refactor the auth module and add tests"   # OMO 与记录器同时生效
+```
+
+---
+
 ## 快速开始
 
 ```bash

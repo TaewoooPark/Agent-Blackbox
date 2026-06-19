@@ -134,6 +134,30 @@ npm run up -- --project /path --suggest opencode --suggest-model opencode/deepse
 
 ---
 
+## oh-my-openagent と組み合わせる — 重い多エージェント実行をプロファイルして削減
+
+[**oh-my-openagent (OMO)**](https://github.com/code-yeongyu/oh-my-openagent) は OpenCode を多エージェントの *tokenmaxxer* ハーネスに変えます — 11 の専門エージェント、並列実行、複雑な仕事を仕上げるためにトークンを惜しみなく注ぐ執拗なループ。Agent-Blackbox はまさにそのワークロードのための計器です：**OMO がアクセルを踏み、Agent-Blackbox がダイノでありテレメトリ。**
+
+どちらも OpenCode プラグインで、設定なしで共存します — レコーダーを入れたまま OMO を走らせれば、チーム全員が現れます：
+
+- **チーム全体が見える。** SDK で生成された各サブエージェント（Sisyphus, explore, librarian, plan, oracle…）が自分のレーンを持ち、委譲が幹から分岐し、ファイルが弧で結ばれます。この複雑さのために作られた地図です。
+- **コストを見て — 削る。** 「tokenmaxxer」実行こそコンテキスト経済が最も効く場面です。Agent-Blackbox が採点し（コンテキスト圧力・重複再読込・読み込み増幅・ツールオーバーヘッド）、正確な原因を名指しします — ハーネスの内側からは見えないコストを。
+- **ループを閉じる。** 発見を `AGENTS.md` に固定して次の実行に効かせ、実行内オプティマイザ（`AGENT_BLACKBOX_OPTIMIZE=1`）を有効にして再読込をノーオペ/差分で返す — *同じ*実行の中で節約、再実行なしで。
+
+実際の OMO `ultrawork` 実行を Agent-Blackbox がライブ記録した様子 — 左に名前付きの専門エージェントレーン、右に回収可能トークンと個別最適化提案付きのコンテキスト効率スコア：
+
+<p align="center">
+  <img src="./docs/screenshots/omo-synergy.jpeg" alt="実際の oh-my-openagent ultrawork セッションをプロファイルする Agent-Blackbox：左の列に名前付きの専門エージェントレーン（Sisyphus, explore, librarian, plan）、中央のセッションマップは幹からサブエージェントの枝に分岐しファイルを弧で接続、右の列にコンテキスト効率スコア・ピークコンテキスト・ツールオーバーヘッド・個別最適化提案を表示。" width="100%">
+</p>
+
+```bash
+# OMO はグローバル導入、Agent-Blackbox はプロジェクトを記録。OMO を走らせ :5173 で確認。
+npm run up -- --project ~/code/my-app --suggest free
+opencode run "ultrawork: refactor the auth module and add tests"   # OMO とレコーダーが同時に動作
+```
+
+---
+
 ## クイックスタート
 
 ```bash
