@@ -3,7 +3,9 @@ import { AGENT_BLACKBOX_DAEMON_VERSION, describeDaemon } from "./index.js";
 
 describe("daemon scaffold", () => {
   it("exposes a version and description", () => {
-    expect(AGENT_BLACKBOX_DAEMON_VERSION).toBe("0.1.0");
+    // Resolved from the nearest package.json (single source of truth), so assert
+    // it's a real semver rather than a hardcoded constant that drifts from npm.
+    expect(AGENT_BLACKBOX_DAEMON_VERSION).toMatch(/^\d+\.\d+\.\d+/);
     expect(describeDaemon()).toContain("Agent-Blackbox daemon");
   });
 });
