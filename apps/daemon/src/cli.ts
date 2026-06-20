@@ -49,8 +49,9 @@ async function main(argv: string[]): Promise<void> {
   if (command === "daemon") {
     const projectDir = readFlag(argv, "--project") ?? process.cwd();
     const port = portArg(readFlag(argv, "--port"), 47831);
-    const daemon = await startTraceDaemon({ projectDir, port });
-    console.log(`Agent-Blackbox daemon listening on http://127.0.0.1:${daemon.port}`);
+    const host = readFlag(argv, "--host") ?? process.env.AGENT_BLACKBOX_HOST;
+    const daemon = await startTraceDaemon({ projectDir, port, ...(host ? { host } : {}) });
+    console.log(`Agent-Blackbox daemon listening on http://${host ?? "127.0.0.1"}:${daemon.port}`);
     console.log(`Trace file: ${daemon.eventsFile}`);
     return;
   }
@@ -63,7 +64,12 @@ async function main(argv: string[]): Promise<void> {
     const global = projectFlag === undefined;
     const port = portArg(readFlag(argv, "--port"), 47831);
     const uiPort = portArg(readFlag(argv, "--ui-port"), 5173);
-    const daemonUrl = `http://127.0.0.1:${port}`;
+    const host = readFlag(argv, "--host") ?? process.env.AGENT_BLACKBOX_HOST;
+    // URL the browser and recorder use to reach the daemon. Defaults to this
+    // machine's loopback; override when the daemon isn't local — a container, a
+    // remote host, or behind a reverse proxy (e.g. https://blackbox.example.com).
+    const daemonUrl =
+      readFlag(argv, "--daemon-url") ?? process.env.AGENT_BLACKBOX_DAEMON_URL ?? `http://127.0.0.1:${port}`;
     const suggest = readSuggestConfig(argv);
 
     let daemon: Awaited<ReturnType<typeof startTraceDaemon>>;
@@ -77,9 +83,14 @@ async function main(argv: string[]): Promise<void> {
       const { pluginPath } = await installGlobalRecorder({ daemonUrl, pluginBundlePath });
       const dataDir = globalDataDir();
       const eventsFile = join(dataDir, "events.ndjson");
-      daemon = await startTraceDaemon({ projectDir: dataDir, port, eventsFile, suggest });
-      const ui = await startDashboardServer({ distDir: dashboardDistDir, port: uiPort, daemonUrl });
-      const dashboardUrl = `http://127.0.0.1:${ui.port}`;
+      daemon = await startTraceDaemon({ projectDir: dataDir, port, eventsFile, suggest, ...(host ? { host } : {}) });
+      const ui = await startDashboardServer({
+        distDir: dashboardDistDir,
+        port: uiPort,
+        daemonUrl,
+        ...(host ? { host } : {})
+      });
+      const dashboardUrl = `http://${host ?? "127.0.0.1"}:${ui.port}`;
       console.log(`✓ Global OpenCode recorder installed: ${pluginPath}`);
       console.log(`✓ Agent-Blackbox is up (recording all OpenCode sessions)`);
       console.log(`  Dashboard:  ${dashboardUrl}`);
@@ -116,10 +127,15 @@ async function main(argv: string[]): Promise<void> {
       }
     }
 
-    daemon = await startTraceDaemon({ projectDir, port, suggest });
-    const ui = await startDashboardServer({ distDir: dashboardDistDir, port: uiPort, daemonUrl });
+    daemon = await startTraceDaemon({ projectDir, port, suggest, ...(host ? { host } : {}) });
+    const ui = await startDashboardServer({
+      distDir: dashboardDistDir,
+      port: uiPort,
+      daemonUrl,
+      ...(host ? { host } : {})
+    });
 
-    const dashboardUrl = `http://127.0.0.1:${ui.port}`;
+    const dashboardUrl = `http://${host ?? "127.0.0.1"}:${ui.port}`;
     console.log("");
     console.log(`✓ Agent-Blackbox is up for ${projectDir}`);
     console.log(`  Dashboard:  ${dashboardUrl}`);
@@ -221,10 +237,11 @@ function printHelp(): void {
   console.log("Usage:");
   console.log("  agent-blackbox up                       # GLOBAL: record every OpenCode session (any folder / the app) + daemon + dashboard");
   console.log("  agent-blackbox up --project <dir>        # scope the recorder to one project instead");
-  console.log("       [--port <port>] [--ui-port <port>] [--suggest auto|free|off|ollama|opencode|openai-compat] [--suggest-model <id>] [--optimize] [--no-open]");
+  console.log("       [--port <port>] [--ui-port <port>] [--host <addr>] [--daemon-url <url>] [--suggest auto|free|off|ollama|opencode|openai-compat] [--suggest-model <id>] [--optimize] [--no-open]");
+  console.log("       (--host 0.0.0.0 + --daemon-url <public-url>, or AGENT_BLACKBOX_HOST / AGENT_BLACKBOX_DAEMON_URL, to serve from a container or remote host)");
   console.log("  agent-blackbox install [--port <port>]   # install the global recorder only (no daemon)");
   console.log("  agent-blackbox uninstall                 # remove the global recorder");
-  console.log("  agent-blackbox daemon [--project <dir>] [--port <port>]");
+  console.log("  agent-blackbox daemon [--project <dir>] [--port <port>] [--host <addr>]");
   console.log("  agent-blackbox init-opencode [--project <dir>] [--daemon-url <url>] [--adapter-package <specifier>] [--force] [--optimize]");
   console.log("  agent-blackbox optimize [--project <dir>] [--apply | --check | --revert]   # write/measure/rollback AGENTS.md efficiency memory");
   console.log("  agent-blackbox handoff <events.ndjson>");

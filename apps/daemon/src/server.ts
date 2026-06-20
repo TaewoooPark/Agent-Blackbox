@@ -21,6 +21,7 @@ import { generateSuggestions, type SuggestionConfig } from "./suggestionProvider
 export type TraceDaemonOptions = {
   projectDir: string;
   port?: number;
+  host?: string;
   eventsFile?: string;
   suggest?: SuggestionConfig;
 };
@@ -74,9 +75,13 @@ export async function startTraceDaemon(options: TraceDaemonOptions): Promise<Run
     });
   });
   const port = options.port ?? 47831;
+  // Bind to loopback by default — the daemon exposes write endpoints (e.g.
+  // POST /optimize/apply edits AGENTS.md), so opening it to other interfaces is
+  // opt-in only, via `host` or AGENT_BLACKBOX_HOST (e.g. 0.0.0.0 in a container).
+  const host = options.host ?? process.env.AGENT_BLACKBOX_HOST ?? "127.0.0.1";
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(port, "127.0.0.1", () => {
+    server.listen(port, host, () => {
       server.off("error", reject);
       resolve();
     });

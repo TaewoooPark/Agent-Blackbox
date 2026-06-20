@@ -6,6 +6,7 @@ import { extname, join, normalize } from "node:path";
 export type DashboardServerOptions = {
   distDir: string;
   port?: number;
+  host?: string;
   daemonUrl: string;
 };
 
@@ -82,9 +83,12 @@ export async function startDashboardServer(options: DashboardServerOptions): Pro
   });
 
   const port = options.port ?? 5173;
+  // Loopback by default; opt into other interfaces with `host` or
+  // AGENT_BLACKBOX_HOST (e.g. 0.0.0.0 when serving the dashboard from a container).
+  const host = options.host ?? process.env.AGENT_BLACKBOX_HOST ?? "127.0.0.1";
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(port, "127.0.0.1", () => {
+    server.listen(port, host, () => {
       server.off("error", reject);
       resolve();
     });

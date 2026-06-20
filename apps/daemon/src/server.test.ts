@@ -289,6 +289,19 @@ describe("trace daemon", () => {
       await daemon.close();
     }
   });
+
+  it("binds the host given in options", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "agent-blackbox-daemon-"));
+    const daemon = await startTraceDaemon({ projectDir: tempDir, port: 0, host: "0.0.0.0" });
+    try {
+      const address = daemon.server.address();
+      expect(typeof address === "object" && address ? address.address : "").toBe("0.0.0.0");
+      const health = await fetch(`http://127.0.0.1:${daemon.port}/health`);
+      expect(health.status).toBe(200);
+    } finally {
+      await daemon.close();
+    }
+  });
 });
 
 function nextSocketMessage(socket: WebSocket): Promise<{ type: string; data: { events: unknown[]; graph?: unknown } }> {
