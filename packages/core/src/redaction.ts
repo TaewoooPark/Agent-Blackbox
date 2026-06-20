@@ -27,14 +27,14 @@ export const defaultRedactionRules: RedactionRule[] = [
     replacement: "[REDACTED_GITHUB_TOKEN]"
   },
   {
-    name: "openai-key",
-    pattern: /\bsk-[A-Za-z0-9_-]{20,}\b/g,
-    replacement: "[REDACTED_OPENAI_KEY]"
-  },
-  {
     name: "anthropic-key",
     pattern: /\bsk-ant-[A-Za-z0-9_-]{20,}\b/g,
     replacement: "[REDACTED_ANTHROPIC_KEY]"
+  },
+  {
+    name: "openai-key",
+    pattern: /\bsk-[A-Za-z0-9_-]{20,}\b/g,
+    replacement: "[REDACTED_OPENAI_KEY]"
   },
   {
     name: "private-key",
@@ -59,11 +59,11 @@ export function redactJsonValue<T extends JsonValue>(
   const visit = (current: JsonValue): JsonValue => {
     if (typeof current === "string") {
       let next = current;
-      if (options.homeDir) {
-        next = replaceLiteral(next, options.homeDir, "~", "home-dir", applied);
-      }
       if (options.projectDir) {
         next = replaceLiteral(next, options.projectDir, "$PROJECT", "project-dir", applied);
+      }
+      if (options.homeDir) {
+        next = replaceLiteral(next, options.homeDir, "~", "home-dir", applied);
       }
       for (const rule of rules) {
         if (rule.pattern.test(next)) {

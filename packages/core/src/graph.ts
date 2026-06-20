@@ -141,6 +141,9 @@ export function replayWorkflowGraphAtSeq(events: TraceEvent[], seq: number): Wor
 
 export function replayWorkflowGraphAtTime(events: TraceEvent[], at: string | Date): WorkflowGraph {
   const atTime = new Date(at).getTime();
+  if (Number.isNaN(atTime)) {
+    throw new Error("replayWorkflowGraphAtTime: invalid time");
+  }
   return materializeWorkflowGraph(events.filter((event) => new Date(event.ts).getTime() <= atTime));
 }
 
@@ -271,7 +274,8 @@ function ensureSession(graph: MutableGraph, event: TraceEvent): void {
     status: "ACTIVE",
     at: event.ts,
     eventId: event.id,
-    data: { sessionId: event.sessionId, parentSessionId: event.parentSessionId ?? null }
+    data: { sessionId: event.sessionId, parentSessionId: event.parentSessionId ?? null },
+    keepStatusIfExists: true
   });
   ensureEdge(graph, {
     from: runNodeId(event.runId),
@@ -294,7 +298,8 @@ function ensureAgent(graph: MutableGraph, event: TraceEvent): void {
     status: "ACTIVE",
     at: event.ts,
     eventId: event.id,
-    data: { agentId: event.agentId, agentRole: event.agentRole ?? "unknown" }
+    data: { agentId: event.agentId, agentRole: event.agentRole ?? "unknown" },
+    keepStatusIfExists: true
   });
   ensureEdge(graph, {
     from: sessionNodeId(event.sessionId),
@@ -317,7 +322,8 @@ function ensureTurn(graph: MutableGraph, event: TraceEvent): void {
     status: "ACTIVE",
     at: event.ts,
     eventId: event.id,
-    data: { turnId: event.turnId }
+    data: { turnId: event.turnId },
+    keepStatusIfExists: true
   });
   ensureEdge(graph, {
     from: event.agentId ? agentNodeId(event.agentId) : sessionNodeId(event.sessionId),
@@ -411,12 +417,15 @@ function ensureNode(
     at: string;
     eventId?: string;
     data?: JsonObject;
+    keepStatusIfExists?: boolean;
   }
 ): void {
   const existing = graph.nodes.get(input.id);
   if (existing) {
     existing.updatedAt = input.at;
-    existing.status = input.status;
+    if (!input.keepStatusIfExists) {
+      existing.status = input.status;
+    }
     existing.data = { ...existing.data, ...(input.data ?? {}) };
     if (input.eventId && !existing.eventIds.includes(input.eventId)) {
       existing.eventIds.push(input.eventId);
@@ -606,7 +615,8 @@ function eventNodeIdFromEventId(eventId: string): string {
 }
 
 function workflowEdgeId(from: string, to: string, type: WorkflowEdgeType): string {
-  return `edge:${type}:${stablePart(from)}:${stablePart(to)}`;
+  const enc = (s: string) => s.replace(/:/g, "__");
+  return `edge:${type}:${enc(stablePart(from))}:${enc(stablePart(to))}`;
 }
 
 function stablePart(value: string): string {

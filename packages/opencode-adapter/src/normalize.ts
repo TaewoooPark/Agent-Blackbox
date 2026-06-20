@@ -474,7 +474,9 @@ function sanitizeJson(value: unknown, seen: WeakSet<object>): JsonObject | JsonO
       return "[Circular]";
     }
     seen.add(value);
-    return value.map((item) => sanitizeJson(item, seen)) as JsonObject[keyof JsonObject];
+    const mapped = value.map((item) => sanitizeJson(item, seen)) as JsonObject[keyof JsonObject];
+    seen.delete(value);
+    return mapped;
   }
   if (typeof value === "object") {
     if (seen.has(value)) {
@@ -488,6 +490,7 @@ function sanitizeJson(value: unknown, seen: WeakSet<object>): JsonObject | JsonO
       }
       output[key] = sanitizeJson(nested, seen);
     }
+    seen.delete(value);
     return output;
   }
   return String(value);

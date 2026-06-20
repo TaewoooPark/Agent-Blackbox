@@ -648,6 +648,7 @@ function SessionMap({
   steps: WorkflowStep[];
 }) {
   const mapRef = useRef<HTMLDivElement | null>(null);
+  const movedRef = useRef(false);
   const [momentAnchor, setMomentAnchor] = useState<{ left: number; top: number } | null>(null);
   const [nodeOffsets, setNodeOffsets] = useState<NodeOffsetMap>({});
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(() => new Set());
@@ -697,12 +698,11 @@ function SessionMap({
   useEffect(() => {
     if (!nodeDrag) return undefined;
 
-    let moved = false;
     const move = (event: PointerEvent) => {
       const dx = event.clientX - nodeDrag.startX;
       const dy = event.clientY - nodeDrag.startY;
-      moved = moved || Math.abs(dx) > 2 || Math.abs(dy) > 2;
-      if (!moved) return;
+      movedRef.current = movedRef.current || Math.abs(dx) > 2 || Math.abs(dy) > 2;
+      if (!movedRef.current) return;
       const scaledDx = dx / appliedScale;
       const scaledDy = dy / appliedScale;
       setNodeOffsets((current) => {
@@ -722,7 +722,7 @@ function SessionMap({
       // A plain click (no drag, no modifier) focuses the node and opens the
       // inspector. A modifier-click only toggles multi-selection, and any drag
       // suppresses the popup entirely.
-      if (!moved && !nodeDrag.additive) {
+      if (!movedRef.current && !nodeDrag.additive) {
         onSelectEvent(nodeDrag.eventId);
       }
       setNodeDrag(null);
@@ -954,7 +954,7 @@ function SessionMap({
       // selected subagent branch also marks the trunk step that holds it, so
       // prefer the agent-start card to anchor next to the subagent box itself.
       const anchorEl = selectedFilePath
-        ? container.querySelector<HTMLElement>(".fileRows .finderRow.selected")
+        ? container.closest(".workspace")?.querySelector<HTMLElement>(".fileRows .finderRow.selected") ?? null
         : container.querySelector<HTMLElement>(".treeNode.agentStartCard.selected") ??
           container.querySelector<HTMLElement>(".treeNode.selected");
       if (!anchorEl) {
@@ -1047,6 +1047,7 @@ function SessionMap({
       nextSelection.add(item.id);
     }
     const nodeIds = [...nextSelection];
+    movedRef.current = false;
     setSelectedNodeIds(nextSelection);
     setNodeDrag({
       additive,

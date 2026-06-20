@@ -90,7 +90,7 @@ export function buildEfficiencyMemory(
 const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const managedBlockRegExp = (): RegExp =>
-  new RegExp(`${escapeRegExp(EFFICIENCY_MEMORY_START)}[\\s\\S]*?${escapeRegExp(EFFICIENCY_MEMORY_END)}`);
+  new RegExp(`${escapeRegExp(EFFICIENCY_MEMORY_START)}[\\s\\S]*?${escapeRegExp(EFFICIENCY_MEMORY_END)}`, "g");
 
 export function hasManagedBlock(content: string): boolean {
   return managedBlockRegExp().test(content);
@@ -103,7 +103,7 @@ export function hasManagedBlock(content: string): boolean {
  */
 export function upsertManagedBlock(content: string, block: string): string {
   if (hasManagedBlock(content)) {
-    return content.replace(managedBlockRegExp(), block);
+    return content.replace(managedBlockRegExp(), () => block);
   }
   const base = content.trimEnd();
   return base.length === 0 ? `${block}\n` : `${base}\n\n${block}\n`;

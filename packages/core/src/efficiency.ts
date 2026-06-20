@@ -323,7 +323,7 @@ export function computeEfficiencyReport(events: TraceEvent[]): EfficiencyReport 
         label: "Large context injections",
         value: biggest,
         unit: "tokens",
-        display: biggest >= 2000 ? formatTokens(biggest) : "none",
+        display: biggest >= 5_000 ? formatTokens(biggest) : "none",
         score,
         status,
         detail:
@@ -505,9 +505,6 @@ function stringAt(event: TraceEvent, key: string): string | undefined {
 
 function readTokenSnapshot(event: TraceEvent): TokenSnapshot | undefined {
   const present =
-    deepNumber(event.payload, "properties.info.tokens") !== undefined ||
-    deepNumber(event.payload, "properties.tokens") !== undefined ||
-    deepNumber(event.payload, "tokens") !== undefined ||
     isRecordAtPath(event.payload, "properties.info.tokens") ||
     isRecordAtPath(event.payload, "properties.tokens") ||
     isRecordAtPath(event.payload, "tokens");

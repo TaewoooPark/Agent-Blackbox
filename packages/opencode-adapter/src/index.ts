@@ -135,7 +135,7 @@ function createOpenCodeEventFactory(options: {
     const decision = decideReadServe(readCache.get(key), { hash, content: current }, compactionGen, path);
     readCache.set(key, { hash, content: current, gen: compactionGen });
     bumpFile(path, "read", hash);
-    if (decision.mode !== "full" && typeof decision.output === "string") {
+    if (decision.mode !== "full" && typeof decision.output === "string" && decision.saved > 0) {
       output.output = decision.output; // serve no-op/diff instead of full bytes
     }
   };

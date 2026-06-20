@@ -191,18 +191,19 @@ export function createWorkflowSteps(events: TraceEvent[]): WorkflowStep[] {
   const steps: WorkflowStep[] = [];
   let pendingBranches: WorkflowBranch[] = [];
   let pendingTokens = emptyTokenUsage();
-  let previousTokenSnapshot: TokenUsage | undefined;
+  const previousTokenSnapshots = new Map<string, TokenUsage>();
   const seenPrompts = new Set<string>();
 
   for (const event of [...events].sort((a, b) => a.seq - b.seq)) {
     const tokenSnapshot = tokenUsageForEvent(event);
+    const previousTokenSnapshot = previousTokenSnapshots.get(event.sessionId);
     const tokenDelta = tokenSnapshot
       ? previousTokenSnapshot
         ? subtractTokenUsage(tokenSnapshot, previousTokenSnapshot)
         : tokenSnapshot
       : emptyTokenUsage();
     if (tokenSnapshot) {
-      previousTokenSnapshot = tokenSnapshot;
+      previousTokenSnapshots.set(event.sessionId, tokenSnapshot);
     }
 
     const promptStep = promptStepForEvent(event);

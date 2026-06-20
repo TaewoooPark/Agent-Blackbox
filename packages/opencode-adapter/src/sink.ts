@@ -20,7 +20,16 @@ export function createTraceSink(options: {
 export function createFileTraceSink(eventsFile: string): TraceSink {
   return {
     async write(event) {
-      await appendTraceEvent(eventsFile, event);
+      // Recording is best-effort: a filesystem error (ENOSPC/EACCES/EROFS) or an
+      // unexpectedly invalid event must never throw into the agent's hook and
+      // disrupt the run. Mirror the HTTP sink's guarantee — drop with a warning.
+      try {
+        await appendTraceEvent(eventsFile, event);
+      } catch (error) {
+        console.warn(
+          `[agent-blackbox] could not write event ${event.id}: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
     }
   };
 }

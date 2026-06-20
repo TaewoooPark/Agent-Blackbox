@@ -44,7 +44,14 @@ export async function startDashboardServer(options: DashboardServerOptions): Pro
   );
 
   const server = createServer((request, response) => {
-    const rawPath = decodeURIComponent((request.url ?? "/").split("?")[0] ?? "/");
+    let rawPath: string;
+    try {
+      rawPath = decodeURIComponent((request.url ?? "/").split("?")[0] ?? "/");
+    } catch {
+      response.writeHead(400);
+      response.end("Bad Request");
+      return;
+    }
     if (rawPath === "/" || rawPath === "/index.html") {
       response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       response.end(injected);
@@ -63,7 +70,9 @@ export async function startDashboardServer(options: DashboardServerOptions): Pro
           throw new Error("not a file");
         }
         response.writeHead(200, { "content-type": mimeTypes[extname(filePath)] ?? "application/octet-stream" });
-        createReadStream(filePath).pipe(response);
+        const rs = createReadStream(filePath);
+        rs.on("error", () => response.destroy());
+        rs.pipe(response);
       })
       .catch(() => {
         // SPA fallback so client routes resolve to the app shell.
@@ -73,8 +82,12 @@ export async function startDashboardServer(options: DashboardServerOptions): Pro
   });
 
   const port = options.port ?? 5173;
-  await new Promise<void>((resolve) => {
-    server.listen(port, "127.0.0.1", resolve);
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve();
+    });
   });
   const address = server.address();
   const actualPort = typeof address === "object" && address ? address.port : port;

@@ -74,8 +74,12 @@ export async function startTraceDaemon(options: TraceDaemonOptions): Promise<Run
     });
   });
   const port = options.port ?? 47831;
-  await new Promise<void>((resolve) => {
-    server.listen(port, "127.0.0.1", resolve);
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve();
+    });
   });
   const address = server.address();
   const actualPort = typeof address === "object" && address ? address.port : port;
@@ -85,8 +89,12 @@ export async function startTraceDaemon(options: TraceDaemonOptions): Promise<Run
     eventsFile,
     close: () =>
       new Promise<void>((resolve, reject) => {
+        for (const client of clients) {
+          client.terminate();
+        }
+        clients.clear();
+        streamServer.close();
         server.close((error) => {
-          streamServer.close();
           if (error) {
             reject(error);
           } else {
@@ -164,11 +172,11 @@ async function handleRequest(
 ): Promise<void> {
   try {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
-    const replay = parseReplayQuery(url);
     if (request.method === "OPTIONS") {
       sendEmpty(response, 204);
       return;
     }
+    const replay = parseReplayQuery(url);
     if (request.method === "GET" && url.pathname === "/health") {
       sendJson(response, 200, { ok: true, data: { status: "ok", eventsFile } });
       return;
@@ -276,13 +284,28 @@ async function sendSnapshot(client: WebSocket, eventsFile: string): Promise<void
   }
 }
 
+const MAX_BODY_BYTES = 50_000_000;
+
 async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
+  let total = 0;
   for await (const chunk of request) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    total += buffer.length;
+    if (total > MAX_BODY_BYTES) {
+      throw new BadRequestError("Request body too large");
+    }
+    chunks.push(buffer);
   }
   const raw = Buffer.concat(chunks).toString("utf8");
-  return raw.length > 0 ? (JSON.parse(raw) as unknown) : {};
+  if (raw.length === 0) {
+    return {};
+  }
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    throw new BadRequestError("Invalid JSON body");
+  }
 }
 
 function sendJson(response: ServerResponse, statusCode: number, payload: JsonResponse): void {

@@ -14,10 +14,25 @@ export function parseTraceEventLine(line: string): TraceEvent {
 }
 
 export function parseTraceEvents(input: string): TraceEvent[] {
-  return input
-    .split(/\r?\n/)
-    .filter((line) => line.trim().length > 0)
-    .map((line) => parseTraceEventLine(line));
+  const lines = input.split(/\r?\n/).filter((line) => line.trim().length > 0);
+  // The log is append-only and read concurrently, so the last record may be a
+  // not-yet-flushed partial line. Only when the input is NOT newline-terminated
+  // can the final segment be torn; tolerate a JSON syntax error there alone and
+  // still surface any interior corruption (and any error on a complete last line).
+  const lastIsPossiblyTorn = lines.length > 0 && !/\r?\n$/.test(input);
+  const completeCount = lastIsPossiblyTorn ? lines.length - 1 : lines.length;
+  const events = lines.slice(0, completeCount).map((line) => parseTraceEventLine(line));
+  if (lastIsPossiblyTorn) {
+    const lastLine = lines[lines.length - 1] as string;
+    try {
+      events.push(parseTraceEventLine(lastLine));
+    } catch (error) {
+      // A partially written final record (JSON.parse fails) is expected mid-append;
+      // skip it. Any other error (e.g. a parsed-but-invalid event) still throws.
+      if (!(error instanceof SyntaxError)) throw error;
+    }
+  }
+  return events;
 }
 
 export async function appendTraceEvent(filePath: string, event: TraceEvent): Promise<void> {

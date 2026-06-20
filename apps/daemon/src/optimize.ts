@@ -100,15 +100,19 @@ async function computeOptimize(options: {
     }
     const prior = await readMaybe(agentsMdPath);
     const next = upsertManagedBlock(prior ?? "", block);
-    await writeFile(agentsMdPath, next, "utf8");
-    await writeState(statePath, {
-      runId: runId ?? "",
-      baselineScore: score,
-      baselineLatestTs: latestTs,
-      baselineFlagged: flaggedIds(report),
-      fileExisted: prior !== null,
-      appliedAt: new Date().toISOString()
-    });
+    // Skip a redundant re-apply: when the managed block is already present and
+    // byte-identical, don't churn AGENTS.md's mtime or reset the saved baseline.
+    if (prior === null || next !== prior) {
+      await writeFile(agentsMdPath, next, "utf8");
+      await writeState(statePath, {
+        runId: runId ?? "",
+        baselineScore: score,
+        baselineLatestTs: latestTs,
+        baselineFlagged: flaggedIds(report),
+        fileExisted: prior !== null,
+        appliedAt: new Date().toISOString()
+      });
+    }
     return {
       mode: "apply",
       action:

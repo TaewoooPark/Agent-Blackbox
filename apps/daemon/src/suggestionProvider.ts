@@ -87,7 +87,7 @@ export function buildDigest(report: EfficiencyReport): Digest {
         id: m.id,
         label: m.label,
         status: m.status,
-        value: Number(m.value.toFixed(3)),
+        value: Number((typeof m.value === "number" && Number.isFinite(m.value) ? m.value : 0).toFixed(3)),
         display: m.display,
         detail: m.detail,
         ...(m.reclaimableTokens ? { reclaimableTokens: m.reclaimableTokens } : {}),
@@ -125,6 +125,7 @@ export function orderFreePool<T extends { model: string }>(
 ): T[] {
   const fresh = pool.filter((entry) => (cooldownUntil.get(entry.model) ?? 0) <= now);
   const list = fresh.length > 0 ? fresh : pool;
+  if (list.length === 0) return [];
   const start = ((cursor % list.length) + list.length) % list.length;
   return [...list.slice(start), ...list.slice(0, start)];
 }
@@ -324,9 +325,19 @@ function extractJsonObject(text: string): unknown {
   const start = text.indexOf("{");
   if (start === -1) return undefined;
   let depth = 0;
+  let inString = false;
+  let escaped = false;
   for (let i = start; i < text.length; i += 1) {
-    if (text[i] === "{") depth += 1;
-    else if (text[i] === "}") {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === "{") depth += 1;
+    else if (ch === "}") {
       depth -= 1;
       if (depth === 0) {
         try {

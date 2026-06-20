@@ -34,7 +34,10 @@ function globalDataDir(): string {
   return xdg && xdg.length > 0 ? join(xdg, "agent-blackbox") : join(homedir(), ".local", "share", "agent-blackbox");
 }
 
-void main(args);
+void main(args).catch((error) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});
 
 async function main(argv: string[]): Promise<void> {
   if (argv.includes("--version") || argv.includes("-v")) {
@@ -45,7 +48,7 @@ async function main(argv: string[]): Promise<void> {
   const command = argv[0] ?? "help";
   if (command === "daemon") {
     const projectDir = readFlag(argv, "--project") ?? process.cwd();
-    const port = Number(readFlag(argv, "--port") ?? "47831");
+    const port = portArg(readFlag(argv, "--port"), 47831);
     const daemon = await startTraceDaemon({ projectDir, port });
     console.log(`Agent-Blackbox daemon listening on http://127.0.0.1:${daemon.port}`);
     console.log(`Trace file: ${daemon.eventsFile}`);
@@ -58,8 +61,8 @@ async function main(argv: string[]): Promise<void> {
     // terminal, or the app), the way people actually use OpenCode. --project keeps
     // the old project-scoped behavior.
     const global = projectFlag === undefined;
-    const port = Number(readFlag(argv, "--port") ?? "47831");
-    const uiPort = Number(readFlag(argv, "--ui-port") ?? "5173");
+    const port = portArg(readFlag(argv, "--port"), 47831);
+    const uiPort = portArg(readFlag(argv, "--ui-port"), 5173);
     const daemonUrl = `http://127.0.0.1:${port}`;
     const suggest = readSuggestConfig(argv);
 
@@ -132,7 +135,7 @@ async function main(argv: string[]): Promise<void> {
   }
 
   if (command === "install") {
-    const port = Number(readFlag(argv, "--port") ?? "47831");
+    const port = portArg(readFlag(argv, "--port"), 47831);
     const daemonUrl = `http://127.0.0.1:${port}`;
     if (!pluginBundlePath) {
       throw new Error("Global install needs the self-contained recorder bundle. Use the published npx package, or `npm run build:cli` first.");
@@ -248,6 +251,14 @@ function readFlag(argv: string[], flag: string): string | undefined {
     return undefined;
   }
   return argv[index + 1];
+}
+
+// readFlag returns the next token unconditionally, so a flag that is last or
+// followed by another flag yields a non-numeric value and Number(...) → NaN. Fall
+// back to the default for a missing OR malformed value instead of binding NaN.
+function portArg(raw: string | undefined, fallback: number): number {
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 0 && n <= 65535 ? n : fallback;
 }
 
 function readSuggestConfig(argv: string[]): SuggestionConfig {
