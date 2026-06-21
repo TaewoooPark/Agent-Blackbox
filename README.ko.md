@@ -17,12 +17,15 @@
   <img src="https://img.shields.io/badge/React-000000?style=flat-square&logo=react&logoColor=white&labelColor=000000" alt="React">
   <img src="https://img.shields.io/badge/Vite-000000?style=flat-square&logo=vite&logoColor=white&labelColor=000000" alt="Vite">
   &nbsp;
+  <img src="https://img.shields.io/badge/Claude%20Code-000000?style=flat-square&labelColor=000000&color=000000" alt="Claude Code">
   <img src="https://img.shields.io/badge/OpenCode-000000?style=flat-square&labelColor=000000&color=000000" alt="OpenCode">
   <img src="https://img.shields.io/badge/Local--first-000000?style=flat-square&labelColor=000000&color=000000" alt="Local-first">
   <img src="https://img.shields.io/badge/API%20key%20불필요-000000?style=flat-square&labelColor=000000&color=000000" alt="No API key">
 </p>
 
 Agent-Blackbox는 **코딩 에이전트를 위한 로컬 우선(local-first) 플라이트 레코더이자 컨텍스트 효율 프로파일러**입니다. 에이전트가 무엇을 읽고 바꾸고 실행하고 위임했는지, 어디서 막혔는지를 에이전트 자신의 요약이 아니라 **실제로 관측된 이벤트**로 재구성합니다. 그렇게 실시간으로 보고 되감아 볼 수 있는 작업 그래프가 펼쳐집니다. 그리고 그 실행이 컨텍스트를 얼마나 아껴 썼는지 점수로 매긴 뒤, **거기서 멈추지 않습니다** — 짚어낸 낭비를 **`AGENTS.md`에 직접 고쳐 써넣어**, 실제 OMO 헤비 런에서 효율 점수를 **80 → 99로 끌어올리고 토큰을 44% 줄였습니다.** 전부 로컬에서, **API 키 없이 `npx` 한 줄로.**
+
+**[Claude Code](https://www.claude.com/product/claude-code)와 [OpenCode](https://opencode.ai) 모두에서 동작합니다** — 같은 레코더, 같은 맵, 같은 효율 점수. 둘 중 하나만, 혹은 둘 다 한꺼번에 기록하세요.
 
 > *"트랜스크립트는 에이전트가 한 *말*이고, 블랙박스는 에이전트가 한 *일* — 그리고 그 *비용*이다."*
 
@@ -46,32 +49,43 @@ Agent-Blackbox는 **코딩 에이전트를 위한 로컬 우선(local-first) 플
 
 ## 빠른 시작
 
-**한 줄로 — 모든 OpenCode 세션을 기록** (Node 20+ 와 [OpenCode](https://opencode.ai) 필요):
+**한 줄로. Claude Code와 OpenCode 모두에서 동작** (Node 20+ 필요):
 
 ```bash
+# Claude Code 기록 — 설치할 게 없습니다; 데몬이 CLI가 이미 쓰고 있는
+# 세션 트랜스크립트(~/.claude/projects/)를 따라 읽습니다
+npx @taewooopark/agent-blackbox up --host claude-code
+
+# …또는 OpenCode 기록 (레코더를 OpenCode의 글로벌 플러그인 폴더에 설치)
 npx @taewooopark/agent-blackbox up
+
+# …또는 두 호스트를 한꺼번에, 하나의 대시보드로 기록
+npx @taewooopark/agent-blackbox up --host all
 ```
 
-이 명령이 레코더를 OpenCode의 **글로벌** 플러그인 폴더(`~/.config/opencode/plugins/`)에 설치하고, 데몬을 시작하고, **대시보드를 엽니다**(`http://127.0.0.1:5173/`; `--no-open`으로 끄기). 이제 평소 쓰던 그대로 OpenCode를 켜면 맵이 실시간으로 채워집니다:
+어느 쪽이든 데몬을 시작하고 **대시보드를 엽니다**(`http://127.0.0.1:5173/`; `--no-open`으로 끄기). 이제 평소 쓰던 그대로 에이전트를 켜면 맵이 실시간으로 채워집니다:
 
 ```bash
-opencode          # 아무 폴더에서 (터미널)
-# …또는 OpenCode 데스크톱 앱에서 아무 프로젝트나 열기
+claude            # Claude Code, 아무 폴더에서 — 설정 없이 그냥 실행
+opencode          # …또는 OpenCode (터미널이든 데스크톱 앱이든)
 ```
 
-프로젝트별 설정도, `--dir`도, 환경변수도 필요 없습니다 — 어느 세션·어느 폴더든, 앱까지. 기록을 멈추려면 `npx @taewooopark/agent-blackbox uninstall`.
+- **Claude Code는 설치가 전혀 필요 없습니다** — 데몬이 CLI가 이미 쓰는 JSONL 트랜스크립트를 따라 읽으므로, `claude`를 실행하는 순간 어느 폴더·어느 세션이든 기록됩니다. (`--optimize`를 붙이면 선택형 인-런 액추에이터 훅까지 설치됩니다.)
+- **OpenCode**는 레코더를 **글로벌** 플러그인 폴더(`~/.config/opencode/plugins/`)에 떨궈 기록합니다 — 어느 세션·어느 폴더든, 데스크톱 앱까지.
+
+기록은 언제든 `npx @taewooopark/agent-blackbox uninstall`로 멈출 수 있습니다.
 
 <details>
-<summary><b>한 프로젝트로만 한정하거나, 소스에서 실행</b></summary>
+<summary><b>OpenCode를 한 프로젝트로만 한정하거나, 소스에서 실행</b></summary>
 
 ```bash
-# 한 프로젝트만 기록 (레코더가 글로벌 대신 <dir>/.opencode 에 설치됨)
+# OpenCode 프로젝트 하나만 기록 (레코더가 글로벌 대신 <dir>/.opencode 에 설치됨)
 npx @taewooopark/agent-blackbox up --project /path/to/your/project
 
 # 소스에서 (개발/기여용)
 git clone https://github.com/TaewoooPark/Agent-Blackbox
 cd Agent-Blackbox && npm install && npm run build:cli
-node packages/cli/dist/cli.js up
+node packages/cli/dist/cli.js up --host claude-code   # 또는: up | up --host all
 ```
 </details>
 
@@ -80,22 +94,22 @@ node packages/cli/dist/cli.js up
 ### 레시피
 
 ```bash
-# 그냥 관찰 — 한 번 켜두고 OpenCode를 아무 데서나 사용 (터미널이든 앱이든)
-npx @taewooopark/agent-blackbox up
-opencode   # 아무 폴더에서; 대시보드가 실시간으로 채워짐
+# 그냥 Claude Code 관찰 — 한 번 켜두고 `claude`를 아무 데서나 사용
+npx @taewooopark/agent-blackbox up --host claude-code
+claude   # 아무 폴더에서; 대시보드가 실시간으로 채워짐
 
-# 최적화 — 무료/로컬 모델로 맞춤 수정안을 받아 우측 레일에서 확인
-npx @taewooopark/agent-blackbox up --suggest ollama --suggest-model qwen2.5-coder
+# 두 호스트를 함께 기록하며, 무료/로컬 모델로 맞춤 수정안까지
+npx @taewooopark/agent-blackbox up --host all --suggest ollama --suggest-model qwen2.5-coder
 
-# 멀티 에이전트 — 평소 세션에서 위임하면 각 서브에이전트가 자기 레인으로 분기
-opencode "탐색·구현·테스트를 서브에이전트에 위임한 뒤 요약해줘."
+# 멀티 에이전트 — 평소 세션에서 그냥 위임하면 각 서브에이전트가 자기 레인으로 분기
+claude "탐색·구현·테스트를 서브에이전트에 위임한 뒤 요약해줘."
 
 # 이어가기 — 실행을 열고 Handoff 클릭, Markdown을 다음 세션에 붙여넣기
 
-# 포트 변경 (47831/5173이 점유된 경우 — 레코더가 자동으로 맞춰 재스탬프됨)
-npx @taewooopark/agent-blackbox up --port 48000 --ui-port 4000
+# 47831/5173이 점유됐다면 다른 포트 선택 (레코더가 자동으로 맞춰 재스탬프됨)
+npx @taewooopark/agent-blackbox up --host claude-code --port 48000 --ui-port 4000
 
-# 기록 중지 (글로벌 레코더 제거)
+# 기록 중지 (글로벌 레코더 + Claude Code 훅 제거)
 npx @taewooopark/agent-blackbox uninstall
 ```
 
@@ -264,14 +278,15 @@ opencode "ultrawork: refactor the auth module and add tests"   # OMO + 레코더
 ## 동작 방식
 
 ```
- opencode run ──hooks──▶  recorder plugin  ──events──▶   daemon   ──/stream──▶  dashboard
-                          redact + normalize            NDJSON 로그           실시간 세션 맵
-                          (호스트 어댑터)                + 그래프/리플레이      + 효율
-                                                        + 효율 리포트         (이 UI)
+ Claude Code transcripts (tailed) ─┐
+ OpenCode hooks → recorder plugin ─┴─▶ host adapter ─▶ daemon ─▶ dashboard
+                                       redact+normalize  NDJSON    live session map
+                                                         + graph   + efficiency
 ```
 
 - **`packages/core`** — 정규 `TraceEvent`, 워크플로 그래프 모델, redaction, 리플레이, audit, 핸드오프 생성, 컨텍스트 효율 엔진.
-- **`packages/opencode-adapter`** — 호스트 이벤트와 도구 호출을 정규·redact 이벤트(내용이 아닌 *크기*만 포함)로 바꿔 데몬에 best-effort 전송하는 얇은 OpenCode 플러그인.
+- **`packages/claude-code-adapter`** — Claude Code가 쓰는 JSONL 트랜스크립트(`~/.claude/projects/`)를 따라 읽어 정규·redact 이벤트로 정규화 — 플러그인도, 설치도 필요 없습니다. 선택형 훅이 인-런 액추에이터를 더합니다.
+- **`packages/opencode-adapter`** — 호스트 이벤트와 도구 호출을 정규·redact 이벤트(내용이 아닌 *크기*만 포함)로 바꿔 데몬에 best-effort로(재시도 포함) 전송하는 얇은 OpenCode 플러그인.
 - **`apps/daemon`** — 이벤트를 로컬 NDJSON 로그로 적재, 그래프 생성, 임의 지점 리플레이, 효율 리포트 계산, 제안 라우팅, WebSocket 실시간 스냅샷 푸시.
 - **`apps/dashboard`** — 오퍼레이터 콘솔: 실시간 세션 맵, 리플레이, 인스펙터, 효율 코파일럿, 핸드오프.
 
@@ -284,7 +299,7 @@ opencode "ultrawork: refactor the auth module and add tests"   # OMO + 레코더
 - **서술이 아니라 행동.** 모든 노드는 에이전트가 실제로 내보낸 이벤트 — 읽기, 수정, 명령과 종료코드, 위임 — 입니다.
 - **비용도 증거다.** 효율 점수와 모든 제안은 관측된 크기·토큰 스냅샷에서 나옵니다.
 - **로컬 우선, 키 불필요.** 트레이스는 머신에 남습니다. 프롬프트·비밀·파일 내용은 기본적으로 가려지고, 선택적 모델 제안도 로컬에서 돌며 가린 다이제스트만 받습니다.
-- **호스트 무관 코어.** 정규 이벤트+그래프 코어에 얇은 어댑터 — 같은 블랙박스가 어떤 하네스 뒤에도. OpenCode가 첫 번째.
+- **호스트 무관 코어.** 정규 이벤트+그래프 코어에 얇은 어댑터 — 같은 블랙박스가 어떤 하네스 뒤에도. **Claude Code와 OpenCode**가 첫 두 호스트.
 
 ---
 

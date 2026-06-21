@@ -20,6 +20,7 @@
   <img src="https://img.shields.io/badge/Node.js-000000?style=flat-square&logo=nodedotjs&logoColor=white&labelColor=000000" alt="Node.js">
   <img src="https://img.shields.io/badge/Vitest-000000?style=flat-square&logo=vitest&logoColor=white&labelColor=000000" alt="Vitest">
   &nbsp;
+  <img src="https://img.shields.io/badge/Claude%20Code-000000?style=flat-square&labelColor=000000&color=000000" alt="Claude Code">
   <img src="https://img.shields.io/badge/OpenCode-000000?style=flat-square&labelColor=000000&color=000000" alt="OpenCode">
   <img src="https://img.shields.io/badge/Local--first-000000?style=flat-square&labelColor=000000&color=000000" alt="Local-first">
   <img src="https://img.shields.io/badge/No%20API%20key-000000?style=flat-square&labelColor=000000&color=000000" alt="No API key">
@@ -27,6 +28,8 @@
 </p>
 
 Agent-Blackbox is a **local-first flight recorder and context-efficiency profiler for coding agents.** It turns every agent run into a **live, replayable operational graph** — what the agent read, changed, ran, decided, delegated, blocked on, and verified — reconstructed from observed events, not from the agent's own summary. Then it **measures how economically that run used its context window** and tells you, concretely, how to make the next one cheaper and faster.
+
+**Works with [Claude Code](https://www.claude.com/product/claude-code) and [OpenCode](https://opencode.ai)** — same recorder, same map, same efficiency score. Record either, or both at once.
 
 > *"The transcript is what the agent said. The black box is what it did — and what it cost."*
 
@@ -50,32 +53,43 @@ You can't just **ask** the agent what a task cost. A 2026 study of eight frontie
 
 ## Quickstart
 
-**One command — records every OpenCode session** (needs Node 20+ and [OpenCode](https://opencode.ai)):
+**One command. Works with Claude Code and OpenCode** (needs Node 20+):
 
 ```bash
+# Record Claude Code — nothing to install; the daemon tails the session
+# transcripts it already writes (~/.claude/projects/)
+npx @taewooopark/agent-blackbox up --host claude-code
+
+# …or record OpenCode (installs the recorder into OpenCode's global plugin dir)
 npx @taewooopark/agent-blackbox up
+
+# …or record both hosts at once, into one dashboard
+npx @taewooopark/agent-blackbox up --host all
 ```
 
-That installs the recorder into OpenCode's **global** plugin directory (`~/.config/opencode/plugins/`), starts the daemon, and **opens the dashboard** (`http://127.0.0.1:5173/`; add `--no-open` to skip). Now use OpenCode exactly the way you already do — the map fills in live:
+Either way it starts the daemon and **opens the dashboard** (`http://127.0.0.1:5173/`; add `--no-open` to skip). Now use the agent exactly the way you already do — the map fills in live:
 
 ```bash
-opencode          # in any folder (terminal)
-# …or open any project in the OpenCode desktop app
+claude            # Claude Code, in any folder — zero setup, just run it
+opencode          # …or OpenCode (terminal or the desktop app)
 ```
 
-No per-project setup, no `--dir`, no env var — any session, any folder, the app included. Stop recording any time with `npx @taewooopark/agent-blackbox uninstall`.
+- **Claude Code needs no install at all** — the daemon tails the JSONL transcripts the CLI already writes, so any folder, any session is recorded the moment you run `claude`. (Add `--optimize` to also install the opt-in in-run actuator hooks.)
+- **OpenCode** records via a recorder dropped into its **global** plugin directory (`~/.config/opencode/plugins/`) — any session, any folder, the desktop app included.
+
+Stop recording any time with `npx @taewooopark/agent-blackbox uninstall`.
 
 <details>
-<summary><b>Scope it to one project, or run from source</b></summary>
+<summary><b>Scope OpenCode to one project, or run from source</b></summary>
 
 ```bash
-# Record just one project (recorder lands in <dir>/.opencode instead of globally)
+# Record just one OpenCode project (recorder lands in <dir>/.opencode instead of globally)
 npx @taewooopark/agent-blackbox up --project /path/to/your/project
 
 # From source (development / contributing)
 git clone https://github.com/TaewoooPark/Agent-Blackbox
 cd Agent-Blackbox && npm install && npm run build:cli
-node packages/cli/dist/cli.js up
+node packages/cli/dist/cli.js up --host claude-code   # or: up | up --host all
 ```
 </details>
 
@@ -84,22 +98,22 @@ The map assembles itself live. That's it.
 ### Recipes
 
 ```bash
-# Just watch — start it once, then use OpenCode anywhere (terminal or app)
-npx @taewooopark/agent-blackbox up
-opencode   # in any folder; the dashboard fills in live
+# Just watch Claude Code — start it once, then use `claude` anywhere
+npx @taewooopark/agent-blackbox up --host claude-code
+claude   # in any folder; the dashboard fills in live
 
-# Optimize: route tailored fixes to a free/local model, then read the right rail
-npx @taewooopark/agent-blackbox up --suggest ollama --suggest-model qwen2.5-coder
+# Record both hosts together, with tailored fixes from a free/local model
+npx @taewooopark/agent-blackbox up --host all --suggest ollama --suggest-model qwen2.5-coder
 
 # Multi-agent: just delegate in your normal session — each subagent forks into its own lane
-opencode "Delegate exploration, implementation, and tests to subagents, then summarize."
+claude "Delegate exploration, implementation, and tests to subagents, then summarize."
 
 # Resume elsewhere: open the run, click Handoff, copy the Markdown into the next session
 
 # Pick a different port if 47831/5173 are taken (the recorder is re-stamped to match)
-npx @taewooopark/agent-blackbox up --port 48000 --ui-port 4000
+npx @taewooopark/agent-blackbox up --host claude-code --port 48000 --ui-port 4000
 
-# Stop recording (removes the global recorder)
+# Stop recording (removes the global recorder + any Claude Code hooks)
 npx @taewooopark/agent-blackbox uninstall
 ```
 
@@ -307,13 +321,14 @@ When you need to continue the run elsewhere — a teammate, the next agent, or t
 ## How it works
 
 ```
- opencode run ──hooks──▶  recorder plugin  ──events──▶   daemon   ──/stream──▶  dashboard
-                          redact + normalize            NDJSON log            live session map
-                          (host adapter)                + graph/replay        + efficiency
-                                                        + efficiency report   (this UI)
+ Claude Code transcripts (tailed) ─┐
+ OpenCode hooks → recorder plugin ─┴─▶ host adapter ─▶ daemon ─▶ dashboard
+                                       redact+normalize  NDJSON    live session map
+                                                         + graph   + efficiency
 ```
 
 - **`packages/core`** — canonical `TraceEvent`s, the workflow graph model, redaction, replay, audit, handoff generation, and the context-efficiency engine.
+- **`packages/claude-code-adapter`** — tails the JSONL transcripts Claude Code writes (`~/.claude/projects/`) and normalizes them into canonical, redacted events — no plugin, no install. Optional hooks add the in-run actuator.
 - **`packages/opencode-adapter`** — a thin OpenCode plugin that turns host events and tool calls into canonical, redacted events (with content *sizes*, never content) and ships them to the daemon, best-effort with retries.
 - **`apps/daemon`** — ingests events to a local NDJSON log, materializes the graph, replays it to any point, computes the efficiency report, routes suggestions, and pushes live snapshots over WebSocket.
 - **`apps/dashboard`** — the operator console: live session map, replay, inspector, efficiency co-pilot, and handoff.
@@ -327,7 +342,7 @@ When you need to continue the run elsewhere — a teammate, the next agent, or t
 - **Behavior, not narration.** Every node is an event the agent actually emitted — a read, an edit, a command and its exit code, a delegation — not a sentence it wrote about itself.
 - **Cost is evidence too.** The efficiency score and every suggestion come from observed sizes and token snapshots, not from the model's account of its own thrift.
 - **Local-first, no key.** Traces stay on your machine. Raw prompts, secrets, and file contents are redacted by default; even the optional model suggestions run locally and receive only a redacted digest.
-- **Host-agnostic core.** A canonical event + graph core with thin host adapters, so the same black box can sit behind any agent harness — OpenCode is the first.
+- **Host-agnostic core.** A canonical event + graph core with thin host adapters, so the same black box can sit behind any agent harness — **Claude Code and OpenCode** are the first two.
 
 ---
 
@@ -354,9 +369,10 @@ apps/
   daemon/             local ingest, replay, efficiency, suggestion routing, static dashboard, websocket
   dashboard/          operator console (session map, replay, inspector, efficiency, handoff)
 packages/
-  core/               canonical events, graph model, redaction, replay, audit, handoff, efficiency
-  storage/            NDJSON persistence
-  opencode-adapter/   OpenCode plugin / SDK bridge
+  core/                 canonical events, graph model, redaction, replay, audit, handoff, efficiency
+  storage/              NDJSON persistence
+  claude-code-adapter/  Claude Code transcript tailer + in-run actuator hooks
+  opencode-adapter/     OpenCode plugin / SDK bridge
 ```
 
 ## Development
@@ -371,7 +387,7 @@ npm run build
 
 ## Roadmap
 
-- More host adapters beyond OpenCode (Claude Code, PI, and other harnesses) on the same canonical core.
+- More host adapters (Codex, PI, and other harnesses) on the same canonical core — **Claude Code and OpenCode** ship today.
 - Deeper audit: claim-vs-evidence verification and risky-command surfacing.
 - Cross-run efficiency trends and fleet-wide views.
 
