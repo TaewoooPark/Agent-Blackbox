@@ -12,9 +12,15 @@ const READ_TOOLS = new Set(["read"]);
 const EDIT_TOOLS = new Set(["edit", "multiedit", "applypatch", "apply_patch", "notebookedit"]);
 const WRITE_TOOLS = new Set(["write"]);
 const BASH_TOOLS = new Set(["bash", "shell"]);
-const SEARCH_TOOLS = new Set(["grep", "glob", "ls"]);
+const SEARCH_TOOLS = new Set(["grep", "glob", "ls", "websearch"]);
 const SUBAGENT_TOOLS = new Set(["task", "agent"]);
 const TODO_TOOLS = new Set(["todowrite", "taskcreate", "taskupdate", "taskstop"]);
+// A Workflow / ultracode run fans out to a fleet of agents — model it as a spawn.
+const WORKFLOW_TOOLS = new Set(["workflow"]);
+// Skill = a slash-command invocation.
+const COMMAND_TOOLS = new Set(["skill"]);
+// Agent-team coordination (FleetView). Rare; surfaced as host events for visibility.
+const TEAM_TOOLS = new Set(["sendmessage", "teamcreate", "teamdelete", "remotetrigger", "pushnotification"]);
 
 /**
  * Stateful per-file normalizer. A Claude Code transcript pairs a tool call
@@ -135,8 +141,30 @@ function consumeUser(
 
 // --- system line ------------------------------------------------------------
 function consumeSystem(line: UnknownRecord, ctx: ClaudeNormalizerContext): TraceEventInput[] {
-  if (readString(line, ["subtype"]) === "compact_boundary") {
+  const subtype = readString(line, ["subtype"]);
+  if (subtype === "compact_boundary") {
     return [mkInput(line, ctx, { kind: "context_compacted", summary: "Context compacted", payload: {} })];
+  }
+  if (subtype === "api_error") {
+    return [mkInput(line, ctx, { kind: "host_event", summary: "API error", payload: { event: "api_error", ...(readString(line, ["level"]) ? { level: readString(line, ["level"]) } : {}) } })];
+  }
+  if (subtype === "local_command") {
+    return [mkInput(line, ctx, { kind: "command_run", summary: "Local command", payload: { event: "local_command" } })];
+  }
+  if (subtype === "stop_hook_summary") {
+    // Hooks fire constantly; only surface the ones that actually intervened — a hook
+    // that blocked continuation or errored is operationally meaningful, the rest noise.
+    const prevented = line.preventedContinuation === true;
+    const errors = asArray(line.hookErrors);
+    if (prevented || errors.length > 0) {
+      return [
+        mkInput(line, ctx, {
+          kind: "host_event",
+          summary: prevented ? "Hook blocked continuation" : "Hook error",
+          payload: { event: "hook", preventedContinuation: prevented, hookErrors: errors.length }
+        })
+      ];
+    }
   }
   return [];
 }
@@ -225,6 +253,34 @@ function deriveObserved(
     ev.agentId = agentId;
     ev.agentRole = "subagent";
     return ev;
+  }
+
+  if (WORKFLOW_TOOLS.has(lname)) {
+    // A Workflow (incl. ultracode) orchestrates a fleet of agents elsewhere — record
+    // it as a delegation lane labelled by the workflow, keyed by its run id.
+    const wfName = readString(tur, ["workflowName"]) ?? "workflow";
+    const wfRun = readString(tur, ["runId"]);
+    const ev = mkInput(line, ctx, {
+      kind: "subagent_spawned",
+      summary: `Ran workflow ${wfName}`,
+      payload: {
+        agent: `workflow:${wfName}`,
+        ...(wfRun ? { agentId: wfRun } : {}),
+        ...(readString(tur, ["summary"]) ? { description: readString(tur, ["summary"]) } : {})
+      }
+    });
+    ev.agentId = wfRun ?? `workflow:${wfName}`;
+    ev.agentRole = "subagent";
+    return ev;
+  }
+
+  if (COMMAND_TOOLS.has(lname)) {
+    const cmd = readString(input, ["skill", "command"]) ?? readString(tur, ["commandName"]) ?? "command";
+    return mkInput(line, ctx, { kind: "command_run", summary: `/${cmd}`, payload: { command: cmd } });
+  }
+
+  if (TEAM_TOOLS.has(lname)) {
+    return mkInput(line, ctx, { kind: "host_event", summary: `Team: ${name}`, payload: { tool: name, event: "team" } });
   }
 
   if (TODO_TOOLS.has(lname)) {

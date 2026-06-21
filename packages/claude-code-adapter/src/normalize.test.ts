@@ -113,4 +113,40 @@ describe("createClaudeNormalizer", () => {
     expect(read?.agentId).toBe("abc123"); // forked subagent lane
     expect(read?.agentRole).toBe("subagent");
   });
+
+  it("maps a Workflow run to a workflow delegation lane", () => {
+    const n = createClaudeNormalizer(ctx());
+    n.consume(assistant([{ type: "tool_use", id: "wf1", name: "Workflow", input: { script: "export const meta={}" } }]));
+    const events = n.consume(userResult("wf1", "ok", { status: "completed", workflowName: "review-changes", runId: "wf_abc123" }));
+    const ev = events.find((e) => e.kind === "subagent_spawned");
+    expect(ev?.agentId).toBe("wf_abc123");
+    expect(ev?.agentRole).toBe("subagent");
+    expect(ev?.payload).toMatchObject({ agent: "workflow:review-changes" });
+  });
+
+  it("maps a Skill invocation to command_run (slash command)", () => {
+    const n = createClaudeNormalizer(ctx());
+    n.consume(assistant([{ type: "tool_use", id: "sk1", name: "Skill", input: { skill: "frontend-design", args: "go" } }]));
+    const events = n.consume(userResult("sk1", "ok", { success: true, commandName: "frontend-design" }));
+    const ev = events.find((e) => e.kind === "command_run");
+    expect(ev?.summary).toBe("/frontend-design");
+    expect(ev?.payload).toMatchObject({ command: "frontend-design" });
+  });
+
+  it("maps WebSearch to a search event", () => {
+    const n = createClaudeNormalizer(ctx());
+    n.consume(assistant([{ type: "tool_use", id: "ws1", name: "WebSearch", input: { query: "vitest mock" } }]));
+    const events = n.consume(userResult("ws1", "ok", { query: "vitest mock", results: [] }));
+    expect(events.find((e) => e.kind === "search")?.payload).toMatchObject({ query: "vitest mock" });
+  });
+
+  it("surfaces system api_error and local_command, and only intervening hooks", () => {
+    const n = createClaudeNormalizer(ctx());
+    expect(n.consume({ type: "system", subtype: "api_error", level: "error", sessionId: "S1" })[0]?.kind).toBe("host_event");
+    expect(n.consume({ type: "system", subtype: "local_command", sessionId: "S1" })[0]?.kind).toBe("command_run");
+    const blocked = n.consume({ type: "system", subtype: "stop_hook_summary", preventedContinuation: true, hookErrors: [], sessionId: "S1" });
+    expect(blocked[0]?.kind).toBe("host_event");
+    const quiet = n.consume({ type: "system", subtype: "stop_hook_summary", preventedContinuation: false, hookErrors: [], sessionId: "S1" });
+    expect(quiet).toHaveLength(0);
+  });
 });
