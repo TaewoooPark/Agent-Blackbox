@@ -1295,7 +1295,8 @@ function switchedAgentName(event: TraceEvent): string {
 
 function switchedModelName(event: TraceEvent): string {
   return (
-    stringPayloadPath(event, ["properties.model.id", "properties.model.modelID", "properties.modelID", "model.id"]) ??
+    // OpenCode nests model under properties.*; Claude Code puts it at payload.model.
+    stringPayloadPath(event, ["properties.model.id", "properties.model.modelID", "properties.modelID", "model.id", "model"]) ??
     "a model"
   );
 }

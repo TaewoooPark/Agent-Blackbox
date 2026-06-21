@@ -234,6 +234,15 @@ export function DashboardApp() {
   // The memory file the actuator will target for this run's host (Claude Code reads
   // CLAUDE.md, everyone else AGENTS.md) — keeps the side-panel hint honest.
   const memoryFile = runHost === "claude-code" ? "CLAUDE.md" : "AGENTS.md";
+  // The model this run is on (latest message carrying one) — surfaced as a chip so
+  // it's visible at a glance, like the host.
+  const runModel = useMemo(() => {
+    for (let i = visibleEvents.length - 1; i >= 0; i -= 1) {
+      const model = visibleEvents[i]?.payload?.model;
+      if (typeof model === "string" && model.length > 0 && model !== "<synthetic>") return model;
+    }
+    return null;
+  }, [visibleEvents]);
   const runStatus = useMemo(() => deriveRunStatus(visibleEvents), [visibleEvents]);
   const riskMomentCount = useMemo(() => workflowSteps.filter((step) => step.tone === "risk").length, [workflowSteps]);
   const handoffMarkdown = useMemo(
@@ -424,6 +433,7 @@ export function DashboardApp() {
             </select>
           ) : null}
           {runHost ? <span className="statusChip host">{hostDisplayName(runHost)}</span> : null}
+          {runModel ? <span className="statusChip model" title="Model">{runModel}</span> : null}
           <span className={`statusChip state state-${runStatus}`}>
             <span className="statusDot" aria-hidden="true" />
             {runStatus}
