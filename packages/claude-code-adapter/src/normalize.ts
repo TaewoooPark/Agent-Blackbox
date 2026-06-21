@@ -1,5 +1,6 @@
 import {
   redactJsonObject,
+  redactJsonValue,
   type JsonObject,
   type TraceEventInput
 } from "@agent-blackbox/core";
@@ -319,11 +320,16 @@ function mkInput(
   ctx: ClaudeNormalizerContext,
   partial: { kind: TraceEventInput["kind"]; summary: string; payload: Record<string, unknown> }
 ): TraceEventInput {
-  const redacted = redactJsonObject(sanitize(partial.payload), {
+  const redactOpts = {
     ...(ctx.homeDir ? { homeDir: ctx.homeDir } : {}),
     ...(ctx.projectDir ? { projectDir: ctx.projectDir } : {}),
     maxStringLength: 4000
-  });
+  };
+  const redacted = redactJsonObject(sanitize(partial.payload), redactOpts);
+  // The summary (and the lane label) embed file paths / commands, so redact them
+  // with the same rules as the payload — otherwise a home path or a secret in a
+  // command leaks into the persisted trace even though the payload is clean.
+  const summary = redactJsonValue(partial.summary, redactOpts).value;
   // A Claude Code transcript line ALWAYS carries the parent session id: a main
   // session's own id, and — crucially — a subagent's agent-<id>.jsonl carries the
   // PARENT session's id too. So runId = sessionId nests subagents under their
@@ -336,7 +342,7 @@ function mkInput(
     runId: sessionId,
     sessionId,
     kind: partial.kind,
-    summary: partial.summary,
+    summary,
     payload: redacted.value,
     redaction: { rawStored: ctx.rawStored ?? false, rulesApplied: redacted.rulesApplied, truncated: redacted.truncated }
   };
@@ -347,7 +353,7 @@ function mkInput(
   if (ctx.agent) {
     input.agentId = ctx.agent.agentId;
     input.agentRole = "subagent";
-    if (ctx.agent.label) input.agentLabel = ctx.agent.label;
+    if (ctx.agent.label) input.agentLabel = redactJsonValue(ctx.agent.label, redactOpts).value;
   }
   return input;
 }

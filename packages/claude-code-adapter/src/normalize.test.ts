@@ -81,6 +81,17 @@ describe("createClaudeNormalizer", () => {
     expect(bash?.payload).toMatchObject({ command: "npm test", exitCode: 1, outputChars: 6 });
   });
 
+  it("redacts the home dir in the summary and the lane label, not just the payload", () => {
+    const n = createClaudeNormalizer({ defaultSessionId: "S1", homeDir: "/Users/me", agent: { agentId: "abc" } });
+    n.consume({ type: "user", sessionId: "S1", message: { content: "Audit /Users/me/secret/app.ts for bugs" } });
+    n.consume(assistant([{ type: "tool_use", id: "b1", name: "Bash", input: { command: "cd /Users/me/proj && ls" } }]));
+    const events = n.consume(userResult("b1", "ok", { stdout: "" }));
+    const bash = events.find((e) => e.kind === "bash");
+    expect(bash?.summary).not.toContain("/Users/me");
+    expect(bash?.summary).toContain("~/proj");
+    expect(bash?.agentLabel).not.toContain("/Users/me"); // lane label redacted too
+  });
+
   it("maps Edit to file_edit and Write to file_created", () => {
     const n = createClaudeNormalizer(ctx());
     n.consume(assistant([{ type: "tool_use", id: "e1", name: "Edit", input: { file_path: "/proj/b.ts", new_string: "xyz" } }]));
