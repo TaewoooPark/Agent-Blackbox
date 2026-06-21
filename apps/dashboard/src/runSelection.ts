@@ -15,6 +15,7 @@ const heartbeatKinds = new Set<TraceEvent["kind"]>([
 
 type RunRank = {
   runId: string;
+  host: TraceEvent["host"];
   meaningfulStamp: number;
   anyStamp: number;
   lastIndex: number;
@@ -34,6 +35,7 @@ function rankRuns(events: TraceEvent[]): RunRank[] {
     const existing = runs.get(event.runId);
     const rank: RunRank = existing ?? {
       runId: event.runId,
+      host: event.host,
       meaningfulStamp: Number.NEGATIVE_INFINITY,
       anyStamp: Number.NEGATIVE_INFINITY,
       lastIndex: -1,
@@ -79,6 +81,8 @@ export function filterEventsForRun(events: TraceEvent[], runId: string | null): 
  * with the wall-clock of its latest event. Powers run navigation when one log
  * holds multiple sessions.
  */
-export function listRuns(events: TraceEvent[]): Array<{ runId: string; lastTs: string; eventCount: number }> {
-  return rankRuns(events).map(({ runId, lastTs, eventCount }) => ({ runId, lastTs, eventCount }));
+export function listRuns(
+  events: TraceEvent[]
+): Array<{ runId: string; host: TraceEvent["host"]; lastTs: string; eventCount: number }> {
+  return rankRuns(events).map(({ runId, host, lastTs, eventCount }) => ({ runId, host, lastTs, eventCount }));
 }
