@@ -73,8 +73,14 @@ export async function startTraceDaemon(options: TraceDaemonOptions): Promise<Run
     }
     streamServer.handleUpgrade(request, socket, head, (client) => {
       clients.add(client);
-      client.on("close", () => {
-        clients.delete(client);
+      const drop = () => clients.delete(client);
+      client.on("close", drop);
+      // ws emits "error" with no default listener, so an unhandled socket error
+      // (protocol fault, send-after-close) would throw and crash the long-lived
+      // daemon. Consume it and reap the client.
+      client.on("error", () => {
+        drop();
+        client.terminate();
       });
       void sendSnapshot(client, eventsFile);
     });

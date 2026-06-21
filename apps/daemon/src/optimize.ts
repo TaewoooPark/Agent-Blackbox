@@ -6,7 +6,7 @@ import {
   upsertManagedBlock,
   type TraceEvent
 } from "@agent-blackbox/core";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { loadTraceEvents } from "./server.js";
 
@@ -116,22 +116,27 @@ async function computeOptimize(options: {
     if (!block || !report || score === null || runId === null) {
       return { mode: "apply", action: "This run is clean — nothing to apply.", score, baselineScore: null, block: null, agentsMdPath, changed: false };
     }
-    const prior = await readMaybe(agentsMdPath);
-    const next = upsertManagedBlock(prior ?? "", block);
-    // Skip a redundant re-apply: when the managed block is already present and
-    // byte-identical, don't churn AGENTS.md's mtime or reset the saved baseline.
-    if (prior === null || next !== prior) {
-      await writeFile(agentsMdPath, next, "utf8");
-      await writeState(statePath, {
-        runId: runId ?? "",
-        baselineScore: score,
-        baselineLatestTs: latestTs,
-        baselineFlagged: flaggedIds(report),
-        fileExisted: prior !== null,
-        appliedAt: new Date().toISOString(),
-        memoryFile: memoryFileName
-      });
-    }
+    // Serialize the whole read-modify-write per file so a concurrent apply/revert
+    // can't interleave and clobber (or drop) each other's edits to AGENTS.md.
+    const { prior, next } = await serializeWrite(agentsMdPath, async () => {
+      const prior = await readMaybe(agentsMdPath);
+      const next = upsertManagedBlock(prior ?? "", block);
+      // Skip a redundant re-apply: when the managed block is already present and
+      // byte-identical, don't churn AGENTS.md's mtime or reset the saved baseline.
+      if (prior === null || next !== prior) {
+        await writeFileAtomic(agentsMdPath, next);
+        await writeState(statePath, {
+          runId: runId ?? "",
+          baselineScore: score,
+          baselineLatestTs: latestTs,
+          baselineFlagged: flaggedIds(report),
+          fileExisted: prior !== null,
+          appliedAt: new Date().toISOString(),
+          memoryFile: memoryFileName
+        });
+      }
+      return { prior, next };
+    });
     return {
       mode: "apply",
       action:
@@ -226,16 +231,18 @@ async function revert(
 // Roll back by stripping ONLY our managed block, preserving any edits made to the
 // rest of AGENTS.md since apply. If that empties a file we created, delete it.
 async function restore(agentsMdPath: string, fileExisted: boolean): Promise<boolean> {
-  const current = await readMaybe(agentsMdPath);
-  if (current === null) return false;
-  const next = removeManagedBlock(current);
-  if (next === current) return false;
-  if (next.trim() === "" && !fileExisted) {
-    await rm(agentsMdPath, { force: true });
+  return serializeWrite(agentsMdPath, async () => {
+    const current = await readMaybe(agentsMdPath);
+    if (current === null) return false;
+    const next = removeManagedBlock(current);
+    if (next === current) return false;
+    if (next.trim() === "" && !fileExisted) {
+      await rm(agentsMdPath, { force: true });
+      return true;
+    }
+    await writeFileAtomic(agentsMdPath, next);
     return true;
-  }
-  await writeFile(agentsMdPath, next, "utf8");
-  return true;
+  });
 }
 
 function latestRun(events: TraceEvent[]): { runId: string | null; events: TraceEvent[] } {
@@ -290,6 +297,26 @@ async function readState(path: string): Promise<OptimizeState | null> {
 }
 
 async function writeState(path: string, state: OptimizeState): Promise<void> {
+  await writeFileAtomic(path, `${JSON.stringify(state, null, 2)}\n`);
+}
+
+// Crash-safe write: a kill/power-loss/ENOSPC mid-write leaves the original intact
+// (the temp file is incomplete, the rename never runs) instead of truncating a file
+// that legitimately holds the user's own notes above our managed block.
+async function writeFileAtomic(path: string, content: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  const tmp = `${path}.${process.pid}.tmp`;
+  await writeFile(tmp, content, "utf8");
+  await rename(tmp, path);
+}
+
+// Serialize write operations per path via a promise chain (mirrors storage's
+// appendTraceEvent) so concurrent apply/revert read-modify-writes can't interleave.
+const writeChains = new Map<string, Promise<unknown>>();
+function serializeWrite<T>(key: string, run: () => Promise<T>): Promise<T> {
+  const prev = writeChains.get(key) ?? Promise.resolve();
+  const result = prev.then(run, run);
+  // Keep the chain alive but swallow errors so one failure doesn't poison the next.
+  writeChains.set(key, result.then(() => undefined, () => undefined));
+  return result;
 }

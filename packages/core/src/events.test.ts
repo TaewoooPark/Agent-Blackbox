@@ -59,5 +59,23 @@ describe("trace events", () => {
     expect(result.errors).toContain("ts must be a non-empty string");
     expect(() => assertTraceEvent({ id: "x" })).toThrow("Invalid trace event");
   });
+
+  it("type-checks optional identity/lane fields a POSTed event could forge", () => {
+    const base = createTraceEvent(1, {
+      host: "opencode",
+      runId: "run-1",
+      sessionId: "session-1",
+      kind: "tool_call",
+      payload: { tool: "bash" }
+    });
+    // The graph branches on agentRole and reparents on parentSessionId, so a forged
+    // non-enum role or non-string id must be rejected at the gate.
+    expect(validateTraceEvent({ ...base, agentRole: "root" }).ok).toBe(false);
+    expect(validateTraceEvent({ ...base, parentSessionId: 42 }).ok).toBe(false);
+    expect(validateTraceEvent({ ...base, agentId: { evil: true } }).ok).toBe(false);
+    // Valid optional fields, and their absence, both pass.
+    expect(validateTraceEvent({ ...base, agentRole: "subagent", parentSessionId: "s0", agentLabel: "build" }).ok).toBe(true);
+    expect(validateTraceEvent(base).ok).toBe(true);
+  });
 });
 

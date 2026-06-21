@@ -1,5 +1,5 @@
 import { createTraceEvent, type TraceEvent } from "@agent-blackbox/core";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -142,6 +142,20 @@ describe("optimize (AGENTS.md efficiency memory)", () => {
     } finally {
       await rm(projectRoot, { recursive: true, force: true });
     }
+  });
+
+  it("writes AGENTS.md atomically (temp + rename) — preserves the prefix and leaves no temp file", async () => {
+    await seed(wasteful("run-a", "2026-06-01T00:00:00.000Z"));
+    const agentsMd = join(dir, "AGENTS.md");
+    const prefix = "# Project\n\nUser notes the prompt cache depends on.\n";
+    await writeFile(agentsMd, prefix, "utf8");
+
+    await runOptimize({ projectDir: dir, mode: "apply" });
+    const after = await readFile(agentsMd, "utf8");
+    expect(after.startsWith(prefix.trimEnd())).toBe(true); // user content above the block intact
+    expect(after).toContain("agent-blackbox:efficiency:start");
+    // The rename must have completed — no orphaned .tmp scratch file left behind.
+    expect((await readdir(dir)).some((e) => e.endsWith(".tmp"))).toBe(false);
   });
 
   it("ignores a non-absolute (untrusted) cwd and falls back to projectDir", async () => {

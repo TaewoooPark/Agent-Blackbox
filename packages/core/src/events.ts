@@ -202,6 +202,15 @@ export function validateTraceEvent(event: unknown): EventValidationResult {
   if (event.cwd !== undefined && typeof event.cwd !== "string") {
     errors.push("cwd must be a string when present");
   }
+  // Optional identity/lane fields are trusted by the graph layer (it branches on
+  // agentRole and reparents on parentSessionId), so type-check them at the gate —
+  // a POSTed event must not be able to forge a non-enum role or a non-string id.
+  optionalEnum(event, "agentRole", agentRoles, errors);
+  optionalString(event, "agentId", errors);
+  optionalString(event, "agentLabel", errors);
+  optionalString(event, "parentSessionId", errors);
+  optionalString(event, "turnId", errors);
+  optionalString(event, "summary", errors);
   requireEnum(event, "kind", traceEventKinds, errors);
   requireEnum(event, "sensitivity", dataSensitivities, errors);
   if (!isRecord(event.payload)) {
@@ -260,6 +269,23 @@ function requireEnum<T extends readonly string[]>(
 ): void {
   if (typeof value[key] !== "string" || !allowed.includes(value[key] as T[number])) {
     errors.push(`${key} must be one of ${allowed.join(", ")}`);
+  }
+}
+
+function optionalString(value: Record<string, unknown>, key: string, errors: string[]): void {
+  if (value[key] !== undefined && typeof value[key] !== "string") {
+    errors.push(`${key} must be a string when present`);
+  }
+}
+
+function optionalEnum<T extends readonly string[]>(
+  value: Record<string, unknown>,
+  key: string,
+  allowed: T,
+  errors: string[]
+): void {
+  if (value[key] !== undefined && (typeof value[key] !== "string" || !allowed.includes(value[key] as T[number]))) {
+    errors.push(`${key} must be one of ${allowed.join(", ")} when present`);
   }
 }
 
