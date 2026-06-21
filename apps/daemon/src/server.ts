@@ -60,8 +60,9 @@ export async function startTraceDaemon(options: TraceDaemonOptions): Promise<Run
   const eventsFile = options.eventsFile ?? join(options.projectDir, ".agent-blackbox", "events.ndjson");
   const suggestConfig: SuggestionConfig = options.suggest ?? { mode: "auto" };
   const clients = new Set<WebSocket>();
+  const scheduleBroadcast = makeBroadcastScheduler(clients, eventsFile);
   const server = createServer((request, response) => {
-    void handleRequest(request, response, eventsFile, clients, suggestConfig, options.projectDir);
+    void handleRequest(request, response, eventsFile, clients, suggestConfig, options.projectDir, scheduleBroadcast);
   });
   const streamServer = new WebSocketServer({ noServer: true });
   server.on("upgrade", (request, socket, head) => {
@@ -95,7 +96,7 @@ export async function startTraceDaemon(options: TraceDaemonOptions): Promise<Run
     ingest: async (event: TraceEvent) => {
       if (!validateTraceEvent(event).ok) return;
       await appendTraceEvent(eventsFile, event);
-      void broadcastSnapshot(clients, eventsFile);
+      scheduleBroadcast();
     },
     close: () =>
       new Promise<void>((resolve, reject) => {
@@ -205,7 +206,8 @@ async function handleRequest(
   eventsFile: string,
   clients: Set<WebSocket>,
   suggestConfig: SuggestionConfig,
-  projectDir: string
+  projectDir: string,
+  scheduleBroadcast: () => void
 ): Promise<void> {
   try {
     applyCors(request, response);
@@ -298,7 +300,7 @@ async function handleRequest(
         return;
       }
       await appendTraceEvent(eventsFile, body as TraceEvent);
-      void broadcastSnapshot(clients, eventsFile);
+      scheduleBroadcast();
       sendJson(response, 202, { ok: true, data: { accepted: true, id: (body as TraceEvent).id } });
       return;
     }
@@ -316,6 +318,21 @@ async function broadcastSnapshot(clients: Set<WebSocket>, eventsFile: string): P
     return;
   }
   await Promise.allSettled([...clients].map((client) => sendSnapshot(client, eventsFile)));
+}
+
+// Coalesce rapid broadcasts (the tailer can ingest many events per poll tick, each
+// otherwise rebuilding the whole snapshot) into at most one per `delayMs`, so the
+// live view stays responsive regardless of ingest rate.
+function makeBroadcastScheduler(clients: Set<WebSocket>, eventsFile: string, delayMs = 150): () => void {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  return () => {
+    if (timer) return;
+    timer = setTimeout(() => {
+      timer = null;
+      void broadcastSnapshot(clients, eventsFile);
+    }, delayMs);
+    if (typeof timer.unref === "function") timer.unref();
+  };
 }
 
 async function sendSnapshot(client: WebSocket, eventsFile: string): Promise<void> {
