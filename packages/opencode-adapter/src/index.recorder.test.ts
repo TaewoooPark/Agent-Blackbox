@@ -30,6 +30,34 @@ describe("OpenCode recorder hooks", () => {
     expect(events[2]?.payload.path).toBe("README.md");
   });
 
+  it("stamps the project cwd on every event (so the actuator can target it)", async () => {
+    const events: TraceEvent[] = [];
+    const recorder = await createOpenCodeRecorder(
+      { directory: "/repo/my-app" },
+      { runId: "run-cwd", sink: { async write(event) { events.push(event); } } }
+    );
+    await recorder.event({ event: { type: "session.created", sessionID: "s" } });
+    expect(events[0]?.cwd).toBe("/repo/my-app");
+  });
+
+  it("no-ops entirely when AGENT_BLACKBOX_DISABLE=1 (daemon-spawned runs aren't recorded)", async () => {
+    const prev = process.env.AGENT_BLACKBOX_DISABLE;
+    process.env.AGENT_BLACKBOX_DISABLE = "1";
+    try {
+      const events: TraceEvent[] = [];
+      const recorder = await createOpenCodeRecorder(
+        { directory: "/repo" },
+        { runId: "run-disabled", sink: { async write(event) { events.push(event); } } }
+      );
+      await recorder.event({ event: { type: "session.created", sessionID: "s" } });
+      await recorder["tool.execute.after"]({ tool: "read", sessionID: "s", args: { filePath: "a.ts" } }, { metadata: {} });
+      expect(events).toEqual([]);
+    } finally {
+      if (prev === undefined) delete process.env.AGENT_BLACKBOX_DISABLE;
+      else process.env.AGENT_BLACKBOX_DISABLE = prev;
+    }
+  });
+
   it("records the opencode run prompt as a workflow message", async () => {
     const events: TraceEvent[] = [];
     const recorder = await createOpenCodeRecorder(

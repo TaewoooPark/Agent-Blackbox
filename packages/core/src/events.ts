@@ -80,6 +80,10 @@ export type TraceEvent = {
   runId: string;
   sessionId: string;
   parentSessionId?: string;
+  // Absolute project directory the session ran in. Carried so the actuator can
+  // write AGENTS.md to the *run's* project even when one daemon records many
+  // projects (global recorder mode); absent on older traces.
+  cwd?: string;
   agentId?: string;
   agentRole?: AgentRole;
   turnId?: string;
@@ -97,6 +101,7 @@ export type TraceEventInput = {
   runId: string;
   sessionId: string;
   parentSessionId?: string;
+  cwd?: string;
   agentId?: string;
   agentRole?: AgentRole;
   turnId?: string;
@@ -143,6 +148,7 @@ export function createTraceEvent(seq: number, input: TraceEventInput): TraceEven
     runId: input.runId,
     sessionId: input.sessionId,
     ...(input.parentSessionId ? { parentSessionId: input.parentSessionId } : {}),
+    ...(input.cwd ? { cwd: input.cwd } : {}),
     ...(input.agentId ? { agentId: input.agentId } : {}),
     ...(input.agentRole ? { agentRole: input.agentRole } : {}),
     ...(input.turnId ? { turnId: input.turnId } : {}),
@@ -188,6 +194,9 @@ export function validateTraceEvent(event: unknown): EventValidationResult {
   requireEnum(event, "host", traceHosts, errors);
   requireString(event, "runId", errors);
   requireString(event, "sessionId", errors);
+  if (event.cwd !== undefined && typeof event.cwd !== "string") {
+    errors.push("cwd must be a string when present");
+  }
   requireEnum(event, "kind", traceEventKinds, errors);
   requireEnum(event, "sensitivity", dataSensitivities, errors);
   if (!isRecord(event.payload)) {

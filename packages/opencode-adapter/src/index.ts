@@ -32,10 +32,27 @@ export function describeOpenCodeAdapter(): string {
   return "Agent-Blackbox OpenCode adapter: thin host-event capture layer.";
 }
 
+// No-op hooks (same shape) for when recording is intentionally disabled.
+function noopRecorderHooks(): OpenCodeRecorderHooks {
+  return {
+    event: async () => {},
+    "tool.execute.before": async () => {},
+    "tool.execute.after": async () => {},
+    "experimental.session.compacting": async () => {},
+    "experimental.chat.system.transform": async () => {}
+  };
+}
+
 export async function createOpenCodeRecorder(
   context: OpenCodePluginContext,
   options: OpenCodeRecorderOptions = {}
 ): Promise<OpenCodeRecorderHooks> {
+  // A daemon-spawned `opencode run` (e.g. generating suggestions) would otherwise
+  // be captured by the globally-installed recorder, adding a trivial run that
+  // hijacks "latest run" and resets the shown score. Opt out via env.
+  if (process.env.AGENT_BLACKBOX_DISABLE === "1") {
+    return noopRecorderHooks();
+  }
   const resolved = resolveRecorderOptions(options);
   const directory = context.directory ?? process.cwd();
   const runId = resolved.runId ?? `opencode-${Date.now()}`;

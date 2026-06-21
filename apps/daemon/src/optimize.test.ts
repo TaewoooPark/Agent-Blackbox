@@ -121,4 +121,26 @@ describe("optimize (AGENTS.md efficiency memory)", () => {
     expect(final).toContain("User added this later."); // concurrent edit preserved
     expect(final).not.toContain("agent-blackbox:efficiency:start"); // our block removed
   });
+
+  it("targets the run's cwd, not the daemon's projectDir (global recorder mode)", async () => {
+    // Global mode: one daemon records many projects, so its projectDir is a shared
+    // data dir. Events carry cwd = the real project; the actuator must write there.
+    const projectRoot = await mkdtemp(join(tmpdir(), "abb-realproj-"));
+    try {
+      const events = wasteful("run-g", "2026-06-01T00:00:00.000Z").map((e) => ({ ...e, cwd: projectRoot }));
+      await seed(events); // `dir` is the daemon's data dir, distinct from projectRoot
+
+      const applied = await runOptimize({ projectDir: dir, mode: "apply" });
+      expect(applied.agentsMdPath).toBe(join(projectRoot, "AGENTS.md"));
+      expect(await readFile(join(projectRoot, "AGENTS.md"), "utf8")).toContain("agent-blackbox:efficiency:start");
+      // Nothing written to the daemon's own dir.
+      await expect(readFile(join(dir, "AGENTS.md"), "utf8")).rejects.toThrow();
+
+      // State + revert also resolve to the run's project.
+      await runOptimize({ projectDir: dir, mode: "revert" });
+      await expect(readFile(join(projectRoot, "AGENTS.md"), "utf8")).rejects.toThrow();
+    } finally {
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
 });

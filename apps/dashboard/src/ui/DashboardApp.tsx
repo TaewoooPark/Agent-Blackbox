@@ -196,10 +196,14 @@ export function DashboardApp() {
   const [aiState, setAiState] = useState<{ suggestions: Suggestion[]; provider: string } | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [showOptimize, setShowOptimize] = useState(false);
+  // Advice is generated on request, not on sight — the panel stays an observation
+  // (score + metrics) until you ask for fixes.
+  const [adviceRequested, setAdviceRequested] = useState(false);
 
-  // Stale AI advice shouldn't bleed across runs; deterministic suggestions track live.
+  // Stale advice shouldn't bleed across runs; the score/metrics track live.
   useEffect(() => {
     setAiState(null);
+    setAdviceRequested(false);
   }, [selectedRunId]);
 
   const requestAiSuggestions = async () => {
@@ -217,6 +221,11 @@ export function DashboardApp() {
     } finally {
       setAiLoading(false);
     }
+  };
+  // Reveal advice and kick off model-tailored suggestions, both only on request.
+  const requestAdvice = () => {
+    setAdviceRequested(true);
+    void requestAiSuggestions();
   };
   const sessionName = useMemo(() => sessionDisplayName(visibleEvents, graph?.runId), [visibleEvents, graph]);
   const runHost = visibleEvents[0]?.host ?? null;
@@ -558,6 +567,8 @@ export function DashboardApp() {
             usage={tokenTotals}
             aiProvider={aiState?.provider ?? null}
             aiLoading={aiLoading}
+            adviceRequested={adviceRequested}
+            onRequestAdvice={requestAdvice}
             onRequestAi={requestAiSuggestions}
             onOptimize={() => setShowOptimize(true)}
             onSelectMetric={(metric) =>
@@ -2162,6 +2173,8 @@ function ContextPanel({
   usage,
   aiProvider,
   aiLoading,
+  adviceRequested,
+  onRequestAdvice,
   onRequestAi,
   onOptimize,
   onSelectMetric
@@ -2171,6 +2184,8 @@ function ContextPanel({
   usage: TokenUsage;
   aiProvider: string | null;
   aiLoading: boolean;
+  adviceRequested: boolean;
+  onRequestAdvice: () => void;
   onRequestAi: () => void;
   onOptimize: () => void;
   onSelectMetric: (metric: EfficiencyMetric) => void;
@@ -2209,10 +2224,15 @@ function ContextPanel({
           <span className="optimizeButtonLabel">Optimize future runs</span>
           <span className="optimizeButtonHint">Write a reversible memory to AGENTS.md →</span>
         </button>
-        <button className="contextAiButton" type="button" onClick={onRequestAi} disabled={aiLoading || fixCount === 0}>
-          {aiLoading ? "Sharpening…" : aiProvider ? "Re-run suggestions" : "Sharpen advice with a model"}
+        <button
+          className="contextAiButton"
+          type="button"
+          onClick={adviceRequested ? onRequestAi : onRequestAdvice}
+          disabled={aiLoading || fixCount === 0}
+        >
+          {aiLoading ? "Sharpening…" : adviceRequested ? "Re-run suggestions" : "Generate advice"}
         </button>
-        {aiProvider ? (
+        {adviceRequested && aiProvider ? (
           <span className="contextAiNote">
             {aiProvider === "deterministic"
               ? "No free/local model reachable — showing rule-based tips. Configure --suggest."
@@ -2221,32 +2241,34 @@ function ContextPanel({
         ) : null}
       </div>
 
-      {topFixes.length > 0 ? (
-        <div className="contextTopFixes">
-          {topFixes.map((fix) => (
-            <button
-              className={`contextTopFix severity-${fix.severity}`}
-              key={fix.metricId}
-              type="button"
-              onClick={() => {
-                const metric = report.metrics.find((m) => m.id === fix.metricId);
-                if (metric && metric.evidenceEventIds.length > 0) onSelectMetric(metric);
-                setExpandedId(fix.metricId);
-              }}
-            >
-              <span className="contextTopFixTitle">{fix.title}</span>
-              <span className="contextTopFixAction">{fix.action}</span>
-              <span className="contextSuggestionSource">{fix.source === "llm" ? "AI" : "rule"}</span>
-            </button>
-          ))}
-        </div>
-      ) : (
-        <p className="contextAllClear">No waste detected — this run used its context economically.</p>
-      )}
+      {adviceRequested ? (
+        topFixes.length > 0 ? (
+          <div className="contextTopFixes">
+            {topFixes.map((fix) => (
+              <button
+                className={`contextTopFix severity-${fix.severity}`}
+                key={fix.metricId}
+                type="button"
+                onClick={() => {
+                  const metric = report.metrics.find((m) => m.id === fix.metricId);
+                  if (metric && metric.evidenceEventIds.length > 0) onSelectMetric(metric);
+                  setExpandedId(fix.metricId);
+                }}
+              >
+                <span className="contextTopFixTitle">{fix.title}</span>
+                <span className="contextTopFixAction">{fix.action}</span>
+                <span className="contextSuggestionSource">{fix.source === "llm" ? "AI" : "rule"}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="contextAllClear">No waste detected — this run used its context economically.</p>
+        )
+      ) : null}
 
       <div className="contextMetrics">
         {report.metrics.map((metric) => {
-          const suggestion = suggestionByMetric.get(metric.id);
+          const suggestion = adviceRequested ? suggestionByMetric.get(metric.id) : undefined;
           const actionable = Boolean(suggestion) || metric.evidenceEventIds.length > 0;
           const expanded = expandedId === metric.id;
           return (

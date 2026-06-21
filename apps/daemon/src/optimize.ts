@@ -66,11 +66,15 @@ async function computeOptimize(options: {
   eventsFile?: string;
 }): Promise<Omit<OptimizeResult, "applied">> {
   const eventsFile = options.eventsFile ?? join(options.projectDir, ".agent-blackbox", "events.ndjson");
-  const agentsMdPath = join(options.projectDir, "AGENTS.md");
-  const statePath = join(options.projectDir, ".agent-blackbox", "optimization.json");
-
   const events = await loadTraceEvents(eventsFile);
   const { runId, events: runEvents } = latestRun(events);
+  // Write AGENTS.md to the project the run actually happened in (carried on
+  // event.cwd), not the daemon's own dir. This is what makes the actuator correct
+  // in global-recorder mode, where one daemon records many projects and its
+  // projectDir is the shared data dir. Older traces lack cwd → fall back.
+  const targetDir = runEvents.find((e) => typeof e.cwd === "string" && e.cwd.length > 0)?.cwd ?? options.projectDir;
+  const agentsMdPath = join(targetDir, "AGENTS.md");
+  const statePath = join(targetDir, ".agent-blackbox", "optimization.json");
   const latestTs = runEvents.reduce((max, e) => (e.ts > max ? e.ts : max), "");
   const report = runEvents.length > 0 ? computeEfficiencyReport(runEvents) : null;
   const score = report ? report.overallScore : null;

@@ -8,13 +8,22 @@ export function createTraceSink(options: {
   eventsFile?: string;
   sink?: TraceSink;
 }): TraceSink {
-  if (options.sink) {
-    return options.sink;
-  }
-  if (options.daemonUrl) {
-    return createHttpTraceSink(options.daemonUrl);
-  }
-  return createFileTraceSink(options.eventsFile ?? join(options.directory, ".agent-blackbox", "events.ndjson"));
+  const base = options.sink
+    ? options.sink
+    : options.daemonUrl
+      ? createHttpTraceSink(options.daemonUrl)
+      : createFileTraceSink(options.eventsFile ?? join(options.directory, ".agent-blackbox", "events.ndjson"));
+  // Stamp the run's project directory on every event (single choke point) so the
+  // actuator can target the right AGENTS.md even when one daemon records many
+  // projects (global recorder). Don't overwrite an explicitly-set cwd.
+  return {
+    async write(event) {
+      if (!event.cwd && options.directory) {
+        (event as { cwd?: string }).cwd = options.directory;
+      }
+      await base.write(event);
+    }
+  };
 }
 
 export function createFileTraceSink(eventsFile: string): TraceSink {

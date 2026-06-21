@@ -299,7 +299,13 @@ async function fetchJson(url: string, body: unknown, extraHeaders: Record<string
 
 function runCommand(command: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ["ignore", "pipe", "ignore"] });
+    // AGENT_BLACKBOX_DISABLE: the suggestion model is invoked via `opencode run`,
+    // which the globally-installed recorder would otherwise capture as its own
+    // trivial run — hijacking "latest run" and resetting the dashboard score.
+    const child = spawn(command, args, {
+      stdio: ["ignore", "pipe", "ignore"],
+      env: { ...process.env, AGENT_BLACKBOX_DISABLE: "1" }
+    });
     let out = "";
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
