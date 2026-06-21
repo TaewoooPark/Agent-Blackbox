@@ -294,13 +294,25 @@ function ensureAgent(graph: MutableGraph, event: TraceEvent): void {
   ensureNode(graph, {
     id,
     type: "AGENT",
+    // Identity stays the agentId (the dashboard matches lanes by it). A readable
+    // display name rides in data.agentName, kept separate so matching never breaks.
     label: event.agentId,
     status: "ACTIVE",
     at: event.ts,
     eventId: event.id,
-    data: { agentId: event.agentId, agentRole: event.agentRole ?? "unknown" },
+    data: {
+      agentId: event.agentId,
+      agentRole: event.agentRole ?? "unknown",
+      ...(event.agentLabel ? { agentName: event.agentLabel } : {})
+    },
     keepStatusIfExists: true
   });
+  // Fill the display name once known — the lane node may have been created by an
+  // earlier event that lacked the agentLabel.
+  if (event.agentLabel) {
+    const node = graph.nodes.get(id);
+    if (node && !node.data.agentName) node.data.agentName = event.agentLabel;
+  }
   ensureEdge(graph, {
     from: sessionNodeId(event.sessionId),
     to: id,

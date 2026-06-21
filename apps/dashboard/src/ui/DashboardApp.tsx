@@ -538,7 +538,7 @@ export function DashboardApp() {
             >
               <span className="laneMarker" />
               <span className="laneMain">
-                <strong>{shortTitle(agent.label)}</strong>
+                <strong>{shortTitle(typeof agent.data?.agentName === "string" ? agent.data.agentName : agent.label)}</strong>
                 <span>{agent.type.toLowerCase()}</span>
               </span>
               <span className="laneBadges">
@@ -1406,7 +1406,7 @@ function TreeItemCard({
       <span className="stepMain">
         {step.agentLabel ? (
           <span className="agentPill">
-            {shortTitle(step.agentLabel)}
+            {shortTitle(step.agentName ?? step.agentLabel)}
             {agentStatus ? <span>{agentStatus.toLowerCase()}</span> : null}
           </span>
         ) : null}

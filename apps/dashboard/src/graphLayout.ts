@@ -62,7 +62,8 @@ export type WorkflowStep = {
   tone: TimelineTone;
   tokens: TokenUsage;
   branches: WorkflowBranch[];
-  agentLabel?: string;
+  agentLabel?: string; // the lane identity (agentId) — used for matching, not display
+  agentName?: string; // human-readable lane name for display only
   agentRole?: string;
 };
 
@@ -999,6 +1000,7 @@ function makeStep(
     ...(event.agentRole !== "primary" && (event.agentId || event.agentRole)
       ? { agentLabel: event.agentId ?? event.agentRole }
       : {}),
+    ...(event.agentRole !== "primary" && event.agentLabel ? { agentName: event.agentLabel } : {}),
     ...(event.agentRole ? { agentRole: event.agentRole } : {})
   };
 }

@@ -119,6 +119,13 @@ function consumeUser(
   const msg = asRecord(line.message);
 
   // A genuine human prompt (typed/queued), not an injected/meta/tool-result line.
+  // For a subagent transcript, the first user line is the task it was given — use a
+  // short form as the lane's readable label (far better than the opaque agent id).
+  if (ctx.agent && !ctx.agent.label) {
+    const task = extractText(msg.content);
+    if (task) ctx.agent.label = shortLabel(task);
+  }
+
   const promptSource = readString(line, ["promptSource"]);
   const isMeta = line.isMeta === true;
   if (!isMeta && (promptSource === "typed" || promptSource === "queued")) {
@@ -260,6 +267,7 @@ function deriveObserved(
     // Fork the lane: the spawn belongs to the subagent it launched.
     ev.agentId = agentId;
     ev.agentRole = "subagent";
+    ev.agentLabel = label;
     return ev;
   }
 
@@ -279,6 +287,7 @@ function deriveObserved(
     });
     ev.agentId = wfRun ?? `workflow:${wfName}`;
     ev.agentRole = "subagent";
+    ev.agentLabel = `workflow:${wfName}`;
     return ev;
   }
 
@@ -333,10 +342,12 @@ function mkInput(
   };
   if (ts) input.ts = ts;
   if (cwd) input.cwd = cwd;
-  // Subagent transcript: fork a lane (agentId) under the shared parent session.
+  // Subagent transcript: fork a lane (agentId) under the shared parent session,
+  // labelled by the subagent's task when known (set from its first prompt).
   if (ctx.agent) {
     input.agentId = ctx.agent.agentId;
     input.agentRole = "subagent";
+    if (ctx.agent.label) input.agentLabel = ctx.agent.label;
   }
   return input;
 }
@@ -411,6 +422,12 @@ function num(v: unknown): number {
 function shorten(v: string | undefined, max: number): string | undefined {
   if (v === undefined) return undefined;
   return v.length <= max ? v : `${v.slice(0, max)}...`;
+}
+
+// A compact one-line lane label from a subagent's task prompt.
+function shortLabel(text: string): string {
+  const firstLine = (text.split("\n").find((l) => l.trim().length > 0) ?? text).trim();
+  return firstLine.length > 48 ? `${firstLine.slice(0, 47)}…` : firstLine;
 }
 
 function readString(record: UnknownRecord, keys: string[]): string | undefined {

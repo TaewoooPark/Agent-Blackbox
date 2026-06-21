@@ -135,6 +135,24 @@ describe("createClaudeNormalizer", () => {
     expect(read?.agentRole).toBe("subagent");
   });
 
+  it("labels a subagent lane from its first task prompt (agentLabel), keeping agentId as identity", () => {
+    const n = createClaudeNormalizer({ defaultSessionId: "agent-abc123", agent: { agentId: "abc123" } });
+    // First line of an agent transcript is the task it was given.
+    n.consume({ type: "user", sessionId: "S1", message: { content: "Adversarially verify this claimed bug in calc.ts and report" } });
+    n.consume(assistant([{ type: "tool_use", id: "r1", name: "Read", input: { file_path: "/p/d.ts" } }]));
+    const events = n.consume(userResult("r1", "x", { type: "text", file: { filePath: "/p/d.ts", content: "x" } }));
+    const read = events.find((e) => e.kind === "file_read");
+    expect(read?.agentId).toBe("abc123"); // identity unchanged
+    expect(read?.agentLabel).toBe("Adversarially verify this claimed bug in calc.t…"); // readable, capped at 48
+  });
+
+  it("gives an Agent spawn a readable agentLabel (the subagent type)", () => {
+    const n = createClaudeNormalizer(ctx());
+    n.consume(assistant([{ type: "tool_use", id: "a1", name: "Agent", input: { subagent_type: "Explore", description: "map core" } }]));
+    const events = n.consume(userResult("a1", "done", { agentId: "abc123" }));
+    expect(events.find((e) => e.kind === "subagent_spawned")?.agentLabel).toBe("Explore");
+  });
+
   it("maps a Workflow run to a workflow delegation lane", () => {
     const n = createClaudeNormalizer(ctx());
     n.consume(assistant([{ type: "tool_use", id: "wf1", name: "Workflow", input: { script: "export const meta={}" } }]));

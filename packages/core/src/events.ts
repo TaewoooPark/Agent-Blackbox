@@ -86,6 +86,9 @@ export type TraceEvent = {
   cwd?: string;
   agentId?: string;
   agentRole?: AgentRole;
+  // Human-readable name for the agent lane (e.g. a subagent type or its task), so
+  // the graph can label a lane by something better than an opaque id. Optional.
+  agentLabel?: string;
   turnId?: string;
   kind: TraceEventKind;
   summary?: string;
@@ -104,6 +107,7 @@ export type TraceEventInput = {
   cwd?: string;
   agentId?: string;
   agentRole?: AgentRole;
+  agentLabel?: string;
   turnId?: string;
   kind: TraceEventKind;
   summary?: string;
@@ -151,6 +155,7 @@ export function createTraceEvent(seq: number, input: TraceEventInput): TraceEven
     ...(input.cwd ? { cwd: input.cwd } : {}),
     ...(input.agentId ? { agentId: input.agentId } : {}),
     ...(input.agentRole ? { agentRole: input.agentRole } : {}),
+    ...(input.agentLabel ? { agentLabel: input.agentLabel } : {}),
     ...(input.turnId ? { turnId: input.turnId } : {}),
     kind: input.kind,
     ...(input.summary ? { summary: input.summary } : {}),

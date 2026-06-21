@@ -148,9 +148,11 @@ export function computeEfficiencyReport(events: TraceEvent[]): EfficiencyReport 
   const editedPaths = new Set(edits.map((e) => e.path));
   const okCommands = bashRuns.filter((b) => b.exitCode === 0).length;
 
-  const totalInputTokens = hasRealTokens
-    ? finalSnapshot!.input
-    : estimateTokens(reads.reduce((s, r) => s + r.tokens * CHARS_PER_TOKEN, 0) + injections.reduce((s, i) => s + i.tokens * CHARS_PER_TOKEN, 0));
+  // Estimated input = everything pulled into context: reads + edits/creates + tool/bash output.
+  // Edits were previously omitted, understating edit-heavy runs' context use and so inflating
+  // their yield-density. Sum the already-computed token fields directly.
+  const injectionTokens = injections.reduce((s, i) => s + i.tokens, 0);
+  const totalInputTokens = hasRealTokens ? finalSnapshot!.input : totalReadTokens + totalEditTokens + injectionTokens;
   const peak = hasRealTokens ? peakInput : totalInputTokens;
 
   const metrics: { metric: EfficiencyMetric; weight: number }[] = [];
@@ -171,7 +173,11 @@ export function computeEfficiencyReport(events: TraceEvent[]): EfficiencyReport 
         detail:
           status === "good"
             ? "The context window stayed comfortably sized."
-            : `Peak input reached ${formatTokens(peak)} — large prompts cost latency and money on every turn.`,
+            : hasRealTokens
+              ? `Peak input reached ${formatTokens(peak)} — large prompts cost latency and money on every turn.`
+              : // No real token telemetry: this is total input pulled in over the run (we can't
+                // measure peak window occupancy), so don't claim a measured peak.
+                `About ${formatTokens(peak)} of input flowed through the context — large prompts cost latency and money on every turn.`,
         evidenceEventIds: []
       }
     });
@@ -353,8 +359,10 @@ export function computeEfficiencyReport(events: TraceEvent[]): EfficiencyReport 
       if (list.length <= 1) continue;
       retries += list.length - 1;
       // Every failed attempt of a command that had to be repeated is wasted context.
+      // An unknown exit code (the adapter didn't capture one) is NOT a failure —
+      // `undefined !== 0` would otherwise charge every uncaptured re-run as waste.
       for (const attempt of list) {
-        if (attempt.exitCode !== 0) {
+        if (attempt.exitCode !== undefined && attempt.exitCode !== 0) {
           wasted += attempt.tokens;
           evidence.push(attempt.id);
         }
