@@ -4,6 +4,7 @@
     { "path": "./packages/core" },
     { "path": "./packages/storage" },
     { "path": "./packages/opencode-adapter" },
+    { "path": "./packages/claude-code-adapter" },
     { "path": "./apps/daemon" },
     { "path": "./apps/dashboard" }
   ]

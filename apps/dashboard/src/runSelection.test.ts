@@ -96,4 +96,12 @@ describe("run selection", () => {
     expect(runs[0]?.eventCount).toBe(1);
     expect(runs[1]?.eventCount).toBe(2);
   });
+
+  it("carries each run's host so the picker can distinguish hosts", () => {
+    const cc = createTraceEvent(1, { ts: "2026-06-20T10:00:00.000Z", host: "claude-code", runId: "cc-run", sessionId: "s", kind: "file_edit" });
+    const oc = createTraceEvent(1, { ts: "2026-06-19T10:00:00.000Z", host: "opencode", runId: "oc-run", sessionId: "s", kind: "file_edit" });
+    const runs = listRuns([oc, cc]);
+    expect(runs.find((run) => run.runId === "cc-run")?.host).toBe("claude-code");
+    expect(runs.find((run) => run.runId === "oc-run")?.host).toBe("opencode");
+  });
 });

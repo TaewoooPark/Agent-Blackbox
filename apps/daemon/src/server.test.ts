@@ -1,10 +1,10 @@
 import { createTraceEvent } from "@agent-blackbox/core";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WebSocket, type RawData } from "ws";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildReplaySummary, buildTraceSnapshot, startTraceDaemon } from "./server.js";
+import { buildReplaySummary, buildTraceSnapshot, loadRecentTraceEvents, startTraceDaemon } from "./server.js";
 
 let tempDir: string | undefined;
 
@@ -13,6 +13,28 @@ afterEach(async () => {
     await rm(tempDir, { recursive: true, force: true });
     tempDir = undefined;
   }
+});
+
+describe("snapshot scale cap", () => {
+  it("parses only the most recent `cap` events so the snapshot stays bounded", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "abb-cap-"));
+    const eventsFile = join(tempDir, "events.ndjson");
+    const events = Array.from({ length: 50 }, (_, i) =>
+      createTraceEvent(i + 1, {
+        host: "claude-code",
+        runId: "r",
+        sessionId: "r",
+        kind: "file_read",
+        payload: { path: `f${i}.ts`, chars: 1 },
+        ts: `2026-06-21T00:00:${String(i).padStart(2, "0")}.000Z`
+      })
+    );
+    await writeFile(eventsFile, `${events.map((e) => JSON.stringify(e)).join("\n")}\n`, "utf8");
+    const recent = await loadRecentTraceEvents(eventsFile, 10);
+    expect(recent).toHaveLength(10);
+    expect(recent[0]?.seq).toBe(41); // last 10 (seq 41..50)
+    expect(recent[9]?.seq).toBe(50);
+  });
 });
 
 describe("trace daemon", () => {

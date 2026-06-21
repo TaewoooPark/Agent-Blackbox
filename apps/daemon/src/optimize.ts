@@ -7,7 +7,7 @@ import {
   type TraceEvent
 } from "@agent-blackbox/core";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import { loadTraceEvents } from "./server.js";
 
 // The actuator half of the loop: ABB stops at advice today; `optimize` turns the
@@ -34,9 +34,16 @@ type OptimizeState = {
   baselineScore: number;
   baselineLatestTs: string; // newest event ts at apply — detects a new run even if runId is reused
   baselineFlagged: string[]; // metric ids flagged at apply, so --check can show what cleared
-  fileExisted: boolean; // whether AGENTS.md existed before apply (so revert can delete a file we created)
+  fileExisted: boolean; // whether the memory file existed before apply (so revert can delete a file we created)
   appliedAt: string;
+  memoryFile?: string; // the basename written (CLAUDE.md vs AGENTS.md) — so check/revert hit the same file even if the latest run's host later flips
 };
+
+// Which memory file the run's host actually reads back. Claude Code reads
+// CLAUDE.md; OpenCode (and the generic default) read AGENTS.md.
+function memoryFileFor(host: string | undefined): string {
+  return host === "claude-code" ? "CLAUDE.md" : "AGENTS.md";
+}
 
 const flaggedIds = (report: { metrics: { id: string; status: string }[] }): string[] =>
   report.metrics.filter((m) => m.status !== "good").map((m) => m.id);
@@ -78,7 +85,9 @@ async function computeOptimize(options: {
   // defense-in-depth on the write target.
   const runCwd = runEvents.find((e) => typeof e.cwd === "string" && e.cwd.length > 0)?.cwd;
   const targetDir = runCwd && isAbsolute(runCwd) ? runCwd : options.projectDir;
-  const agentsMdPath = join(targetDir, "AGENTS.md");
+  const runHost = runEvents.find((e) => typeof e.host === "string")?.host;
+  const memoryFileName = memoryFileFor(runHost);
+  const agentsMdPath = join(targetDir, memoryFileName);
   const statePath = join(targetDir, ".agent-blackbox", "optimization.json");
   const latestTs = runEvents.reduce((max, e) => (e.ts > max ? e.ts : max), "");
   const report = runEvents.length > 0 ? computeEfficiencyReport(runEvents) : null;
@@ -93,7 +102,7 @@ async function computeOptimize(options: {
   if (options.mode === "preview") {
     return {
       mode: "preview",
-      action: block ? "Preview only — re-run with --apply to write this to AGENTS.md." : "This run is clean — nothing worth pinning.",
+      action: block ? `Preview only — re-run with --apply to write this to ${memoryFileName}.` : "This run is clean — nothing worth pinning.",
       score,
       baselineScore: null,
       reclaimableTokens: report?.reclaimableTokens,
@@ -119,13 +128,14 @@ async function computeOptimize(options: {
         baselineLatestTs: latestTs,
         baselineFlagged: flaggedIds(report),
         fileExisted: prior !== null,
-        appliedAt: new Date().toISOString()
+        appliedAt: new Date().toISOString(),
+        memoryFile: memoryFileName
       });
     }
     return {
       mode: "apply",
       action:
-        `Wrote efficiency memory to AGENTS.md — targets ~${report.reclaimableTokens} reclaimable tokens on similar future runs (no re-run needed).` +
+        `Wrote efficiency memory to ${memoryFileName} — targets ~${report.reclaimableTokens} reclaimable tokens on similar future runs (no re-run needed).` +
         ` Optional: re-run the same task + \`optimize --check\` to benchmark the gain.`,
       score,
       baselineScore: score,
@@ -167,7 +177,9 @@ async function computeOptimize(options: {
     .join("; ");
   const diffSuffix = metricDiff ? ` [${metricDiff}]` : "";
   if (delta < -REVERT_MARGIN) {
-    const changed = await restore(agentsMdPath, state.fileExisted);
+    // Roll back the file we actually wrote at apply (host may have flipped since).
+    const appliedPath = state.memoryFile ? join(targetDir, state.memoryFile) : agentsMdPath;
+    const changed = await restore(appliedPath, state.fileExisted);
     await rm(statePath, { force: true });
     return {
       mode: "check",
@@ -196,15 +208,17 @@ async function revert(
   score: number | null
 ): Promise<Omit<OptimizeResult, "applied">> {
   const state = await readState(statePath);
-  const changed = await restore(agentsMdPath, state ? state.fileExisted : true);
+  // Revert the file we wrote at apply, even if the latest run's host has since flipped.
+  const path = state?.memoryFile ? join(dirname(agentsMdPath), state.memoryFile) : agentsMdPath;
+  const changed = await restore(path, state ? state.fileExisted : true);
   if (state) await rm(statePath, { force: true });
   return {
     mode: "revert",
-    action: changed ? "Removed the managed efficiency block from AGENTS.md." : "Nothing to revert.",
+    action: changed ? `Removed the managed efficiency block from ${basename(path)}.` : "Nothing to revert.",
     score,
     baselineScore: state ? state.baselineScore : null,
     block: null,
-    agentsMdPath,
+    agentsMdPath: path,
     changed
   };
 }

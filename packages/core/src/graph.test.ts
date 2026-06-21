@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createEventSequencer } from "./events.js";
+import { createEventSequencer, createTraceEvent } from "./events.js";
 import {
   diffWorkflowGraphs,
   materializeWorkflowGraph,
@@ -123,5 +123,27 @@ describe("workflow graph materialization", () => {
 
     expect(graph.nodes.some((node) => node.type === "FILE" && node.label === "$PROJECT/src/calc.js")).toBe(true);
     expect(graph.nodes.some((node) => node.type === "FILE" && node.label === "unknown-file")).toBe(false);
+  });
+});
+
+describe("agent lane labels", () => {
+  it("keeps lane identity on agentId, exposes a readable name, and never merges same-named agents", () => {
+    const mk = (seq: number, agentId: string) =>
+      createTraceEvent(seq, {
+        host: "claude-code",
+        runId: "r",
+        sessionId: "r",
+        agentId,
+        agentRole: "subagent",
+        agentLabel: "security auditor", // two different agents share a readable name
+        kind: "file_read",
+        payload: { path: `f${seq}.ts`, chars: 10 }
+      });
+    const graph = materializeWorkflowGraph([mk(1, "a1"), mk(2, "a2")]);
+    const lanes = graph.nodes.filter((node) => node.type === "AGENT" && node.id.startsWith("agent:"));
+    // Two distinct agentIds → two distinct lanes despite the shared display name.
+    expect(lanes).toHaveLength(2);
+    expect(new Set(lanes.map((node) => node.label))).toEqual(new Set(["a1", "a2"])); // identity = agentId
+    expect(lanes.every((node) => node.data?.agentName === "security auditor")).toBe(true); // readable, separate
   });
 });

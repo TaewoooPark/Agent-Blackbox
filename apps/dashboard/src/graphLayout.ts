@@ -62,7 +62,8 @@ export type WorkflowStep = {
   tone: TimelineTone;
   tokens: TokenUsage;
   branches: WorkflowBranch[];
-  agentLabel?: string;
+  agentLabel?: string; // the lane identity (agentId) — used for matching, not display
+  agentName?: string; // human-readable lane name for display only
   agentRole?: string;
 };
 
@@ -775,7 +776,7 @@ function trunkStepForEvent(event: TraceEvent): WorkflowStep | undefined {
       branches: [
         makeBranch(event, {
           kind: "agent",
-          label: event.host,
+          label: hostDisplayName(event.host),
           title: "Started a session",
           description: "A new agent run began and started collecting workflow evidence.",
           tone: "neutral",
@@ -857,16 +858,17 @@ function trunkStepForEvent(event: TraceEvent): WorkflowStep | undefined {
   }
   if (event.kind === "host_event") {
     const label = hostEventLabel(event);
+    const hostName = hostDisplayName(event.host);
     return makeStep(event, {
       kind: "context",
-      title: `OpenCode: ${label}`,
-      description: `An OpenCode event (${label}) that isn't specifically modeled yet — shown so nothing is silently dropped.`,
+      title: `${hostName}: ${label}`,
+      description: `A ${hostName} event (${label}) that isn't specifically modeled yet — shown so nothing is silently dropped.`,
       branches: [
         makeBranch(event, {
           kind: "evidence",
           label,
-          title: `OpenCode: ${label}`,
-          description: `Unmodeled OpenCode event: ${label}.`,
+          title: `${hostName}: ${label}`,
+          description: `Unmodeled ${hostName} event: ${label}.`,
           tone: "neutral",
           detail: "event"
         })
@@ -998,6 +1000,7 @@ function makeStep(
     ...(event.agentRole !== "primary" && (event.agentId || event.agentRole)
       ? { agentLabel: event.agentId ?? event.agentRole }
       : {}),
+    ...(event.agentRole !== "primary" && event.agentLabel ? { agentName: event.agentLabel } : {}),
     ...(event.agentRole ? { agentRole: event.agentRole } : {})
   };
 }
@@ -1073,18 +1076,24 @@ function visibleTextForEvent(event: TraceEvent): string | undefined {
   if (event.kind === "command_run") return `Ran ${slashCommandName(event)}`;
   if (event.kind === "agent_switched") return `Switched to ${switchedAgentName(event)}`;
   if (event.kind === "model_switched") return `Switched model to ${switchedModelName(event)}`;
-  if (event.kind === "host_event") return `OpenCode: ${hostEventLabel(event)}`;
+  if (event.kind === "host_event") return `${hostDisplayName(event.host)}: ${hostEventLabel(event)}`;
   return undefined;
 }
 
 function promptTextForEvent(event: TraceEvent): string | undefined {
-  const role = stringPayloadPath(event, ["properties.role"]) ?? stringPayloadPath(event, ["properties.info.role"]);
+  // OpenCode nests under properties.*; Claude Code puts role/text at the payload top
+  // level. Read both so a prompt renders regardless of host.
+  const role =
+    stringPayloadPath(event, ["properties.role"]) ??
+    stringPayloadPath(event, ["properties.info.role"]) ??
+    stringPayloadPath(event, ["role"]);
   const text =
     stringPayloadPath(event, ["properties.text"]) ??
     stringPayloadPath(event, ["properties.content"]) ??
     stringPayloadPath(event, ["properties.prompt"]) ??
     stringPayloadPath(event, ["properties.part.text"]) ??
-    stringPayloadPath(event, ["properties.part.content"]);
+    stringPayloadPath(event, ["properties.part.content"]) ??
+    stringPayloadPath(event, ["text"]);
   if (event.kind === "message" && role === "user" && text) {
     return cleanPromptText(text);
   }
@@ -1286,14 +1295,34 @@ function switchedAgentName(event: TraceEvent): string {
 
 function switchedModelName(event: TraceEvent): string {
   return (
-    stringPayloadPath(event, ["properties.model.id", "properties.model.modelID", "properties.modelID", "model.id"]) ??
+    // OpenCode nests model under properties.*; Claude Code puts it at payload.model.
+    stringPayloadPath(event, ["properties.model.id", "properties.model.modelID", "properties.modelID", "model.id", "model"]) ??
     "a model"
   );
 }
 
-// A labeled fallback for OpenCode events we don't model yet (summary holds the raw type).
+// A labeled fallback for host events we don't model yet (summary holds the raw type).
 function hostEventLabel(event: TraceEvent): string {
   return event.summary || stringPayloadPath(event, ["type", "properties.type"]) || "event";
+}
+
+// Human-facing name for the recording host, so labels read "Claude Code: …" not
+// "claude-code: …" and never assume OpenCode.
+export function hostDisplayName(host: TraceEvent["host"] | undefined): string {
+  switch (host) {
+    case "claude-code":
+      return "Claude Code";
+    case "opencode":
+      return "OpenCode";
+    case "codex":
+      return "Codex";
+    case "pi":
+      return "PI";
+    case "hermes":
+      return "Hermes";
+    default:
+      return "Host";
+  }
 }
 
 function filePathForEvent(event: TraceEvent): string | undefined {

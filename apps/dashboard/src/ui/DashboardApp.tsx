@@ -19,6 +19,7 @@ import {
   createTimelineMarks,
   createWorkflowSteps,
   filterWorkflowStepsBySeq,
+  hostDisplayName,
   summarizeAgentActivity,
   type AgentTreeConnection,
   type AgentTreeItem,
@@ -177,6 +178,7 @@ export function DashboardApp() {
       runs.map((run) => ({
         runId: run.runId,
         eventCount: run.eventCount,
+        host: run.host,
         label: sessionDisplayName(filterEventsForRun(snapshot?.events ?? [], run.runId), run.runId)
       })),
     [runs, snapshot]
@@ -229,6 +231,18 @@ export function DashboardApp() {
   };
   const sessionName = useMemo(() => sessionDisplayName(visibleEvents, graph?.runId), [visibleEvents, graph]);
   const runHost = visibleEvents[0]?.host ?? null;
+  // The memory file the actuator will target for this run's host (Claude Code reads
+  // CLAUDE.md, everyone else AGENTS.md) — keeps the side-panel hint honest.
+  const memoryFile = runHost === "claude-code" ? "CLAUDE.md" : "AGENTS.md";
+  // The model this run is on (latest message carrying one) — surfaced as a chip so
+  // it's visible at a glance, like the host.
+  const runModel = useMemo(() => {
+    for (let i = visibleEvents.length - 1; i >= 0; i -= 1) {
+      const model = visibleEvents[i]?.payload?.model;
+      if (typeof model === "string" && model.length > 0 && model !== "<synthetic>") return model;
+    }
+    return null;
+  }, [visibleEvents]);
   const runStatus = useMemo(() => deriveRunStatus(visibleEvents), [visibleEvents]);
   const riskMomentCount = useMemo(() => workflowSteps.filter((step) => step.tone === "risk").length, [workflowSteps]);
   const handoffMarkdown = useMemo(
@@ -413,12 +427,13 @@ export function DashboardApp() {
               <option value="">Latest run (auto)</option>
               {runOptions.map((run) => (
                 <option key={run.runId} value={run.runId}>
-                  {run.label} · {run.eventCount} ev
+                  {run.label} · {hostDisplayName(run.host)} · {run.eventCount} ev
                 </option>
               ))}
             </select>
           ) : null}
-          {runHost ? <span className="statusChip host">{runHost}</span> : null}
+          {runHost ? <span className="statusChip host">{hostDisplayName(runHost)}</span> : null}
+          {runModel ? <span className="statusChip model" title="Model">{runModel}</span> : null}
           <span className={`statusChip state state-${runStatus}`}>
             <span className="statusDot" aria-hidden="true" />
             {runStatus}
@@ -533,7 +548,7 @@ export function DashboardApp() {
             >
               <span className="laneMarker" />
               <span className="laneMain">
-                <strong>{shortTitle(agent.label)}</strong>
+                <strong>{shortTitle(typeof agent.data?.agentName === "string" ? agent.data.agentName : agent.label)}</strong>
                 <span>{agent.type.toLowerCase()}</span>
               </span>
               <span className="laneBadges">
@@ -574,6 +589,7 @@ export function DashboardApp() {
             onSelectMetric={(metric) =>
               setMetricHighlight((current) => ({ ids: metric.evidenceEventIds, nonce: current.nonce + 1 }))
             }
+            memoryFile={memoryFile}
           />
           <FileStructure
             hasFocus={filesHasFocus}
@@ -1400,7 +1416,7 @@ function TreeItemCard({
       <span className="stepMain">
         {step.agentLabel ? (
           <span className="agentPill">
-            {shortTitle(step.agentLabel)}
+            {shortTitle(step.agentName ?? step.agentLabel)}
             {agentStatus ? <span>{agentStatus.toLowerCase()}</span> : null}
           </span>
         ) : null}
@@ -2177,7 +2193,8 @@ function ContextPanel({
   onRequestAdvice,
   onRequestAi,
   onOptimize,
-  onSelectMetric
+  onSelectMetric,
+  memoryFile
 }: {
   report: EfficiencyReport;
   suggestions: Suggestion[];
@@ -2189,6 +2206,7 @@ function ContextPanel({
   onRequestAi: () => void;
   onOptimize: () => void;
   onSelectMetric: (metric: EfficiencyMetric) => void;
+  memoryFile: string;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [tokensOpen, setTokensOpen] = useState(false);
@@ -2222,7 +2240,7 @@ function ContextPanel({
       <div className="contextAi">
         <button className="optimizeButton" type="button" onClick={onOptimize} disabled={fixCount === 0}>
           <span className="optimizeButtonLabel">Optimize future runs</span>
-          <span className="optimizeButtonHint">Write a reversible memory to AGENTS.md →</span>
+          <span className="optimizeButtonHint">Write a reversible memory to {memoryFile} →</span>
         </button>
         <button
           className="contextAiButton"
@@ -2388,6 +2406,9 @@ function OptimizeModal({ onClose }: { onClose: () => void }) {
   const hasBlock = Boolean(preview?.block);
   const reclaim = preview?.reclaimableTokens ?? 0;
   const working = phase === "working";
+  // The daemon picks the file the run's host actually reads (CLAUDE.md for Claude
+  // Code, AGENTS.md otherwise) and returns it on the preview — mirror it here.
+  const memoryFile = preview?.agentsMdPath?.split(/[\\/]/).pop() || "AGENTS.md";
 
   return (
     <div
@@ -2402,7 +2423,7 @@ function OptimizeModal({ onClose }: { onClose: () => void }) {
           <div className="optimizeHeaderText">
             <h2>Optimize future runs</h2>
             <p className="optimizeSub">
-              Writes a cache-safe, reversible note to <code>AGENTS.md</code> that your agent reads on its{" "}
+              Writes a cache-safe, reversible note to <code>{memoryFile}</code> that your agent reads on its{" "}
               <strong>next</strong> run — turning this run’s wasted context into a rule it won’t repeat. This is a real
               file change, not advice.
             </p>
@@ -2442,7 +2463,7 @@ function OptimizeModal({ onClose }: { onClose: () => void }) {
           {hasBlock && phase !== "loading" && phase !== "error" ? (
             <>
               <button className="optimizeApply" type="button" onClick={() => void act("apply")} disabled={working}>
-                {working ? "Writing…" : applied ? "Update from latest run" : "Apply to AGENTS.md"}
+                {working ? "Writing…" : applied ? "Update from latest run" : `Apply to ${memoryFile}`}
               </button>
               {applied ? (
                 <button className="optimizeRevert" type="button" onClick={() => void act("revert")} disabled={working}>
@@ -2526,6 +2547,7 @@ function tokenUsageFromEvent(event: TraceEvent): TokenUsage | undefined {
 function sessionDisplayName(events: TraceEvent[], fallback: string | undefined): string {
   let latestTitle: string | undefined;
   let latestSlug: string | undefined;
+  let firstPrompt: string | undefined;
   for (const event of events) {
     const title = stringAtEventPath(event, ["properties.info.title"]);
     const slug = stringAtEventPath(event, ["properties.info.slug"]);
@@ -2535,8 +2557,18 @@ function sessionDisplayName(events: TraceEvent[], fallback: string | undefined):
     if (slug) {
       latestSlug = slug;
     }
+    // Claude Code has no session title — name the run after its first user prompt
+    // (role/text at the payload top level), so the picker reads it, not a raw id.
+    if (!firstPrompt && event.kind === "message") {
+      const role = stringAtEventPath(event, ["properties.role", "properties.info.role", "role"]);
+      const text = stringAtEventPath(event, ["properties.text", "properties.prompt", "text"]);
+      if (role === "user" && text) {
+        const oneLine = text.replace(/\s+/g, " ").trim();
+        firstPrompt = oneLine.length > 60 ? `${oneLine.slice(0, 59)}…` : oneLine;
+      }
+    }
   }
-  return latestTitle ?? latestSlug ?? fallback ?? "waiting for daemon";
+  return latestTitle ?? latestSlug ?? firstPrompt ?? fallback ?? "waiting for daemon";
 }
 
 function formatTokenCount(value: number): string {

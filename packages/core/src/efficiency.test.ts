@@ -68,6 +68,30 @@ describe("context efficiency report", () => {
     expect(m.reclaimableTokens).toBe(2000);
   });
 
+  it("does not charge a repeated command with unknown exit code as waste", () => {
+    // The adapter didn't capture an exit code (long-running/interactive tool). A
+    // re-run is still a retry, but `undefined !== 0` must not bill it as failure-waste.
+    const report = computeEfficiencyReport([
+      ev(1, "bash", { source: "tool.after", command: "tail -f log", outputChars: 4000 }),
+      ev(2, "bash", { source: "tool.after", command: "tail -f log", outputChars: 4000 })
+    ]);
+    const m = metric(report, "retry-waste");
+    expect(m.value).toBe(1); // one re-run
+    expect(m.reclaimableTokens).toBe(0); // unknown exit → not waste
+    expect(m.evidenceEventIds).toHaveLength(0);
+  });
+
+  it("counts edit/created tokens as input when estimating (no real token telemetry)", () => {
+    // Estimated mode: peak input == total input pulled in. An edited file occupies the
+    // context just like a read, so its tokens must be included (previously omitted).
+    const report = computeEfficiencyReport([
+      ev(1, "file_read", { source: "tool.after", path: "$PROJECT/a.ts", chars: 4000 }), // 1000 tok
+      ev(2, "file_edit", { source: "tool.after", path: "$PROJECT/a.ts", chars: 80_000 }) // 20000 tok
+    ]);
+    const pressure = metric(report, "context-pressure");
+    expect(pressure.value).toBe(21_000); // read 1000 + edit 20000, not just the read
+  });
+
   it("reads real token snapshots for cache-hit and context-pressure", () => {
     const report = computeEfficiencyReport([
       ev(1, "message", { properties: { tokens: { input: 200_000, output: 500, cache: { read: 150_000, write: 1000 } } } })

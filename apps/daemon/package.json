@@ -19,6 +19,7 @@
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
+    "@agent-blackbox/claude-code-adapter": "file:../../packages/claude-code-adapter",
     "@agent-blackbox/core": "file:../../packages/core",
     "@agent-blackbox/storage": "file:../../packages/storage",
     "ws": "^8.21.0"

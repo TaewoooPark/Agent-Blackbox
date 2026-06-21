@@ -11,7 +11,8 @@ import {
   type WorkflowGraph,
   validateTraceEvent
 } from "@agent-blackbox/core";
-import { appendTraceEvent, readTraceEvents } from "@agent-blackbox/storage";
+import { appendTraceEvent, parseTraceEvents, readTraceEvents } from "@agent-blackbox/storage";
+import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
@@ -29,6 +30,10 @@ export type RunningTraceDaemon = {
   server: Server;
   port: number;
   eventsFile: string;
+  // Append + broadcast a trace event in-process (same path as POST /events) so a
+  // co-located recorder — e.g. the Claude Code transcript tailer — can feed the
+  // daemon without an HTTP round-trip to itself.
+  ingest: (event: TraceEvent) => Promise<void>;
   close: () => Promise<void>;
 };
 
@@ -55,8 +60,9 @@ export async function startTraceDaemon(options: TraceDaemonOptions): Promise<Run
   const eventsFile = options.eventsFile ?? join(options.projectDir, ".agent-blackbox", "events.ndjson");
   const suggestConfig: SuggestionConfig = options.suggest ?? { mode: "auto" };
   const clients = new Set<WebSocket>();
+  const scheduleBroadcast = makeBroadcastScheduler(clients, eventsFile);
   const server = createServer((request, response) => {
-    void handleRequest(request, response, eventsFile, clients, suggestConfig, options.projectDir);
+    void handleRequest(request, response, eventsFile, clients, suggestConfig, options.projectDir, scheduleBroadcast);
   });
   const streamServer = new WebSocketServer({ noServer: true });
   server.on("upgrade", (request, socket, head) => {
@@ -87,6 +93,11 @@ export async function startTraceDaemon(options: TraceDaemonOptions): Promise<Run
     server,
     port: actualPort,
     eventsFile,
+    ingest: async (event: TraceEvent) => {
+      if (!validateTraceEvent(event).ok) return;
+      await appendTraceEvent(eventsFile, event);
+      scheduleBroadcast();
+    },
     close: () =>
       new Promise<void>((resolve, reject) => {
         for (const client of clients) {
@@ -116,6 +127,33 @@ export async function loadTraceEvents(eventsFile: string): Promise<TraceEvent[]>
   }
 }
 
+// The dashboard snapshot must stay responsive no matter how large the global store
+// grows (a heavy backfill can reach 100k+ events / tens of MB). Parse only the most
+// recent slice of lines so building/shipping the snapshot is bounded; the latest
+// run renders fully and recent runs populate the picker. Full history stays in the
+// file and via GET /events.
+export const SNAPSHOT_EVENT_CAP = 30_000;
+
+export async function loadRecentTraceEvents(eventsFile: string, cap = SNAPSHOT_EVENT_CAP): Promise<TraceEvent[]> {
+  let text: string;
+  try {
+    text = await readFile(eventsFile, "utf8");
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") return [];
+    throw error;
+  }
+  const lines = text.split("\n");
+  // Trim to the last `cap` non-empty lines before parsing — avoids parsing the
+  // whole 80MB file just to drop most of it.
+  let kept = 0;
+  let start = lines.length;
+  while (start > 0 && kept < cap) {
+    start -= 1;
+    if (lines[start]!.trim().length > 0) kept += 1;
+  }
+  return parseTraceEvents(lines.slice(start).join("\n"));
+}
+
 export async function buildReplaySummary(eventsFile: string): Promise<{
   events: number;
   nodes: number;
@@ -136,7 +174,7 @@ export async function buildTraceSnapshot(
   eventsFile: string,
   replay: { seq?: number; at?: string } = {}
 ): Promise<TraceSnapshot> {
-  const events = await loadTraceEvents(eventsFile);
+  const events = await loadRecentTraceEvents(eventsFile);
   const graph =
     replay.seq !== undefined
       ? replayWorkflowGraphAtSeq(events, replay.seq)
@@ -168,7 +206,8 @@ async function handleRequest(
   eventsFile: string,
   clients: Set<WebSocket>,
   suggestConfig: SuggestionConfig,
-  projectDir: string
+  projectDir: string,
+  scheduleBroadcast: () => void
 ): Promise<void> {
   try {
     applyCors(request, response);
@@ -261,7 +300,7 @@ async function handleRequest(
         return;
       }
       await appendTraceEvent(eventsFile, body as TraceEvent);
-      void broadcastSnapshot(clients, eventsFile);
+      scheduleBroadcast();
       sendJson(response, 202, { ok: true, data: { accepted: true, id: (body as TraceEvent).id } });
       return;
     }
@@ -279,6 +318,21 @@ async function broadcastSnapshot(clients: Set<WebSocket>, eventsFile: string): P
     return;
   }
   await Promise.allSettled([...clients].map((client) => sendSnapshot(client, eventsFile)));
+}
+
+// Coalesce rapid broadcasts (the tailer can ingest many events per poll tick, each
+// otherwise rebuilding the whole snapshot) into at most one per `delayMs`, so the
+// live view stays responsive regardless of ingest rate.
+function makeBroadcastScheduler(clients: Set<WebSocket>, eventsFile: string, delayMs = 150): () => void {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  return () => {
+    if (timer) return;
+    timer = setTimeout(() => {
+      timer = null;
+      void broadcastSnapshot(clients, eventsFile);
+    }, delayMs);
+    if (typeof timer.unref === "function") timer.unref();
+  };
 }
 
 async function sendSnapshot(client: WebSocket, eventsFile: string): Promise<void> {

@@ -753,4 +753,29 @@ describe("dashboard graph helpers", () => {
     expect(layout.lanes.map((lane) => lane.label)).toEqual(["main"]);
     expect(steps[1]?.tokens.total).toBe(135);
   });
+
+  it("labels a Claude Code model switch with the real model name (payload.model)", () => {
+    const events = [
+      createTraceEvent(1, { host: "claude-code", runId: "r", sessionId: "s", kind: "message", payload: { role: "assistant", model: "claude-opus-4-8" } }),
+      createTraceEvent(2, { host: "claude-code", runId: "r", sessionId: "s", kind: "model_switched", summary: "Model → claude-haiku-4-5", payload: { model: "claude-haiku-4-5" } })
+    ];
+    const steps = createWorkflowSteps(events);
+    expect(steps.some((step) => step.title === "Switched model to claude-haiku-4-5")).toBe(true);
+  });
+
+  it("renders a Claude Code prompt (top-level payload role/text) as a Prompt received step", () => {
+    const events = [
+      createTraceEvent(1, {
+        host: "claude-code",
+        runId: "r",
+        sessionId: "s",
+        kind: "message",
+        summary: "user prompt",
+        payload: { role: "user", text: "Add a modulo operation to the ledger." }
+      }),
+      createTraceEvent(2, { host: "claude-code", runId: "r", sessionId: "s", kind: "file_edit", payload: { path: "src/ledger.ts", chars: 10 } })
+    ];
+    const steps = createWorkflowSteps(events);
+    expect(steps.map((step) => step.title)).toContain("Prompt received");
+  });
 });
