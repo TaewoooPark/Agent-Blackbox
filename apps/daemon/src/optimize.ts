@@ -7,7 +7,7 @@ import {
   type TraceEvent
 } from "@agent-blackbox/core";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { loadTraceEvents } from "./server.js";
 
 // The actuator half of the loop: ABB stops at advice today; `optimize` turns the
@@ -72,7 +72,12 @@ async function computeOptimize(options: {
   // event.cwd), not the daemon's own dir. This is what makes the actuator correct
   // in global-recorder mode, where one daemon records many projects and its
   // projectDir is the shared data dir. Older traces lack cwd → fall back.
-  const targetDir = runEvents.find((e) => typeof e.cwd === "string" && e.cwd.length > 0)?.cwd ?? options.projectDir;
+  // `cwd` rides in on POSTed events, so treat it as untrusted: only honor an
+  // absolute path (reject relative/odd values that could escape). The daemon's
+  // loopback-only CORS is the primary guard against forged events; this is
+  // defense-in-depth on the write target.
+  const runCwd = runEvents.find((e) => typeof e.cwd === "string" && e.cwd.length > 0)?.cwd;
+  const targetDir = runCwd && isAbsolute(runCwd) ? runCwd : options.projectDir;
   const agentsMdPath = join(targetDir, "AGENTS.md");
   const statePath = join(targetDir, ".agent-blackbox", "optimization.json");
   const latestTs = runEvents.reduce((max, e) => (e.ts > max ? e.ts : max), "");

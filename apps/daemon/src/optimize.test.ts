@@ -143,4 +143,13 @@ describe("optimize (AGENTS.md efficiency memory)", () => {
       await rm(projectRoot, { recursive: true, force: true });
     }
   });
+
+  it("ignores a non-absolute (untrusted) cwd and falls back to projectDir", async () => {
+    // cwd rides in on POSTed events; a relative/odd value must not redirect the write.
+    const events = wasteful("run-evil", "2026-06-01T00:00:00.000Z").map((e) => ({ ...e, cwd: "../../../etc" }));
+    await seed(events);
+    const applied = await runOptimize({ projectDir: dir, mode: "apply" });
+    expect(applied.agentsMdPath).toBe(join(dir, "AGENTS.md")); // fell back, did not escape
+    expect(await readFile(join(dir, "AGENTS.md"), "utf8")).toContain("agent-blackbox:efficiency:start");
+  });
 });

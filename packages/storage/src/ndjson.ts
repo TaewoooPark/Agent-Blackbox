@@ -35,9 +35,35 @@ export function parseTraceEvents(input: string): TraceEvent[] {
   return events;
 }
 
+// Serialize appends per file. In global-recorder mode the daemon fields many
+// simultaneous POST /events, and a large event line spans several write()
+// syscalls — concurrent appends could interleave their chunks at EOF, producing
+// a torn *interior* line that corrupts the log (the reader only tolerates a torn
+// final line). A per-path promise chain keeps appends strictly ordered.
+const writeChains = new Map<string, Promise<void>>();
+
 export async function appendTraceEvent(filePath: string, event: TraceEvent): Promise<void> {
-  await mkdir(dirname(filePath), { recursive: true });
-  await appendFile(filePath, serializeTraceEvent(event), "utf8");
+  // Serialize up front so a malformed event rejects the caller without poisoning
+  // the shared chain.
+  const line = serializeTraceEvent(event);
+  const run = async (): Promise<void> => {
+    await mkdir(dirname(filePath), { recursive: true });
+    await appendFile(filePath, line, "utf8");
+  };
+  // Run after any in-flight write to the same file, regardless of its outcome, so
+  // one failure can't cancel later writes or reorder them.
+  const prev = writeChains.get(filePath) ?? Promise.resolve();
+  const next = prev.then(run, run);
+  const tail = next.then(
+    () => undefined,
+    () => undefined
+  );
+  writeChains.set(filePath, tail);
+  try {
+    await next;
+  } finally {
+    if (writeChains.get(filePath) === tail) writeChains.delete(filePath);
+  }
 }
 
 export async function readTraceEvents(filePath: string): Promise<TraceEvent[]> {

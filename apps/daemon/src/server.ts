@@ -171,6 +171,7 @@ async function handleRequest(
   projectDir: string
 ): Promise<void> {
   try {
+    applyCors(request, response);
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     if (request.method === "OPTIONS") {
       sendEmpty(response, 204);
@@ -308,11 +309,33 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   }
 }
 
+// Only same-machine (loopback) origins may drive the daemon from a browser. The
+// dashboard (127.0.0.1:<uiPort>) is cross-port → cross-origin, so it needs CORS;
+// but a wildcard let any website the user visits POST to 127.0.0.1 and drive the
+// mutating routes (/events, /optimize/apply) as a CSRF. Reflect the Origin only
+// when it's loopback; non-browser callers (the CLI recorder) send no Origin and
+// aren't subject to CORS anyway.
+function applyCors(request: IncomingMessage, response: ServerResponse): void {
+  const origin = request.headers.origin;
+  if (typeof origin === "string" && isLoopbackOrigin(origin)) {
+    response.setHeader("access-control-allow-origin", origin);
+    response.setHeader("vary", "Origin");
+  }
+}
+
+function isLoopbackOrigin(origin: string): boolean {
+  try {
+    const { hostname } = new URL(origin);
+    return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "[::1]" || hostname === "::1";
+  } catch {
+    return false;
+  }
+}
+
 function sendJson(response: ServerResponse, statusCode: number, payload: JsonResponse): void {
   response.writeHead(statusCode, {
     "access-control-allow-headers": "content-type",
     "access-control-allow-methods": "GET,POST,OPTIONS",
-    "access-control-allow-origin": "*",
     "content-type": "application/json; charset=utf-8"
   });
   response.end(JSON.stringify(payload));
@@ -321,8 +344,7 @@ function sendJson(response: ServerResponse, statusCode: number, payload: JsonRes
 function sendEmpty(response: ServerResponse, statusCode: number): void {
   response.writeHead(statusCode, {
     "access-control-allow-headers": "content-type",
-    "access-control-allow-methods": "GET,POST,OPTIONS",
-    "access-control-allow-origin": "*"
+    "access-control-allow-methods": "GET,POST,OPTIONS"
   });
   response.end();
 }

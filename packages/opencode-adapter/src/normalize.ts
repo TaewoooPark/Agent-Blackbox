@@ -254,6 +254,10 @@ export function normalizeToolBefore(
   const agentId = extractAgentId(input);
   if (agentId) {
     traceInput.agentId = agentId;
+    // Pair agentId with agentRole (defaults "primary") like the event path does,
+    // so the dashboard's `agentRole !== "primary"` lane guard keeps the primary
+    // agent's tool steps on the trunk instead of forking a phantom lane.
+    traceInput.agentRole = extractAgentRole(input);
   }
   return createTraceEvent(context.seq, traceInput);
 }
@@ -297,6 +301,7 @@ export function normalizeToolAfter(
     const agentId = extractAgentId(input);
     if (agentId) {
       traceInput.agentId = agentId;
+      traceInput.agentRole = extractAgentRole(input);
     }
   }
   return createTraceEvent(context.seq, traceInput);

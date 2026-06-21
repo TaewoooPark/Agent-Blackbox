@@ -69,18 +69,25 @@ describe("trace daemon", () => {
     }
   });
 
-  it("serves local dashboard CORS headers and preflight", async () => {
+  it("reflects CORS only for loopback origins (blocks cross-site)", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "agent-blackbox-daemon-"));
     const daemon = await startTraceDaemon({ projectDir: tempDir, port: 0 });
     try {
-      const preflight = await fetch(`http://127.0.0.1:${daemon.port}/events`, {
-        method: "OPTIONS"
+      // The dashboard (127.0.0.1:<uiPort>) is a loopback origin → reflected.
+      const local = await fetch(`http://127.0.0.1:${daemon.port}/events`, {
+        method: "OPTIONS",
+        headers: { origin: "http://127.0.0.1:5173" }
       });
-      expect(preflight.status).toBe(204);
-      expect(preflight.headers.get("access-control-allow-origin")).toBe("*");
+      expect(local.status).toBe(204);
+      expect(local.headers.get("access-control-allow-origin")).toBe("http://127.0.0.1:5173");
+      expect(local.headers.get("access-control-allow-methods")).toContain("POST");
 
-      const health = await fetch(`http://127.0.0.1:${daemon.port}/health`);
-      expect(health.headers.get("access-control-allow-methods")).toContain("POST");
+      // A random website must NOT be allowed to drive the daemon from a browser.
+      const evil = await fetch(`http://127.0.0.1:${daemon.port}/events`, {
+        method: "OPTIONS",
+        headers: { origin: "https://evil.example" }
+      });
+      expect(evil.headers.get("access-control-allow-origin")).toBeNull();
     } finally {
       await daemon.close();
     }

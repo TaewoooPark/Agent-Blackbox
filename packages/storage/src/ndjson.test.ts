@@ -52,5 +52,29 @@ describe("trace NDJSON", () => {
     expect((await readFile(filePath, "utf8")).split("\n").filter(Boolean)).toHaveLength(2);
     expect(await readTraceEvents(filePath)).toEqual([first, second]);
   });
+
+  it("serializes concurrent appends without interleaving (no torn interior lines)", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "agent-blackbox-"));
+    const filePath = join(tempDir, ".agent-blackbox", "events.ndjson");
+    // Large payloads (span several write() syscalls) fired concurrently — the
+    // exact shape that interleaves at EOF without per-path serialization.
+    const big = "x".repeat(64_000);
+    const events = Array.from({ length: 40 }, (_unused, i) =>
+      createTraceEvent(i + 1, {
+        host: "opencode",
+        runId: "run-concurrent",
+        sessionId: "s",
+        kind: "message",
+        payload: { role: "assistant", text: `${i}:${big}` }
+      })
+    );
+
+    await Promise.all(events.map((e) => appendTraceEvent(filePath, e)));
+
+    // Every line is intact JSON and all 40 events survive (order may vary).
+    const parsed = await readTraceEvents(filePath);
+    expect(parsed).toHaveLength(40);
+    expect(new Set(parsed.map((e) => e.id)).size).toBe(40);
+  });
 });
 
