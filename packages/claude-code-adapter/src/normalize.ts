@@ -183,12 +183,20 @@ function deriveObserved(
   const isError = resultBlock.is_error === true;
 
   if (READ_TOOLS.has(lname)) {
-    const path = readString(asRecord(tur.file), ["filePath"]) ?? readString(input, ["file_path", "path"]);
-    const chars = strlen(readPath(tur, "file.content")) ?? measureResultText(resultBlock);
+    const fileRec = asRecord(tur.file);
+    const path = readString(fileRec, ["filePath"]) ?? readString(input, ["file_path", "path"]);
+    // An image Read carries base64, not text — give it an estimated char cost so it
+    // still registers in the redundant-read metric and token attribution.
+    const image = imageReadChars(tur, fileRec, resultBlock);
+    const chars = strlen(fileRec.content) ?? measureResultText(resultBlock) ?? image;
     return mkInput(line, ctx, {
       kind: "file_read",
       summary: path ? `Read ${path}` : "Read file",
-      payload: { ...(path ? { path } : {}), ...(chars !== undefined ? { chars } : {}) }
+      payload: {
+        ...(path ? { path } : {}),
+        ...(chars !== undefined ? { chars } : {}),
+        ...(image !== undefined ? { image: true } : {})
+      }
     });
   }
 
@@ -363,6 +371,37 @@ function measureResultText(resultBlock: UnknownRecord): number | undefined {
 
 function strlen(v: unknown): number | undefined {
   return typeof v === "string" ? v.length : undefined;
+}
+
+// Estimate the context cost of an image Read as `chars` (the engine reads chars/4
+// as tokens). Claude bills an image at ~(width*height)/750 tokens, so chars =
+// tokens*4. Falls back to ~1500 tokens when dimensions are absent. Returns
+// undefined for non-image reads.
+function imageReadChars(tur: UnknownRecord, fileRec: UnknownRecord, resultBlock: UnknownRecord): number | undefined {
+  // The image can live in the structured result (tur.type/file.base64) OR only in
+  // the tool_result block content (older shape: toolUseResult is null, the block
+  // carries [{type:"image"}]). Detect both.
+  const isImage =
+    readString(tur, ["type"]) === "image" || typeof fileRec.base64 === "string" || blockHasImage(resultBlock);
+  if (!isImage) return undefined;
+  const dims = asRecord(fileRec.dimensions);
+  const w = readNumber(dims, ["width"]);
+  const h = readNumber(dims, ["height"]);
+  if (w !== undefined && h !== undefined && w > 0 && h > 0) return Math.round((w * h) / 750) * 4;
+  return 6000;
+}
+
+function blockHasImage(resultBlock: UnknownRecord): boolean {
+  const content = resultBlock.content;
+  return Array.isArray(content) && content.some((b) => isRecord(b) && readString(b, ["type"]) === "image");
+}
+
+function readNumber(record: UnknownRecord, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = readPath(record, key);
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return undefined;
 }
 
 function num(v: unknown): number {

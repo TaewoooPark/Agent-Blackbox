@@ -52,6 +52,27 @@ describe("createClaudeNormalizer", () => {
     expect(read?.payload).toMatchObject({ path: "/proj/a.ts", chars: 5 });
   });
 
+  it("estimates chars for an image Read so it still registers (dimensions → token cost; flat fallback)", () => {
+    const n = createClaudeNormalizer(ctx());
+    n.consume(assistant([{ type: "tool_use", id: "img1", name: "Read", input: { file_path: "/p/shot.png" } }]));
+    const dims = n.consume(
+      userResult("img1", [{ type: "image", source: { type: "base64", data: "iVBOR" } }], { type: "image", file: { base64: "iVBOR", dimensions: { width: 1456, height: 816 } } })
+    );
+    const r1 = dims.find((e) => e.kind === "file_read");
+    expect(r1?.payload).toMatchObject({ path: "/p/shot.png", image: true });
+    expect(r1?.payload?.chars).toBe(Math.round((1456 * 816) / 750) * 4); // 6336
+
+    n.consume(assistant([{ type: "tool_use", id: "img2", name: "Read", input: { file_path: "/p/b.png" } }]));
+    const noDims = n.consume(userResult("img2", [{ type: "image", source: {} }], { type: "image", file: { base64: "iVBOR" } }));
+    expect(noDims.find((e) => e.kind === "file_read")?.payload?.chars).toBe(6000); // flat fallback
+
+    // Older shape: toolUseResult is null, the image lives only in the result block.
+    n.consume(assistant([{ type: "tool_use", id: "img3", name: "Read", input: { file_path: "/p/c.png" } }]));
+    const blockOnly = n.consume(userResult("img3", [{ type: "image", source: { type: "base64", data: "iVBOR" } }], null));
+    const r3 = blockOnly.find((e) => e.kind === "file_read");
+    expect(r3?.payload).toMatchObject({ path: "/p/c.png", image: true, chars: 6000 });
+  });
+
   it("maps Bash with is_error to bash{command,exitCode:1,outputChars}", () => {
     const n = createClaudeNormalizer(ctx());
     n.consume(assistant([{ type: "tool_use", id: "tu2", name: "Bash", input: { command: "npm test", description: "run" } }]));
