@@ -6,6 +6,14 @@ export function describeClaudeCodeAdapter(): string {
 
 export { createClaudeNormalizer } from "./normalize.js";
 export { defaultProjectsDir, startClaudeCodeTailer } from "./tailer.js";
+export {
+  ABB_HOOK_MARKER,
+  abbHookSpecs,
+  hasAbbHooks,
+  mergeAbbHooks,
+  removeAbbHooks,
+  type Settings
+} from "./hooks.js";
 export type {
   ClaudeNormalizerContext,
   ClaudeRecorderOptions,
