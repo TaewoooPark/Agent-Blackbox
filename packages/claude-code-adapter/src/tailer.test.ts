@@ -19,8 +19,8 @@ async function harness() {
   await mkdir(join(projectsDir, "p"), { recursive: true });
   const events: TraceEvent[] = [];
   const file = (name: string) => join(projectsDir, "p", name);
-  const start = async () => {
-    const tailer = await startClaudeCodeTailer({ write: async (e) => { events.push(e); } }, { projectsDir, pollMs: 20 });
+  const start = async (opts: { backfillDays?: number } = {}) => {
+    const tailer = await startClaudeCodeTailer({ write: async (e) => { events.push(e); } }, { projectsDir, pollMs: 20, ...opts });
     cleanups.push(async () => {
       tailer.stop();
       await rm(root, { recursive: true, force: true });
@@ -44,7 +44,7 @@ describe("claude code tailer", () => {
     const { file, events, start } = await harness();
     // valid, MALFORMED, valid, then a partial last line with no trailing newline.
     await writeFile(file("sess1.jsonl"), `${assistant(1)}\n{ not json,,\n${assistant(2)}\n{"type":"assistant","sessionId":"sess1","message":{"usage":{"input_tokens":900}`, "utf8");
-    await start();
+    await start({ backfillDays: 9999 }); // read the pre-written fixture from the top
     await waitFor(() => events.length === 2); // 2 valid; malformed skipped; partial buffered
     await appendFile(file("sess1.jsonl"), "}}\n"); // complete the buffered line
     await waitFor(() => events.length === 3);
@@ -65,7 +65,7 @@ describe("claude code tailer", () => {
   it("resets and re-reads when a file is truncated/rotated", async () => {
     const { file, events, start } = await harness();
     await writeFile(file("sess1.jsonl"), `${assistant(1)}\n${assistant(2)}\n`, "utf8");
-    await start();
+    await start({ backfillDays: 9999 });
     await waitFor(() => events.length === 2);
     await writeFile(file("sess1.jsonl"), `${assistant(5)}\n`, "utf8"); // shorter → offset > size
     await waitFor(() => events.length === 3);
@@ -74,7 +74,7 @@ describe("claude code tailer", () => {
   it("nests an agent-<id>.jsonl under its parent session as a subagent lane", async () => {
     const { file, events, start } = await harness();
     await writeFile(file("agent-abc123.jsonl"), `${assistant(1, "parent-session")}\n`, "utf8");
-    await start();
+    await start({ backfillDays: 9999 });
     await waitFor(() => events.length >= 1);
     const e = events[0];
     expect(e?.runId).toBe("parent-session"); // inherits the parent session as the run
@@ -86,7 +86,22 @@ describe("claude code tailer", () => {
     const { file, events, start } = await harness();
     await writeFile(file("empty.jsonl"), "", "utf8");
     await writeFile(file("sess1.jsonl"), `${assistant(1)}\n`, "utf8");
-    await start();
+    await start({ backfillDays: 9999 });
     await waitFor(() => events.length === 1);
+  });
+
+  it("tails from the current end by default — ignores pre-existing history, captures only new lines", async () => {
+    const { file, events, start } = await harness();
+    // A big pre-existing transcript (the blow-up scenario: a huge ~/.claude backlog).
+    const history = Array.from({ length: 50 }, (_, i) => assistant((i % 9) + 1)).join("\n");
+    await writeFile(file("sess1.jsonl"), `${history}\n`, "utf8");
+    await start(); // default: no backfill
+    // Give the poller a few ticks; the 50 historical lines must NOT be ingested.
+    await new Promise((r) => setTimeout(r, 80));
+    expect(events).toHaveLength(0);
+    // A line appended after start IS captured.
+    await appendFile(file("sess1.jsonl"), `${assistant(2)}\n`, "utf8");
+    await waitFor(() => events.length === 1);
+    expect(events[0]?.host).toBe("claude-code");
   });
 });

@@ -20,12 +20,17 @@ type FileState = {
  * Tail every Claude Code transcript under `projectsDir` and stream normalized
  * TraceEvents to `sink`. No install into Claude Code — it just reads the JSONL
  * the CLI already writes. Returns a `stop()` to clear the poll timer.
+ *
+ * By default it tails from the CURRENT END of each existing transcript, so it
+ * records only activity from `up` onward. Set `backfillDays > 0` to also re-read
+ * recent transcripts from the top — that's the heavy path (a busy ~/.claude can
+ * hold hundreds of MB across every project), so it's opt-in.
  */
 export async function startClaudeCodeTailer(sink: TraceSink, options: ClaudeRecorderOptions = {}): Promise<{ stop: () => void; projectsDir: string }> {
   const homeDir = options.homeDir ?? homedir();
   const projectsDir = options.projectsDir ?? defaultProjectsDir(homeDir);
   const pollMs = options.pollMs ?? 700;
-  const backfillCutoff = Date.now() - (options.backfillDays ?? 2) * 24 * 60 * 60 * 1000;
+  const backfillCutoff = Date.now() - (options.backfillDays ?? 0) * 24 * 60 * 60 * 1000;
 
   const files = new Map<string, FileState>();
   const seqByRun = new Map<string, number>();
@@ -109,19 +114,41 @@ export async function startClaudeCodeTailer(sink: TraceSink, options: ClaudeReco
     return entries.filter((e) => e.endsWith(".jsonl")).map((e) => join(projectsDir, e));
   };
 
-  // Backfill: seed recent transcripts (main files before agent files so the spawn
-  // registry is populated before subagent lines are attributed).
+  // Tail from the CURRENT END by default: prime every existing transcript's offset to
+  // its size so we stream only NEW activity from now on. Without this, startup (and
+  // then the first poll) would re-ingest the entire backlog under ~/.claude/projects —
+  // for a heavy user that's hundreds of MB across every project in one burst.
   const initial = await listTranscripts();
-  const recent: string[] = [];
   for (const f of initial) {
     try {
-      if ((await stat(f)).mtimeMs >= backfillCutoff) recent.push(f);
+      ensureFile(f).offset = (await stat(f)).size;
     } catch {
       /* ignore */
     }
   }
-  recent.sort((a, b) => Number(basename(a).startsWith("agent-")) - Number(basename(b).startsWith("agent-")));
-  for (const f of recent) await drainFile(f);
+
+  // Opt-in backfill (backfillDays > 0): re-read recent transcripts from the top so the
+  // dashboard shows existing runs. Main files before agent files so subagent lines
+  // attribute to a known parent.
+  if ((options.backfillDays ?? 0) > 0) {
+    const recent: string[] = [];
+    for (const f of initial) {
+      try {
+        if ((await stat(f)).mtimeMs >= backfillCutoff) recent.push(f);
+      } catch {
+        /* ignore */
+      }
+    }
+    recent.sort((a, b) => Number(basename(a).startsWith("agent-")) - Number(basename(b).startsWith("agent-")));
+    for (const f of recent) {
+      const state = files.get(f);
+      if (state) {
+        state.offset = 0;
+        state.buffer = "";
+      }
+      await drainFile(f);
+    }
+  }
 
   let running = true;
   const tick = async (): Promise<void> => {
