@@ -117,6 +117,15 @@ describe("createClaudeNormalizer", () => {
     expect(spawn?.payload).toMatchObject({ agent: "Explore", agentId: "abc123", description: "map core" });
   });
 
+  it("prettifies MCP tool names in the summary while keeping payload.tool raw", () => {
+    const n = createClaudeNormalizer(ctx());
+    n.consume(assistant([{ type: "tool_use", id: "m1", name: "mcp__playwright__browser_evaluate", input: {} }]));
+    const events = n.consume(userResult("m1", [{ type: "text", text: "ok" }], null));
+    const tr = events.find((e) => e.kind === "tool_result");
+    expect(tr?.summary).toBe("Used playwright: browser_evaluate");
+    expect(tr?.payload?.tool).toBe("mcp__playwright__browser_evaluate"); // raw kept for matching
+  });
+
   it("records a genuine typed prompt but ignores tool-result user lines", () => {
     const n = createClaudeNormalizer(ctx());
     const typed = n.consume({ type: "user", sessionId: "S1", promptSource: "typed", message: { content: "do the thing" } });

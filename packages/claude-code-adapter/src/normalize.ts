@@ -102,7 +102,7 @@ function consumeAssistant(
     events.push(
       mkInput(line, ctx, {
         kind: "tool_call",
-        summary: `tool.call:${name}`,
+        summary: `tool.call:${prettyTool(name)}`,
         payload: { tool: name, ...(id ? { callID: id } : {}) }
       })
     );
@@ -309,7 +309,7 @@ function deriveObserved(
   const outputChars = measureResultText(resultBlock) ?? strlen(tur.result) ?? strlen(tur.text);
   return mkInput(line, ctx, {
     kind: "tool_result",
-    summary: `Used ${name}`,
+    summary: `Used ${prettyTool(name)}`,
     payload: { tool: name, ...(outputChars !== undefined ? { outputChars } : {}) }
   });
 }
@@ -434,6 +434,14 @@ function shorten(v: string | undefined, max: number): string | undefined {
 function shortLabel(text: string): string {
   const firstLine = (text.split("\n").find((l) => l.trim().length > 0) ?? text).trim();
   return firstLine.length > 48 ? `${firstLine.slice(0, 47)}…` : firstLine;
+}
+
+// Make an MCP tool name readable: `mcp__playwright__browser_evaluate` → `playwright: browser_evaluate`.
+function prettyTool(name: string): string {
+  if (!name.startsWith("mcp__")) return name;
+  const rest = name.slice("mcp__".length);
+  const sep = rest.indexOf("__");
+  return sep < 0 ? rest : `${rest.slice(0, sep)}: ${rest.slice(sep + 2)}`;
 }
 
 function readString(record: UnknownRecord, keys: string[]): string | undefined {
