@@ -54,9 +54,11 @@ const TREE_MIN_SCALE = 0.12;
 // effective sizes per run. Manual zoom (below) is what lets a user push past it.
 const TREE_MAX_SCALE = 1;
 // Manual zoom is a multiplier layered on top of the auto-fit scale: 1 = fitted,
-// >1 magnifies to read a dense run, <1 pulls back. Bounds keep it usable.
+// >1 magnifies to read a dense run, <1 pulls back. Bounds keep it usable. The
+// ceiling is high because on a big run the auto-fit scale is small, so even 4×
+// left nodes tiny — 8× lets a dense tree reach roughly 1:1 and read clearly.
 const USER_ZOOM_MIN = 0.4;
-const USER_ZOOM_MAX = 4;
+const USER_ZOOM_MAX = 8;
 const USER_ZOOM_STEP = 1.2;
 
 type ApiResponse<T> = {
@@ -687,8 +689,18 @@ function SessionMap({
   const [treeFitScale, setTreeFitScale] = useState(1);
   const [userZoom, setUserZoom] = useState(1);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  // Live "tracing": keep the newest node in view as events stream in. On by default
+  // so a running session auto-follows; any direct map gesture (click/drag/wheel-pan)
+  // pins the view, and the Tracing button re-engages it.
+  const [follow, setFollow] = useState(true);
   // The scale actually applied to the tree: auto-fit × the user's manual zoom.
   const appliedScale = clamp(treeFitScale * userZoom, TREE_MIN_SCALE * 0.5, USER_ZOOM_MAX);
+  // The newest node (highest row) — the camera target while tracing live.
+  const latestItem = useMemo(() => {
+    let best: AgentTreeItem | null = null;
+    for (const item of treeLayout.items) if (!best || item.row > best.row) best = item;
+    return best;
+  }, [treeLayout.items]);
   const selectedAgentIsRoot =
     selectedAgentLabel !== null && !treeLayout.lanes.some((lane) => lane.id !== "root" && lane.label === selectedAgentLabel);
   const fileConnections = useMemo(() => createFileConnections(steps), [steps]);
@@ -866,6 +878,10 @@ function SessionMap({
       const target = event.target as HTMLElement | null;
       if (target?.closest(".fileStructure, .glassInspector")) return;
       event.preventDefault();
+      // Any wheel gesture (pinch-zoom or pan) is the user taking manual control, so
+      // pin the view — this also drops the .following transition so the gesture
+      // tracks the pointer instead of easing behind it.
+      setFollow(false);
       if (event.ctrlKey || event.metaKey) {
         const factor = Math.exp(-event.deltaY * 0.0015);
         setUserZoom((zoom) => clamp(zoom * factor, USER_ZOOM_MIN, USER_ZOOM_MAX));
@@ -877,6 +893,34 @@ function SessionMap({
     container.addEventListener("wheel", onWheel, { passive: false });
     return () => container.removeEventListener("wheel", onWheel);
   }, []);
+
+  // Live tracing: pan the camera to keep the newest node in view. Re-runs when a new
+  // node arrives, the zoom changes, or tracing is re-engaged. Measured from the
+  // rendered rects (robust to the tree's flex-centering/padding): center the latest
+  // node, but if the whole tree fits a dimension, center the tree there instead (so
+  // 100%/fit shows everything, not a clipped tail), and never scroll past its edges.
+  useEffect(() => {
+    if (!follow || !latestItem) return undefined;
+    const container = mapRef.current;
+    if (!container) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      const grid = container.querySelector<HTMLElement>(".treeGrid");
+      const node = container.querySelector<HTMLElement>(`[data-tree-node-id="${CSS.escape(latestItem.id)}"]`);
+      if (!grid || !node) return;
+      const map = container.getBoundingClientRect();
+      const tree = grid.getBoundingClientRect();
+      const target = node.getBoundingClientRect();
+      const mapCx = map.left + map.width / 2;
+      const mapCy = map.top + map.height / 2;
+      let dx = tree.width <= map.width ? mapCx - (tree.left + tree.width / 2) : mapCx - (target.left + target.width / 2);
+      let dy = tree.height <= map.height ? mapCy - (tree.top + tree.height / 2) : mapCy - (target.top + target.height / 2);
+      if (tree.width > map.width) dx = clamp(dx, map.right - tree.right, map.left - tree.left);
+      if (tree.height > map.height) dy = clamp(dy, map.bottom - tree.bottom, map.top - tree.top);
+      if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return; // already centered → don't churn
+      setPan((current) => ({ x: Math.round(current.x + dx), y: Math.round(current.y + dy) }));
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [follow, latestItem, appliedScale]);
 
   useLayoutEffect(() => {
     const container = mapRef.current;
@@ -1065,6 +1109,8 @@ function SessionMap({
     if (event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
+    setFollow(false); // grabbing a node pins the view
+
     const additive = event.shiftKey || event.ctrlKey || event.metaKey;
     const isSelected = selectedNodeIds.has(item.id);
     const nextSelection = new Set(additive || isSelected ? selectedNodeIds : []);
@@ -1093,6 +1139,7 @@ function SessionMap({
     if (event.button !== 0) return;
     const target = event.target as HTMLElement;
     if (target.closest("[data-tree-node-id], .fileStructure, .glassInspector, .workflowTools")) return;
+    setFollow(false); // clicking/dragging the map pins the view here
     const container = mapRef.current;
     if (!container) return;
     const containerRect = container.getBoundingClientRect();
@@ -1158,6 +1205,20 @@ function SessionMap({
               +
             </button>
           </div>
+          <button
+            type="button"
+            className={`traceToggle ${follow ? "active" : ""}`}
+            onClick={() => setFollow((value) => !value)}
+            aria-pressed={follow}
+            title={
+              follow
+                ? "Tracing the latest node live — click to pin the view"
+                : "View pinned — click to follow the latest node live"
+            }
+          >
+            <span className="traceDot" aria-hidden="true" />
+            Tracing
+          </button>
           <button onClick={resetLayout} type="button">
             Auto layout
           </button>
@@ -1167,7 +1228,7 @@ function SessionMap({
       <div
         className={`mapCanvas ${autoLayouting ? "autoLayouting" : ""} ${hasFocus ? "hasFocus" : ""} ${
           nodeDrag ? "nodeDragging" : ""
-        }`}
+        } ${follow ? "following" : ""}`}
         onPointerDown={beginSelectionDrag}
         ref={mapRef}
         style={

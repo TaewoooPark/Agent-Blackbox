@@ -1277,6 +1277,52 @@ h3 {
   min-width: 48px;
 }
 
+/* "Tracing" toggle: a small dot + label. Active = the camera follows the newest
+   node live; inverting the chip and pulsing the dot make that legible even in the
+   monotone theme. */
+.workflowTools .traceToggle {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+}
+
+.workflowTools .traceToggle .traceDot {
+  background: var(--text-faint);
+  border-radius: 50%;
+  flex: 0 0 auto;
+  height: 7px;
+  width: 7px;
+}
+
+.workflowTools .traceToggle.active {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg);
+}
+
+.workflowTools .traceToggle.active .traceDot {
+  animation: tracePulse 1.4s ease-in-out infinite;
+  background: var(--bg);
+}
+
+@keyframes tracePulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.3;
+    transform: scale(0.6);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workflowTools .traceToggle.active .traceDot {
+    animation: none;
+  }
+}
+
 .mapCanvas {
   align-items: flex-start;
   display: flex;
@@ -1426,10 +1472,15 @@ h3 {
   transition: none;
 }
 
-/* Only animate the transform for the "Auto layout" reset — during active wheel
-   pan/zoom an easing transition would lag behind the pointer. */
+/* Only animate the transform for the "Auto layout" reset and live tracing — during
+   active wheel pan/zoom an easing transition would lag behind the pointer, so those
+   gestures drop the .following class first (see the wheel handler). */
 .mapCanvas.autoLayouting .treeGrid {
   transition: transform 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.mapCanvas.following .treeGrid {
+  transition: transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .treeGrid.fit {
