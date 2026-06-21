@@ -108,6 +108,13 @@ describe("trace daemon", () => {
       });
       expect(evil.status).toBe(403);
 
+      // GET /suggest has side effects (it can spawn opencode), so a cross-site GET is
+      // blocked too — rejected before any spawn.
+      const evilSuggest = await fetch(`http://127.0.0.1:${daemon.port}/suggest`, {
+        headers: { origin: "https://evil.example" }
+      });
+      expect(evilSuggest.status).toBe(403);
+
       // Dashboard (loopback Origin) and the headless recorder (no Origin) both work.
       const local = await fetch(`http://127.0.0.1:${daemon.port}/events`, {
         method: "POST",

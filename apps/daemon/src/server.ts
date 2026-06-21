@@ -181,8 +181,10 @@ async function handleRequest(
     // browser from *sending* a CORS-simple POST (text/plain or body-less), so the
     // mutating routes still fire their side effects. Reject the request outright when
     // it carries a non-loopback Origin. The dashboard always sends a loopback Origin;
-    // the headless recorder sends none, so both keep working.
-    if (request.method === "POST") {
+    // the headless recorder sends none, so both keep working. GET /suggest is a
+    // CORS-simple request with side effects (it can spawn an opencode subprocess and
+    // make outbound LLM calls), so it gets the same guard despite not being a POST.
+    if (request.method === "POST" || url.pathname === "/suggest") {
       const origin = request.headers.origin;
       if (typeof origin === "string" && !isLoopbackOrigin(origin)) {
         sendJson(response, 403, { ok: false, error: { message: "cross-site request blocked" } });

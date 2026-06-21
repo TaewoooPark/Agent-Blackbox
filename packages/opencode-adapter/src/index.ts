@@ -147,7 +147,15 @@ function createOpenCodeEventFactory(options: {
     if (!isReadTool(tool) || !path) return;
     const current = typeof output.output === "string" ? output.output : "";
     if (!current) return;
-    const key = `${readString(input, "sessionID") ?? "s"}::${path}`;
+    // Key by the read WINDOW too: the read tool's offset/limit return only a slice,
+    // so two different windows of the same file must not share a cache entry — else
+    // a later window gets diffed against an earlier one and the agent reconstructs
+    // wrong content/line numbers. Whole-file reads have an empty window suffix, so
+    // their behavior is unchanged.
+    const args = input.args && typeof input.args === "object" ? (input.args as Record<string, unknown>) : {};
+    const offset = typeof args.offset === "number" ? args.offset : "";
+    const limit = typeof args.limit === "number" ? args.limit : "";
+    const key = `${readString(input, "sessionID") ?? "s"}::${path}::${offset}:${limit}`;
     const hash = hashContent(current);
     const decision = decideReadServe(readCache.get(key), { hash, content: current }, compactionGen, path);
     readCache.set(key, { hash, content: current, gen: compactionGen });

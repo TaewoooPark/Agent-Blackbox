@@ -41,6 +41,19 @@ describe("wired in-run optimizer", () => {
     expect(sys.system.join("\n")).toContain("a.ts");
   });
 
+  it("keys reads by window — a windowed read isn't treated as a re-read of the whole file", async () => {
+    const rec = await recorder(true);
+    const after = rec["tool.execute.after"];
+    const whole = readOut(BIG);
+    await after({ tool: "read", sessionID: "s", callID: "1", args: { filePath: "a.ts" } }, whole);
+    expect(whole.output).toBe(BIG);
+    // Same bytes but an explicit offset/limit window → different cache key → served
+    // FULL, not collapsed to a wrong "unchanged" no-op against the whole-file copy.
+    const windowed = readOut(BIG);
+    await after({ tool: "read", sessionID: "s", callID: "2", args: { filePath: "a.ts", offset: 0, limit: 120 } }, windowed);
+    expect(windowed.output).toBe(BIG);
+  });
+
   it("is off by default — the recorder stays a pure observer", async () => {
     const rec = await recorder(false);
     const after = rec["tool.execute.after"];
