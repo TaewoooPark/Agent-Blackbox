@@ -177,6 +177,18 @@ async function handleRequest(
       sendEmpty(response, 204);
       return;
     }
+    // CORS withholds the allow-origin header on cross-site reads but does not stop a
+    // browser from *sending* a CORS-simple POST (text/plain or body-less), so the
+    // mutating routes still fire their side effects. Reject the request outright when
+    // it carries a non-loopback Origin. The dashboard always sends a loopback Origin;
+    // the headless recorder sends none, so both keep working.
+    if (request.method === "POST") {
+      const origin = request.headers.origin;
+      if (typeof origin === "string" && !isLoopbackOrigin(origin)) {
+        sendJson(response, 403, { ok: false, error: { message: "cross-site request blocked" } });
+        return;
+      }
+    }
     const replay = parseReplayQuery(url);
     if (request.method === "GET" && url.pathname === "/health") {
       sendJson(response, 200, { ok: true, data: { status: "ok", eventsFile } });

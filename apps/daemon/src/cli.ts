@@ -239,7 +239,12 @@ function openInBrowser(url: string): void {
   const command = platform === "darwin" ? "open" : platform === "win32" ? "cmd" : "xdg-open";
   const args = platform === "win32" ? ["/c", "start", "", url] : [url];
   try {
-    spawn(command, args, { stdio: "ignore", detached: true }).unref();
+    // A missing opener binary (xdg-open/open/cmd) surfaces asynchronously as an
+    // 'error' event, not a sync throw; without a listener the EventEmitter would
+    // rethrow it as an uncaught exception and tear down the daemon we just started.
+    const child = spawn(command, args, { stdio: "ignore", detached: true });
+    child.on("error", () => {});
+    child.unref();
   } catch {
     // No browser/opener available (headless, CI) — the URL is already printed above.
   }

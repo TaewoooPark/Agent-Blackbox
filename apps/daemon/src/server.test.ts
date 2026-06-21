@@ -93,6 +93,43 @@ describe("trace daemon", () => {
     }
   });
 
+  it("rejects cross-site POSTs but allows loopback + headless (CSRF guard)", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "agent-blackbox-daemon-"));
+    const daemon = await startTraceDaemon({ projectDir: tempDir, port: 0 });
+    const mk = (seq: number, path: string) =>
+      JSON.stringify(createTraceEvent(seq, { host: "opencode", runId: "r", sessionId: "s", kind: "file_read", payload: { path } }));
+    try {
+      // A malicious page's cross-origin POST (browsers always attach Origin, and it
+      // can't be forged by JS) must be rejected even though it's a CORS-simple write.
+      const evil = await fetch(`http://127.0.0.1:${daemon.port}/events`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "https://evil.example" },
+        body: mk(1, "evil.ts")
+      });
+      expect(evil.status).toBe(403);
+
+      // Dashboard (loopback Origin) and the headless recorder (no Origin) both work.
+      const local = await fetch(`http://127.0.0.1:${daemon.port}/events`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "http://127.0.0.1:5173" },
+        body: mk(1, "ok.ts")
+      });
+      expect(local.status).toBe(202);
+      const headless = await fetch(`http://127.0.0.1:${daemon.port}/events`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: mk(2, "ok2.ts")
+      });
+      expect(headless.status).toBe(202);
+
+      // Only the two allowed writes landed — the cross-site one never fired.
+      const listed = (await (await fetch(`http://127.0.0.1:${daemon.port}/events`)).json()) as { data: unknown[] };
+      expect(listed.data).toHaveLength(2);
+    } finally {
+      await daemon.close();
+    }
+  });
+
   it("serves replay snapshots, audit checks, and handoff markdown", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "agent-blackbox-daemon-"));
     const daemon = await startTraceDaemon({ projectDir: tempDir, port: 0 });
