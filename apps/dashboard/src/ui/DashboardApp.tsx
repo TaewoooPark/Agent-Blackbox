@@ -2537,6 +2537,7 @@ function tokenUsageFromEvent(event: TraceEvent): TokenUsage | undefined {
 function sessionDisplayName(events: TraceEvent[], fallback: string | undefined): string {
   let latestTitle: string | undefined;
   let latestSlug: string | undefined;
+  let firstPrompt: string | undefined;
   for (const event of events) {
     const title = stringAtEventPath(event, ["properties.info.title"]);
     const slug = stringAtEventPath(event, ["properties.info.slug"]);
@@ -2546,8 +2547,18 @@ function sessionDisplayName(events: TraceEvent[], fallback: string | undefined):
     if (slug) {
       latestSlug = slug;
     }
+    // Claude Code has no session title — name the run after its first user prompt
+    // (role/text at the payload top level), so the picker reads it, not a raw id.
+    if (!firstPrompt && event.kind === "message") {
+      const role = stringAtEventPath(event, ["properties.role", "properties.info.role", "role"]);
+      const text = stringAtEventPath(event, ["properties.text", "properties.prompt", "text"]);
+      if (role === "user" && text) {
+        const oneLine = text.replace(/\s+/g, " ").trim();
+        firstPrompt = oneLine.length > 60 ? `${oneLine.slice(0, 59)}…` : oneLine;
+      }
+    }
   }
-  return latestTitle ?? latestSlug ?? fallback ?? "waiting for daemon";
+  return latestTitle ?? latestSlug ?? firstPrompt ?? fallback ?? "waiting for daemon";
 }
 
 function formatTokenCount(value: number): string {

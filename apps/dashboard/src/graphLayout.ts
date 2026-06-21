@@ -1081,13 +1081,19 @@ function visibleTextForEvent(event: TraceEvent): string | undefined {
 }
 
 function promptTextForEvent(event: TraceEvent): string | undefined {
-  const role = stringPayloadPath(event, ["properties.role"]) ?? stringPayloadPath(event, ["properties.info.role"]);
+  // OpenCode nests under properties.*; Claude Code puts role/text at the payload top
+  // level. Read both so a prompt renders regardless of host.
+  const role =
+    stringPayloadPath(event, ["properties.role"]) ??
+    stringPayloadPath(event, ["properties.info.role"]) ??
+    stringPayloadPath(event, ["role"]);
   const text =
     stringPayloadPath(event, ["properties.text"]) ??
     stringPayloadPath(event, ["properties.content"]) ??
     stringPayloadPath(event, ["properties.prompt"]) ??
     stringPayloadPath(event, ["properties.part.text"]) ??
-    stringPayloadPath(event, ["properties.part.content"]);
+    stringPayloadPath(event, ["properties.part.content"]) ??
+    stringPayloadPath(event, ["text"]);
   if (event.kind === "message" && role === "user" && text) {
     return cleanPromptText(text);
   }
