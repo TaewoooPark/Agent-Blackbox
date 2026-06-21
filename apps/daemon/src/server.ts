@@ -11,7 +11,8 @@ import {
   type WorkflowGraph,
   validateTraceEvent
 } from "@agent-blackbox/core";
-import { appendTraceEvent, readTraceEvents } from "@agent-blackbox/storage";
+import { appendTraceEvent, parseTraceEvents, readTraceEvents } from "@agent-blackbox/storage";
+import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
@@ -125,6 +126,33 @@ export async function loadTraceEvents(eventsFile: string): Promise<TraceEvent[]>
   }
 }
 
+// The dashboard snapshot must stay responsive no matter how large the global store
+// grows (a heavy backfill can reach 100k+ events / tens of MB). Parse only the most
+// recent slice of lines so building/shipping the snapshot is bounded; the latest
+// run renders fully and recent runs populate the picker. Full history stays in the
+// file and via GET /events.
+export const SNAPSHOT_EVENT_CAP = 30_000;
+
+export async function loadRecentTraceEvents(eventsFile: string, cap = SNAPSHOT_EVENT_CAP): Promise<TraceEvent[]> {
+  let text: string;
+  try {
+    text = await readFile(eventsFile, "utf8");
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") return [];
+    throw error;
+  }
+  const lines = text.split("\n");
+  // Trim to the last `cap` non-empty lines before parsing — avoids parsing the
+  // whole 80MB file just to drop most of it.
+  let kept = 0;
+  let start = lines.length;
+  while (start > 0 && kept < cap) {
+    start -= 1;
+    if (lines[start]!.trim().length > 0) kept += 1;
+  }
+  return parseTraceEvents(lines.slice(start).join("\n"));
+}
+
 export async function buildReplaySummary(eventsFile: string): Promise<{
   events: number;
   nodes: number;
@@ -145,7 +173,7 @@ export async function buildTraceSnapshot(
   eventsFile: string,
   replay: { seq?: number; at?: string } = {}
 ): Promise<TraceSnapshot> {
-  const events = await loadTraceEvents(eventsFile);
+  const events = await loadRecentTraceEvents(eventsFile);
   const graph =
     replay.seq !== undefined
       ? replayWorkflowGraphAtSeq(events, replay.seq)
