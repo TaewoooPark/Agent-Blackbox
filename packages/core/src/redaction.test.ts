@@ -25,5 +25,30 @@ describe("redaction", () => {
     expect(result.truncated).toBe(true);
     expect(result.rulesApplied).toContain("truncate-string");
   });
+
+  it("redacts well-formed PEM blocks (single and multiple)", () => {
+    const block = (kind: string) => `-----BEGIN ${kind}PRIVATE KEY-----\nMIIBVwIBADANBgkq\n-----END ${kind}PRIVATE KEY-----`;
+    const one = redactJsonObject({ key: block("") });
+    expect(one.value.key).toBe("[REDACTED_PRIVATE_KEY]");
+    expect(one.rulesApplied).toContain("private-key");
+
+    // Two adjacent blocks both redact — tempered quantifier doesn't fuse them.
+    const two = redactJsonObject({ keys: `${block("RSA ")}\n${block("EC ")}` });
+    expect(two.value.keys).toBe("[REDACTED_PRIVATE_KEY]\n[REDACTED_PRIVATE_KEY]");
+  });
+
+  it("does not catastrophically backtrack on many BEGIN markers without an END", () => {
+    // Untrusted tool output peppered with BEGIN markers and no END. The old
+    // `[\s\S]*?` scanned to end-of-string from every BEGIN — O(n²). The tempered
+    // quantifier bounds each scan to the next BEGIN, so this stays linear.
+    const hostile = `${"-----BEGIN RSA PRIVATE KEY-----\n".repeat(10_000)}tail`;
+    const started = Date.now();
+    // High maxStringLength so the regex runs on the full input (the ReDoS path) and
+    // isn't masked by post-redaction truncation.
+    const result = redactJsonObject({ output: hostile }, { maxStringLength: 10_000_000 });
+    expect(Date.now() - started).toBeLessThan(2000); // fixed: ~ms; vulnerable: many seconds
+    expect(result.value.output).toBe(hostile); // no END → nothing redacted
+    expect(result.rulesApplied).not.toContain("private-key");
+  });
 });
 

@@ -38,7 +38,10 @@ export const defaultRedactionRules: RedactionRule[] = [
   },
   {
     name: "private-key",
-    pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+    // Tempered quantifier: the body cannot cross another BEGIN marker. Without it, a
+    // lone BEGIN with no END forces a scan to end-of-string from every BEGIN — O(n²)
+    // backtracking on untrusted tool output peppered with BEGIN markers (slow-path DoS).
+    pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----(?:(?!-----BEGIN )[\s\S])*?-----END [A-Z ]*PRIVATE KEY-----/g,
     replacement: "[REDACTED_PRIVATE_KEY]"
   }
 ];

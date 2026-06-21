@@ -109,8 +109,15 @@ export function upsertManagedBlock(content: string, block: string): string {
   return base.length === 0 ? `${block}\n` : `${base}\n\n${block}\n`;
 }
 
+// Matches the managed block together with the blank lines immediately
+// surrounding it, so removal collapses ONLY the seam left behind — user content
+// above the block (which may legitimately contain runs of 3+ newlines, e.g.
+// inside fenced code blocks) is left byte-for-byte unchanged.
+const managedBlockSeamRegExp = (): RegExp =>
+  new RegExp(`\\n*${escapeRegExp(EFFICIENCY_MEMORY_START)}[\\s\\S]*?${escapeRegExp(EFFICIENCY_MEMORY_END)}\\n*`, "g");
+
 export function removeManagedBlock(content: string): string {
   if (!hasManagedBlock(content)) return content;
-  const stripped = content.replace(managedBlockRegExp(), "").replace(/\n{3,}/g, "\n\n").trimEnd();
+  const stripped = content.replace(managedBlockSeamRegExp(), "\n\n").trimEnd();
   return stripped.length === 0 ? "" : `${stripped}\n`;
 }
