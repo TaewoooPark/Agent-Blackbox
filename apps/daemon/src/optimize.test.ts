@@ -152,4 +152,38 @@ describe("optimize (AGENTS.md efficiency memory)", () => {
     expect(applied.agentsMdPath).toBe(join(dir, "AGENTS.md")); // fell back, did not escape
     expect(await readFile(join(dir, "AGENTS.md"), "utf8")).toContain("agent-blackbox:efficiency:start");
   });
+
+  // --- host-aware target file (Claude Code reads CLAUDE.md, OpenCode AGENTS.md) ---
+  const wastefulCC = (runId: string, ts: string) =>
+    wasteful(runId, ts).map((e) => ({ ...e, host: "claude-code" as const }));
+
+  it("targets CLAUDE.md for a claude-code run, leaving AGENTS.md untouched", async () => {
+    await seed(wastefulCC("cc-run", "2026-06-01T00:00:00.000Z"));
+    const claudeMd = join(dir, "CLAUDE.md");
+
+    const applied = await runOptimize({ projectDir: dir, mode: "apply" });
+    expect(applied.agentsMdPath).toBe(claudeMd);
+    expect(await readFile(claudeMd, "utf8")).toContain("agent-blackbox:efficiency:start");
+    await expect(readFile(join(dir, "AGENTS.md"), "utf8")).rejects.toThrow(); // never written for CC
+
+    await runOptimize({ projectDir: dir, mode: "revert" });
+    await expect(readFile(claudeMd, "utf8")).rejects.toThrow();
+  });
+
+  it("reverts the file written at apply even when the latest run's host flips", async () => {
+    // Apply on a claude-code run → CLAUDE.md.
+    const cc = wastefulCC("cc-run", "2026-06-01T00:00:00.000Z");
+    await seed(cc);
+    await runOptimize({ projectDir: dir, mode: "apply" });
+    expect(await readFile(join(dir, "CLAUDE.md"), "utf8")).toContain("agent-blackbox:efficiency:start");
+
+    // A newer opencode run becomes the latest (so host-by-latest would say AGENTS.md).
+    const oc = wasteful("oc-run", "2026-06-02T00:00:00.000Z");
+    await writeFile(join(dir, ".agent-blackbox", "events.ndjson"), `${[...cc, ...oc].map((e) => JSON.stringify(e)).join("\n")}\n`, "utf8");
+
+    // revert must still strip from CLAUDE.md, where the block actually lives.
+    const reverted = await runOptimize({ projectDir: dir, mode: "revert" });
+    expect(reverted.agentsMdPath).toBe(join(dir, "CLAUDE.md"));
+    await expect(readFile(join(dir, "CLAUDE.md"), "utf8")).rejects.toThrow();
+  });
 });

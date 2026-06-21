@@ -3,7 +3,7 @@ import { open, readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { createClaudeNormalizer } from "./normalize.js";
-import type { ClaudeNormalizerContext, ClaudeRecorderOptions, SubagentSpawn, TraceSink } from "./types.js";
+import type { ClaudeNormalizerContext, ClaudeRecorderOptions, TraceSink } from "./types.js";
 
 export function defaultProjectsDir(homeDir = homedir()): string {
   const override = process.env.CLAUDE_CONFIG_DIR;
@@ -13,7 +13,6 @@ export function defaultProjectsDir(homeDir = homedir()): string {
 type FileState = {
   offset: number;
   buffer: string;
-  ctx: ClaudeNormalizerContext;
   normalizer: ReturnType<typeof createClaudeNormalizer>;
 };
 
@@ -30,52 +29,30 @@ export async function startClaudeCodeTailer(sink: TraceSink, options: ClaudeReco
 
   const files = new Map<string, FileState>();
   const seqByRun = new Map<string, number>();
-  const byAgentId = new Map<string, SubagentSpawn>();
   const nextSeq = (runId: string): number => {
     const n = (seqByRun.get(runId) ?? 0) + 1;
     seqByRun.set(runId, n);
     return n;
   };
 
-  // Resolve a file's run/lane context. `agent-<id>.jsonl` = a subagent transcript;
-  // link it to the parent run via the spawn registry (filled from Task/Agent
-  // results). A main `<sessionId>.jsonl` runs as its own run.
+  // `agent-<id>.jsonl` = a subagent transcript → fork a lane keyed by that id. The
+  // parent run is taken per line from the inherited sessionId (see normalize), so
+  // no spawn registry is needed. A main `<sessionId>.jsonl` runs as its own run.
   const contextForFile = (filePath: string): ClaudeNormalizerContext => {
     const base = basename(filePath).replace(/\.jsonl$/, "");
-    if (base.startsWith("agent-")) {
-      const agentId = base.slice("agent-".length);
-      const spawn = byAgentId.get(agentId);
-      const parentSessionId = spawn?.parentSessionId ?? agentId;
-      return {
-        runId: spawn?.parentRunId ?? agentId,
-        defaultSessionId: agentId,
-        homeDir,
-        ...(options.rawStored !== undefined ? { rawStored: options.rawStored } : {}),
-        agent: { agentId, parentSessionId, ...(spawn?.label ? { label: spawn.label } : {}) }
-      };
-    }
-    return {
-      runId: base,
+    const common: ClaudeNormalizerContext = {
       defaultSessionId: base,
       homeDir,
       ...(options.rawStored !== undefined ? { rawStored: options.rawStored } : {})
     };
+    return base.startsWith("agent-") ? { ...common, agent: { agentId: base.slice("agent-".length) } } : common;
   };
 
   const ensureFile = (filePath: string): FileState => {
     let state = files.get(filePath);
     if (!state) {
-      const ctx = contextForFile(filePath);
-      state = { offset: 0, buffer: "", ctx, normalizer: createClaudeNormalizer(ctx) };
+      state = { offset: 0, buffer: "", normalizer: createClaudeNormalizer(contextForFile(filePath)) };
       files.set(filePath, state);
-    } else if (state.ctx.agent && state.ctx.runId === state.ctx.defaultSessionId) {
-      // Parent linkage may have arrived after this subagent file was first seen —
-      // refresh runId/parent so later lines attach under the parent run.
-      const spawn = byAgentId.get(state.ctx.agent.agentId);
-      if (spawn) {
-        state.ctx.runId = spawn.parentRunId;
-        state.ctx.agent.parentSessionId = spawn.parentSessionId;
-      }
     }
     return state;
   };
@@ -117,8 +94,7 @@ export async function startClaudeCodeTailer(sink: TraceSink, options: ClaudeReco
       } catch {
         continue; // skip a malformed line rather than stall the tailer
       }
-      const { events, spawns } = state.normalizer.consume(parsed as Record<string, unknown>);
-      for (const spawn of spawns) byAgentId.set(spawn.agentId, spawn);
+      const events = state.normalizer.consume(parsed as Record<string, unknown>);
       for (const input of events) await emit(sink, input, nextSeq);
     }
   };

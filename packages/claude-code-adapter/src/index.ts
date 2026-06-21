@@ -4,12 +4,11 @@ export function describeClaudeCodeAdapter(): string {
   return "Agent-Blackbox Claude Code adapter: transcript-tailing capture layer.";
 }
 
-export { createClaudeNormalizer, type ConsumeResult } from "./normalize.js";
+export { createClaudeNormalizer } from "./normalize.js";
 export { defaultProjectsDir, startClaudeCodeTailer } from "./tailer.js";
 export type {
   ClaudeNormalizerContext,
   ClaudeRecorderOptions,
   ClaudeTranscriptLine,
-  SubagentSpawn,
   TraceSink
 } from "./types.js";

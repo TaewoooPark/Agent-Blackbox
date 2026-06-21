@@ -9,33 +9,21 @@ export type TraceSink = {
   write(event: TraceEvent): Promise<void>;
 };
 
-/**
- * Linkage the tailer extracts from a parent session's `Task`/`Agent` tool result
- * so it can attribute a separate `agent-<id>.jsonl` transcript to the right
- * subagent lane under the parent run.
- */
-export type SubagentSpawn = {
-  agentId: string;
-  /** Absolute path of the subagent's own transcript, when the harness writes one. */
-  outputFile?: string;
-  label?: string;
-  parentSessionId: string;
-  parentRunId: string;
-};
-
 export type ClaudeNormalizerContext = {
-  /** Run the events belong to. Main session: its own sessionId. Subagent: the parent run's id. */
-  runId: string;
-  /** Fallback session id when a line carries none. */
+  /**
+   * Fallback session id when a line carries none. runId is derived per line from
+   * `sessionId` (which a subagent transcript inherits from its parent), so no
+   * run id is threaded through the context.
+   */
   defaultSessionId: string;
   homeDir?: string;
   projectDir?: string;
   rawStored?: boolean;
   /**
-   * Present when the source file is a subagent transcript (every line is
-   * `isSidechain:true`). All emitted events are stamped onto this subagent lane.
+   * Present when the source file is a subagent transcript (`agent-<id>.jsonl`,
+   * every line `isSidechain:true`). Forks a lane (agentId) under the parent run.
    */
-  agent?: { agentId: string; parentSessionId: string; label?: string };
+  agent?: { agentId: string; label?: string };
 };
 
 export type ClaudeRecorderOptions = {

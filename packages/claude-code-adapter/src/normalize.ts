@@ -3,7 +3,7 @@ import {
   type JsonObject,
   type TraceEventInput
 } from "@agent-blackbox/core";
-import type { ClaudeNormalizerContext, ClaudeTranscriptLine, SubagentSpawn, UnknownRecord } from "./types.js";
+import type { ClaudeNormalizerContext, ClaudeTranscriptLine, UnknownRecord } from "./types.js";
 
 // --- Tool-name buckets ------------------------------------------------------
 // Claude Code's public CLI uses Task/TodoWrite; this advanced harness uses
@@ -16,34 +16,27 @@ const SEARCH_TOOLS = new Set(["grep", "glob", "ls"]);
 const SUBAGENT_TOOLS = new Set(["task", "agent"]);
 const TODO_TOOLS = new Set(["todowrite", "taskcreate", "taskupdate", "taskstop"]);
 
-export type ConsumeResult = {
-  events: TraceEventInput[];
-  /** Subagent linkages discovered on this line, for the tailer's lane registry. */
-  spawns: SubagentSpawn[];
-};
-
 /**
  * Stateful per-file normalizer. A Claude Code transcript pairs a tool call
  * (assistant `tool_use` block) with its result (a later `user` line carrying a
  * `tool_result` block + structured `toolUseResult`), so we hold a tool_use_id →
- * {name,input} map across lines, plus the last model/mode for switch detection.
+ * {name,input} map across lines, plus the last model for switch detection.
  */
 export function createClaudeNormalizer(ctx: ClaudeNormalizerContext) {
   const toolUses = new Map<string, { name: string; input: JsonObject }>();
   let lastModel: string | undefined;
 
-  const consume = (rawLine: ClaudeTranscriptLine): ConsumeResult => {
+  const consume = (rawLine: ClaudeTranscriptLine): TraceEventInput[] => {
     const line = asRecord(rawLine);
-    const type = readString(line, ["type"]);
-    switch (type) {
+    switch (readString(line, ["type"])) {
       case "assistant":
-        return { events: consumeAssistant(line, ctx, toolUses, (m) => (lastModel = m), () => lastModel), spawns: [] };
+        return consumeAssistant(line, ctx, toolUses, (m) => (lastModel = m), () => lastModel);
       case "user":
         return consumeUser(line, ctx, toolUses);
       case "system":
-        return { events: consumeSystem(line, ctx), spawns: [] };
+        return consumeSystem(line, ctx);
       default:
-        return { events: [], spawns: [] };
+        return [];
     }
   };
 
@@ -115,9 +108,8 @@ function consumeUser(
   line: UnknownRecord,
   ctx: ClaudeNormalizerContext,
   toolUses: Map<string, { name: string; input: JsonObject }>
-): ConsumeResult {
+): TraceEventInput[] {
   const events: TraceEventInput[] = [];
-  const spawns: SubagentSpawn[] = [];
   const msg = asRecord(line.message);
 
   // A genuine human prompt (typed/queued), not an injected/meta/tool-result line.
@@ -135,10 +127,10 @@ function consumeUser(
     const id = readString(b, ["tool_use_id"]);
     const call = id ? toolUses.get(id) : undefined;
     if (!call) continue;
-    const observed = deriveObserved(call.name, call.input, b, toolUseResult, line, ctx, spawns);
+    const observed = deriveObserved(call.name, call.input, b, toolUseResult, line, ctx);
     if (observed) events.push(observed);
   }
-  return { events, spawns };
+  return events;
 }
 
 // --- system line ------------------------------------------------------------
@@ -156,8 +148,7 @@ function deriveObserved(
   resultBlock: UnknownRecord,
   toolUseResult: unknown,
   line: UnknownRecord,
-  ctx: ClaudeNormalizerContext,
-  spawns: SubagentSpawn[]
+  ctx: ClaudeNormalizerContext
 ): TraceEventInput | undefined {
   const lname = name.toLowerCase();
   const tur = asRecord(toolUseResult);
@@ -220,9 +211,6 @@ function deriveObserved(
   if (SUBAGENT_TOOLS.has(lname)) {
     const label = readString(input, ["subagent_type", "description"]) ?? "subagent";
     const agentId = readString(tur, ["agentId"]) ?? label;
-    const outputFile = readString(tur, ["outputFile"]);
-    const parentSessionId = readString(line, ["sessionId"]) ?? ctx.defaultSessionId;
-    spawns.push({ agentId, ...(outputFile ? { outputFile } : {}), label, parentSessionId, parentRunId: ctx.runId });
     const ev = mkInput(line, ctx, {
       kind: "subagent_spawned",
       summary: `Delegated to ${label}`,
@@ -263,12 +251,16 @@ function mkInput(
     ...(ctx.projectDir ? { projectDir: ctx.projectDir } : {}),
     maxStringLength: 4000
   });
+  // A Claude Code transcript line ALWAYS carries the parent session id: a main
+  // session's own id, and — crucially — a subagent's agent-<id>.jsonl carries the
+  // PARENT session's id too. So runId = sessionId nests subagents under their
+  // parent run for free, no spawn registry needed.
   const sessionId = readString(line, ["sessionId"]) ?? ctx.defaultSessionId;
   const ts = readString(line, ["timestamp"]);
   const cwd = readString(line, ["cwd"]);
   const input: TraceEventInput = {
     host: "claude-code",
-    runId: ctx.runId,
+    runId: sessionId,
     sessionId,
     kind: partial.kind,
     summary: partial.summary,
@@ -277,11 +269,10 @@ function mkInput(
   };
   if (ts) input.ts = ts;
   if (cwd) input.cwd = cwd;
-  // Subagent transcript: stamp every event onto the subagent lane under the parent run.
+  // Subagent transcript: fork a lane (agentId) under the shared parent session.
   if (ctx.agent) {
     input.agentId = ctx.agent.agentId;
     input.agentRole = "subagent";
-    input.parentSessionId = ctx.agent.parentSessionId;
   }
   return input;
 }
