@@ -29,6 +29,10 @@ export type RunningTraceDaemon = {
   server: Server;
   port: number;
   eventsFile: string;
+  // Append + broadcast a trace event in-process (same path as POST /events) so a
+  // co-located recorder — e.g. the Claude Code transcript tailer — can feed the
+  // daemon without an HTTP round-trip to itself.
+  ingest: (event: TraceEvent) => Promise<void>;
   close: () => Promise<void>;
 };
 
@@ -87,6 +91,11 @@ export async function startTraceDaemon(options: TraceDaemonOptions): Promise<Run
     server,
     port: actualPort,
     eventsFile,
+    ingest: async (event: TraceEvent) => {
+      if (!validateTraceEvent(event).ok) return;
+      await appendTraceEvent(eventsFile, event);
+      void broadcastSnapshot(clients, eventsFile);
+    },
     close: () =>
       new Promise<void>((resolve, reject) => {
         for (const client of clients) {

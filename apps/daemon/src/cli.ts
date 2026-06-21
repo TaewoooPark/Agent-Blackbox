@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { startClaudeCodeTailer } from "@agent-blackbox/claude-code-adapter";
 import { evaluatePromiseChecks, generateHandoffMarkdown, materializeWorkflowGraph } from "@agent-blackbox/core";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -68,28 +69,49 @@ async function main(argv: string[]): Promise<void> {
 
     let daemon: Awaited<ReturnType<typeof startTraceDaemon>>;
     if (global) {
-      if (!pluginBundlePath) {
-        throw new Error(
-          "Global install needs the self-contained recorder bundle. Use the published npx package, or `npm run build:cli` then `node packages/cli/dist/cli.js up`.\n" +
-            "(Or scope to one project with: agent-blackbox up --project <dir>.)"
-        );
-      }
-      const { pluginPath } = await installGlobalRecorder({ daemonUrl, pluginBundlePath });
+      // Which agent host(s) to record. Daemon + dashboard are host-agnostic; only
+      // the recorder install differs. `all` co-records every host into one daemon.
+      const host = readHost(argv);
       const dataDir = globalDataDir();
       const eventsFile = join(dataDir, "events.ndjson");
       daemon = await startTraceDaemon({ projectDir: dataDir, port, eventsFile, suggest });
+
+      const recorders: string[] = [];
+      if (host === "opencode" || host === "all") {
+        if (!pluginBundlePath) {
+          throw new Error(
+            "The OpenCode recorder needs the self-contained bundle. Use the published npx package, or `npm run build:cli` then `node packages/cli/dist/cli.js up`.\n" +
+              "(Claude Code needs no bundle — try: agent-blackbox up --host claude-code.)"
+          );
+        }
+        const { pluginPath } = await installGlobalRecorder({ daemonUrl, pluginBundlePath });
+        recorders.push(`OpenCode recorder installed → ${pluginPath}`);
+      }
+      if (host === "claude-code" || host === "all") {
+        // No install into Claude Code — the daemon tails the JSONL transcripts the
+        // CLI already writes, streaming events in-process via daemon.ingest.
+        const tailer = await startClaudeCodeTailer({ write: (event) => daemon.ingest(event) });
+        recorders.push(`Claude Code transcripts tailed ← ${tailer.projectsDir} (no install)`);
+      }
+      if (host === "codex") {
+        recorders.push("Codex recorder isn't built yet (see local-planning/). Use --host opencode|claude-code|all.");
+      }
+
       const ui = await startDashboardServer({ distDir: dashboardDistDir, port: uiPort, daemonUrl });
       const dashboardUrl = `http://127.0.0.1:${ui.port}`;
-      console.log(`✓ Global OpenCode recorder installed: ${pluginPath}`);
-      console.log(`✓ Agent-Blackbox is up (recording all OpenCode sessions)`);
+      for (const line of recorders) console.log(`✓ ${line}`);
+      console.log(`✓ Agent-Blackbox is up (host: ${host})`);
       console.log(`  Dashboard:  ${dashboardUrl}`);
       console.log(`  Daemon API: ${daemonUrl}  (trace: ${daemon.eventsFile})`);
       console.log(`  Suggestions: ${suggest.mode}${suggest.model ? ` (${suggest.model})` : ""}`);
       console.log("");
       if (!argv.includes("--no-open")) openInBrowser(dashboardUrl);
-      console.log("Now use OpenCode however you already do — the dashboard fills in live:");
-      console.log("  opencode                 # in any folder (terminal), or");
-      console.log("  the OpenCode desktop app # open any project");
+      if (host === "claude-code" || host === "all") {
+        console.log("Now use Claude Code however you already do — the map fills in live as it writes transcripts.");
+      }
+      if (host === "opencode" || host === "all") {
+        console.log("Now use OpenCode however you already do (terminal or the desktop app) — the map fills in live.");
+      }
       console.log("");
       console.log("Stop recording any time with:  agent-blackbox uninstall");
       console.log("Press Ctrl+C to stop the daemon + dashboard.");
@@ -220,6 +242,7 @@ function printHelp(): void {
   console.log("");
   console.log("Usage:");
   console.log("  agent-blackbox up                       # GLOBAL: record every OpenCode session (any folder / the app) + daemon + dashboard");
+  console.log("  agent-blackbox up --host claude-code     # record Claude Code instead — no install, tails transcripts (also: opencode | codex | all)");
   console.log("  agent-blackbox up --project <dir>        # scope the recorder to one project instead");
   console.log("       [--port <port>] [--ui-port <port>] [--suggest auto|free|off|ollama|opencode|openai-compat] [--suggest-model <id>] [--optimize] [--no-open]");
   console.log("  agent-blackbox install [--port <port>]   # install the global recorder only (no daemon)");
@@ -264,6 +287,12 @@ function readFlag(argv: string[], flag: string): string | undefined {
 function portArg(raw: string | undefined, fallback: number): number {
   const n = Number(raw);
   return Number.isInteger(n) && n >= 0 && n <= 65535 ? n : fallback;
+}
+
+function readHost(argv: string[]): "opencode" | "claude-code" | "codex" | "all" {
+  const allowed = ["opencode", "claude-code", "codex", "all"] as const;
+  const raw = readFlag(argv, "--host") ?? process.env.AGENT_BLACKBOX_HOST ?? "opencode";
+  return (allowed as readonly string[]).includes(raw) ? (raw as (typeof allowed)[number]) : "opencode";
 }
 
 function readSuggestConfig(argv: string[]): SuggestionConfig {
