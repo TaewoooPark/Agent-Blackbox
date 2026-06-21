@@ -92,6 +92,16 @@ describe("createClaudeNormalizer", () => {
     expect(bash?.agentLabel).not.toContain("/Users/me"); // lane label redacted too
   });
 
+  it("surfaces git commit/push from Bash as distinct git nodes, leaving other commands as bash", () => {
+    const n = createClaudeNormalizer(ctx());
+    n.consume(assistant([{ type: "tool_use", id: "g1", name: "Bash", input: { command: 'git add -A && git commit -m "x"' } }]));
+    expect(n.consume(userResult("g1", "ok", { stdout: "" })).find((e) => e.kind === "git_commit")).toBeDefined();
+    n.consume(assistant([{ type: "tool_use", id: "g2", name: "Bash", input: { command: "git push origin main" } }]));
+    expect(n.consume(userResult("g2", "ok", { stdout: "" })).find((e) => e.kind === "git_push")).toBeDefined();
+    n.consume(assistant([{ type: "tool_use", id: "g3", name: "Bash", input: { command: "npm test" } }]));
+    expect(n.consume(userResult("g3", "ok", { stdout: "" })).find((e) => e.kind === "bash")).toBeDefined();
+  });
+
   it("maps Edit to file_edit and Write to file_created", () => {
     const n = createClaudeNormalizer(ctx());
     n.consume(assistant([{ type: "tool_use", id: "e1", name: "Edit", input: { file_path: "/proj/b.ts", new_string: "xyz" } }]));

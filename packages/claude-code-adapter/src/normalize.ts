@@ -231,6 +231,16 @@ function deriveObserved(
   if (BASH_TOOLS.has(lname)) {
     const command = readString(input, ["command"]);
     const outputChars = (strlen(tur.stdout) ?? 0) + (strlen(tur.stderr) ?? 0) || measureResultText(resultBlock) || 0;
+    // git commit/push run via Bash in Claude Code — surface them as distinct git
+    // nodes (parity with OpenCode's git events) instead of a generic bash step.
+    const git = command ? gitKind(command) : undefined;
+    if (git) {
+      return mkInput(line, ctx, {
+        kind: git.kind,
+        summary: isError ? `${git.label} (failed)` : git.label,
+        payload: { ...(command ? { command } : {}), exitCode: isError ? 1 : 0, outputChars }
+      });
+    }
     return mkInput(line, ctx, {
       kind: "bash",
       summary: command ? `Ran ${command}` : "Ran shell command",
@@ -434,6 +444,14 @@ function shorten(v: string | undefined, max: number): string | undefined {
 function shortLabel(text: string): string {
   const firstLine = (text.split("\n").find((l) => l.trim().length > 0) ?? text).trim();
   return firstLine.length > 48 ? `${firstLine.slice(0, 47)}…` : firstLine;
+}
+
+// Detect a git commit/push inside a (possibly compound) Bash command so it renders
+// as a distinct git node. Push wins over commit when both appear (the later action).
+function gitKind(command: string): { kind: "git_push" | "git_commit"; label: string } | undefined {
+  if (/\bgit\s+push\b/.test(command)) return { kind: "git_push", label: "Pushed changes" };
+  if (/\bgit\s+commit\b/.test(command)) return { kind: "git_commit", label: "Recorded a commit" };
+  return undefined;
 }
 
 // Make an MCP tool name readable: `mcp__playwright__browser_evaluate` → `playwright: browser_evaluate`.
