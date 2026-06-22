@@ -1,5 +1,5 @@
 import { createTraceEvent } from "@agent-blackbox/core";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WebSocket, type RawData } from "ws";
@@ -34,6 +34,34 @@ describe("snapshot scale cap", () => {
     expect(recent).toHaveLength(10);
     expect(recent[0]?.seq).toBe(41); // last 10 (seq 41..50)
     expect(recent[9]?.seq).toBe(50);
+  });
+
+  const ev = (seq: number) =>
+    createTraceEvent(seq, {
+      host: "claude-code",
+      runId: "r",
+      sessionId: "r",
+      kind: "file_read",
+      payload: { path: `f${seq}.ts`, chars: 1 },
+      ts: `2026-06-21T00:00:${String(seq).padStart(2, "0")}.000Z`
+    });
+
+  it("reads incrementally — appended events are picked up without re-reading from the top", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "abb-incr-"));
+    const eventsFile = join(tempDir, "events.ndjson");
+    await writeFile(eventsFile, `${[ev(1), ev(2)].map((e) => JSON.stringify(e)).join("\n")}\n`, "utf8");
+    expect((await loadRecentTraceEvents(eventsFile)).map((e) => e.seq)).toEqual([1, 2]);
+    await appendFile(eventsFile, `${JSON.stringify(ev(3))}\n`, "utf8");
+    expect((await loadRecentTraceEvents(eventsFile)).map((e) => e.seq)).toEqual([1, 2, 3]);
+  });
+
+  it("resets the cache when the file is truncated/rotated", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "abb-trunc-"));
+    const eventsFile = join(tempDir, "events.ndjson");
+    await writeFile(eventsFile, `${[ev(1), ev(2), ev(3)].map((e) => JSON.stringify(e)).join("\n")}\n`, "utf8");
+    expect(await loadRecentTraceEvents(eventsFile)).toHaveLength(3);
+    await writeFile(eventsFile, `${JSON.stringify(ev(9))}\n`, "utf8"); // shorter file → truncation
+    expect((await loadRecentTraceEvents(eventsFile)).map((e) => e.seq)).toEqual([9]);
   });
 });
 

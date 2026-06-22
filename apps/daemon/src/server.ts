@@ -12,7 +12,7 @@ import {
   validateTraceEvent
 } from "@agent-blackbox/core";
 import { appendTraceEvent, parseTraceEvents, readTraceEvents } from "@agent-blackbox/storage";
-import { readFile } from "node:fs/promises";
+import { open, readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
@@ -140,24 +140,78 @@ export async function loadTraceEvents(eventsFile: string): Promise<TraceEvent[]>
 // file and via GET /events.
 export const SNAPSHOT_EVENT_CAP = 30_000;
 
+// Incremental, capped, in-memory cache of recent events per file. The snapshot is
+// rebuilt on every broadcast/poll; re-reading + re-splitting the whole (tens-of-MB)
+// events file each time dominated daemon CPU on long sessions. Instead we read only
+// the bytes appended since the last read, parse only the new lines, and keep the most
+// recent SNAPSHOT_EVENT_CAP events in memory. Serialized per file so a broadcast build
+// and a REST poll can't race the same cache.
+type EventCache = { offset: number; buffer: string; events: TraceEvent[] };
+const eventCaches = new Map<string, EventCache>();
+const cacheLocks = new Map<string, Promise<unknown>>();
+
+function withCacheLock<T>(key: string, run: () => Promise<T>): Promise<T> {
+  const prev = cacheLocks.get(key) ?? Promise.resolve();
+  const result = prev.then(run, run);
+  cacheLocks.set(key, result.then(() => undefined, () => undefined));
+  return result;
+}
+
 export async function loadRecentTraceEvents(eventsFile: string, cap = SNAPSHOT_EVENT_CAP): Promise<TraceEvent[]> {
-  let text: string;
-  try {
-    text = await readFile(eventsFile, "utf8");
-  } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") return [];
-    throw error;
-  }
-  const lines = text.split("\n");
-  // Trim to the last `cap` non-empty lines before parsing — avoids parsing the
-  // whole 80MB file just to drop most of it.
-  let kept = 0;
-  let start = lines.length;
-  while (start > 0 && kept < cap) {
-    start -= 1;
-    if (lines[start]!.trim().length > 0) kept += 1;
-  }
-  return parseTraceEvents(lines.slice(start).join("\n"));
+  return withCacheLock(eventsFile, async () => {
+    let cache = eventCaches.get(eventsFile);
+    if (!cache) {
+      cache = { offset: 0, buffer: "", events: [] };
+      eventCaches.set(eventsFile, cache);
+    }
+    let size: number;
+    try {
+      size = (await stat(eventsFile)).size;
+    } catch (error) {
+      if (isNodeError(error) && error.code === "ENOENT") return [];
+      throw error;
+    }
+    if (size < cache.offset) {
+      // Truncated/rotated — restart from the top.
+      cache.offset = 0;
+      cache.buffer = "";
+      cache.events = [];
+    }
+    if (size > cache.offset) {
+      const handle = await open(eventsFile, "r");
+      try {
+        const length = size - cache.offset;
+        const buf = Buffer.alloc(length);
+        await handle.read(buf, 0, length, cache.offset);
+        cache.offset = size;
+        cache.buffer += buf.toString("utf8");
+      } finally {
+        await handle.close();
+      }
+      const lines = cache.buffer.split("\n");
+      cache.buffer = lines.pop() ?? ""; // a torn final line stays buffered until completed
+      // Cold read of a large pre-existing file: trim to the last cap lines before
+      // parsing (the old bulk behavior). Incremental reads are tiny and skip this.
+      let from = 0;
+      if (cache.events.length === 0 && lines.length > SNAPSHOT_EVENT_CAP) {
+        let kept = 0;
+        from = lines.length;
+        while (from > 0 && kept < SNAPSHOT_EVENT_CAP) {
+          from -= 1;
+          if (lines[from]!.trim().length > 0) kept += 1;
+        }
+      }
+      const fresh = parseTraceEvents(lines.slice(from).join("\n"));
+      if (fresh.length > 0) {
+        cache.events.push(...fresh);
+        if (cache.events.length > SNAPSHOT_EVENT_CAP) {
+          cache.events.splice(0, cache.events.length - SNAPSHOT_EVENT_CAP);
+        }
+      }
+    }
+    // Apply the caller's cap at return time (decoupled from the cache size).
+    return cap >= cache.events.length ? cache.events.slice() : cache.events.slice(cache.events.length - cap);
+  });
 }
 
 export async function buildReplaySummary(eventsFile: string): Promise<{
