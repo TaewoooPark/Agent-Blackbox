@@ -60,6 +60,10 @@ const TREE_MAX_SCALE = 1;
 const USER_ZOOM_MIN = 0.4;
 const USER_ZOOM_MAX = 8;
 const USER_ZOOM_STEP = 1.2;
+// Apply at most one streamed snapshot per this interval (keep the latest). The daemon
+// can broadcast every ~150ms; a big session is costly to re-lay-out, so coalescing
+// here bounds main-thread work and keeps the live view smooth.
+const SNAPSHOT_APPLY_INTERVAL_MS = 400;
 
 type ApiResponse<T> = {
   ok: boolean;
@@ -118,6 +122,26 @@ export function DashboardApp() {
   useEffect(() => {
     let active = true;
     let socket: WebSocket | undefined;
+    // Coalesce snapshot application — keep only the latest and apply at most once per
+    // SNAPSHOT_APPLY_INTERVAL_MS, so a fast stream can't pin the main thread.
+    let latest: TraceSnapshot | null = null;
+    let lastAppliedAt = 0;
+    let applyTimer: ReturnType<typeof setTimeout> | null = null;
+    const nowMs = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
+    const applyNow = () => {
+      applyTimer = null;
+      if (!active || !latest) return;
+      lastAppliedAt = nowMs();
+      setSnapshot(latest);
+      setError(null);
+      latest = null;
+    };
+    const scheduleApply = (data: TraceSnapshot) => {
+      latest = data;
+      const since = nowMs() - lastAppliedAt;
+      if (since >= SNAPSHOT_APPLY_INTERVAL_MS) applyNow();
+      else if (applyTimer === null) applyTimer = setTimeout(applyNow, SNAPSHOT_APPLY_INTERVAL_MS - since);
+    };
     async function loadSnapshot() {
       try {
         const query = selectedSeq === null ? "" : `?seq=${selectedSeq}`;
@@ -128,8 +152,7 @@ export function DashboardApp() {
           setError(payload.error?.message ?? "Daemon returned no snapshot");
           return;
         }
-        setSnapshot(payload.data);
-        setError(null);
+        scheduleApply(payload.data);
       } catch (loadError) {
         if (active) {
           setError(loadError instanceof Error ? loadError.message : String(loadError));
@@ -145,8 +168,7 @@ export function DashboardApp() {
         try {
           const payload = JSON.parse(message.data as string) as StreamMessage;
           if (payload.type === "snapshot") {
-            setSnapshot(payload.data);
-            setError(null);
+            scheduleApply(payload.data);
           } else {
             setError(payload.error.message);
           }
@@ -162,6 +184,7 @@ export function DashboardApp() {
       active = false;
       socket?.close();
       window.clearInterval(interval);
+      if (applyTimer !== null) clearTimeout(applyTimer);
     };
   }, [selectedSeq]);
 
@@ -185,10 +208,22 @@ export function DashboardApp() {
       })),
     [runs, snapshot]
   );
-  const graph = useMemo(
-    () => (visibleEvents.length > 0 ? materializeWorkflowGraph(visibleEvents) : snapshot?.graph ?? null),
-    [snapshot, visibleEvents]
-  );
+  const graph = useMemo(() => {
+    // Reuse the daemon's already-built graph when the live view covers the whole log
+    // (single run). Re-materializing on the client costs ~450ms at 50k events and runs
+    // on every streamed snapshot — the dominant source of long-session stutter. Replay
+    // or a per-run filter (visible slice ≠ whole log) still rebuilds from what's shown.
+    if (
+      selectedSeq === null &&
+      snapshot?.graph &&
+      snapshot.replay?.mode === "live" &&
+      snapshot.graph.runId === activeRunId &&
+      visibleEvents.length === (snapshot.events?.length ?? -1)
+    ) {
+      return snapshot.graph;
+    }
+    return visibleEvents.length > 0 ? materializeWorkflowGraph(visibleEvents) : snapshot?.graph ?? null;
+  }, [snapshot, visibleEvents, activeRunId, selectedSeq]);
   const agentNodes = graph?.nodes.filter(isRuntimeAgentNode) ?? [];
   const selectedAgent = agentNodes.find((agent) => agent.id === selectedAgentId) ?? null;
   const selectedAgentLabel = selectedAgent?.label ?? null;

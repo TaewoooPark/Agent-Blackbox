@@ -1,6 +1,6 @@
 {
   "name": "@agent-blackbox/daemon",
-  "version": "0.47.2",
+  "version": "0.47.3",
   "description": "Agent-Blackbox local trace daemon.",
   "type": "module",
   "bin": {

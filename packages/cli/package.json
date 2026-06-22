@@ -1,6 +1,6 @@
 {
   "name": "@taewooopark/agent-blackbox",
-  "version": "0.47.2",
+  "version": "0.47.3",
   "description": "Local-first flight recorder + context-efficiency profiler for coding agents — records Claude Code and OpenCode. Run with npx.",
   "keywords": [
     "claude-code",

@@ -323,22 +323,51 @@ async function broadcastSnapshot(clients: Set<WebSocket>, eventsFile: string): P
   if (clients.size === 0) {
     return;
   }
-  await Promise.allSettled([...clients].map((client) => sendSnapshot(client, eventsFile)));
+  // Build + serialize the snapshot ONCE, then fan the same frame out to every client —
+  // not once per client (which re-ran the whole O(N) graph build per socket).
+  let frame: string;
+  try {
+    frame = JSON.stringify({ type: "snapshot", data: await buildTraceSnapshot(eventsFile) });
+  } catch (error) {
+    const errFrame = JSON.stringify({
+      type: "error",
+      error: { message: error instanceof Error ? error.message : String(error) }
+    });
+    for (const client of clients) if (client.readyState === WebSocket.OPEN) client.send(errFrame);
+    return;
+  }
+  for (const client of clients) if (client.readyState === WebSocket.OPEN) client.send(frame);
 }
 
 // Coalesce rapid broadcasts (the tailer can ingest many events per poll tick, each
-// otherwise rebuilding the whole snapshot) into at most one per `delayMs`, so the
-// live view stays responsive regardless of ingest rate.
+// otherwise rebuilding the whole snapshot) into at most one per `delayMs`. Builds are
+// SERIALIZED — a new request that arrives while one is in flight is collapsed into a
+// single trailing rebuild — so on a large log the ~O(N) build can't overlap itself and
+// back up the event loop; the rate self-limits to one build per (buildTime + delayMs).
 function makeBroadcastScheduler(clients: Set<WebSocket>, eventsFile: string, delayMs = 150): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null;
-  return () => {
+  let building = false;
+  let pending = false;
+  const schedule = (): void => {
+    if (building) {
+      pending = true; // a build is running — remember to rebuild once it finishes
+      return;
+    }
     if (timer) return;
     timer = setTimeout(() => {
       timer = null;
-      void broadcastSnapshot(clients, eventsFile);
+      building = true;
+      void broadcastSnapshot(clients, eventsFile).finally(() => {
+        building = false;
+        if (pending) {
+          pending = false;
+          schedule();
+        }
+      });
     }, delayMs);
     if (typeof timer.unref === "function") timer.unref();
   };
+  return schedule;
 }
 
 async function sendSnapshot(client: WebSocket, eventsFile: string): Promise<void> {

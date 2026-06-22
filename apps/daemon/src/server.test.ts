@@ -362,6 +362,37 @@ describe("trace daemon", () => {
       await daemon.close();
     }
   });
+
+  it("broadcasts one build to every connected client (build-once fan-out)", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "agent-blackbox-daemon-"));
+    const daemon = await startTraceDaemon({ projectDir: tempDir, port: 0 });
+    const a = new WebSocket(`ws://127.0.0.1:${daemon.port}/stream`);
+    const b = new WebSocket(`ws://127.0.0.1:${daemon.port}/stream`);
+    try {
+      await Promise.all([nextSocketMessage(a), nextSocketMessage(b)]); // initial snapshots
+      const event = createTraceEvent(1, {
+        host: "opencode",
+        runId: "run-fanout",
+        sessionId: "session-fanout",
+        kind: "file_read",
+        payload: { path: "src/x.ts" }
+      });
+      const bothUpdated = Promise.all([nextSocketMessage(a), nextSocketMessage(b)]);
+      const ingest = await fetch(`http://127.0.0.1:${daemon.port}/events`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(event)
+      });
+      expect(ingest.status).toBe(202);
+      const [ua, ub] = await bothUpdated; // both clients receive the single built snapshot
+      expect(ua.data.graph).toMatchObject({ runId: "run-fanout" });
+      expect(ub.data.graph).toMatchObject({ runId: "run-fanout" });
+    } finally {
+      a.close();
+      b.close();
+      await daemon.close();
+    }
+  });
 });
 
 function nextSocketMessage(socket: WebSocket): Promise<{ type: string; data: { events: unknown[]; graph?: unknown } }> {
