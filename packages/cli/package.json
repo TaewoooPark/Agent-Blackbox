@@ -1,18 +1,34 @@
 {
   "name": "@taewooopark/agent-blackbox",
-  "version": "0.47.1",
-  "description": "Local-first flight recorder + context-efficiency profiler for coding agents (OpenCode). Run with npx.",
+  "version": "0.47.2",
+  "description": "Local-first flight recorder + context-efficiency profiler for coding agents — records Claude Code and OpenCode. Run with npx.",
+  "keywords": [
+    "claude-code",
+    "opencode",
+    "coding-agent",
+    "observability",
+    "flight-recorder",
+    "context-engineering",
+    "token-efficiency",
+    "local-first",
+    "ai-agents"
+  ],
   "type": "module",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/TaewoooPark/Agent-Blackbox.git"
   },
+  "homepage": "https://github.com/TaewoooPark/Agent-Blackbox#readme",
+  "bugs": {
+    "url": "https://github.com/TaewoooPark/Agent-Blackbox/issues"
+  },
   "bin": {
     "agent-blackbox": "dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "engines": {
     "node": ">=20"
