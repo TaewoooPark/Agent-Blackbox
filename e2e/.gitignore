@@ -1,0 +1,7 @@
+node_modules/
+artifacts/
+playwright-report/
+test-results/
+.abb-data/
+.abb-cfg/
+package-lock.json

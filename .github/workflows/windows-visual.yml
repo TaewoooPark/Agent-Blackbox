@@ -1,0 +1,38 @@
+name: Windows visual
+
+# On-demand: boots the real daemon + dashboard on a Windows runner, seeds C:\ events,
+# and screenshots the rendered session map so the Windows UI can be reviewed from a Mac.
+on:
+  workflow_dispatch:
+
+jobs:
+  visual:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      # The harness pins CLAUDE_CONFIG_DIR to a temp dir, so the tailer watches an empty
+      # (or missing → handled) dir and only the seeded events render.
+      - name: Install e2e harness
+        working-directory: e2e
+        run: npm install
+      - name: Install Playwright Chromium
+        working-directory: e2e
+        run: npx playwright install chromium
+      - name: Run Windows visual test
+        working-directory: e2e
+        run: npx playwright test
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-visual
+          path: |
+            e2e/artifacts
+            e2e/playwright-report
+          if-no-files-found: warn

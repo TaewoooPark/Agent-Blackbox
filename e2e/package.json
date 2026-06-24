@@ -1,0 +1,10 @@
+{
+  "name": "agent-blackbox-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Isolated Playwright harness (NOT a workspace) that boots the real daemon on Windows CI, seeds C:\\ events, and screenshots the rendered session map. Kept out of the root lockfile so adding Playwright can't prune the cross-platform optionals.",
+  "devDependencies": {
+    "@playwright/test": "latest"
+  }
+}
