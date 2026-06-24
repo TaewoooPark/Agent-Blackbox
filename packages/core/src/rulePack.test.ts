@@ -25,6 +25,31 @@ describe("parseRulePack", () => {
     expect(parseRulePack({ rules: "nope" }).rules).toEqual([]);
     expect(parseRulePack(42).rules).toEqual([]);
   });
+
+  it("rejects catastrophic-backtracking (ReDoS) patterns so a bad rules.json can't hang the daemon/UI", () => {
+    const pack = parseRulePack({
+      rules: [
+        { id: "nested", type: "forbid-read", pattern: "(a+)+$" }, // classic ReDoS → dropped
+        { id: "nested2", type: "forbid-bash", pattern: "(.*,)*$" }, // → dropped
+        { id: "huge", type: "forbid-read", pattern: "a{9999,}" }, // huge repetition → dropped
+        { id: "ok", type: "forbid-read", pattern: "node_modules" } // safe → kept
+      ]
+    });
+    expect(pack.rules.map((r) => r.id)).toEqual(["ok"]);
+  });
+
+  it("evaluates a malicious pattern's nearest-safe form on a long input within a tight time bound", () => {
+    // Even a borderline pattern that slips the heuristic must finish fast because the
+    // tested input is length-capped. A 100k-char path tested in well under a second.
+    const pack = parseRulePack({ rules: [{ id: "r", type: "forbid-read", pattern: "(ab)+c" }] });
+    const longPath = "/" + "ab".repeat(50_000) + "/x.ts";
+    const start = Date.now();
+    evaluateRulePack(
+      [createTraceEvent(1, { host: "claude-code", runId: "r", sessionId: "s", kind: "file_read", payload: { path: longPath } as never })],
+      pack
+    );
+    expect(Date.now() - start).toBeLessThan(500);
+  });
 });
 
 describe("evaluateRulePack", () => {

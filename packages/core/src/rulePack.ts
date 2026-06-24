@@ -30,15 +30,30 @@ export type RuleFinding = {
 const RULE_TYPES = new Set<Rule["type"]>(["forbid-read", "forbid-edit", "forbid-bash", "max-reads", "require-before-commit"]);
 const MAX_RULES = 50;
 const MAX_PATTERN_LEN = 200;
+const MAX_INPUT_LEN = 2000; // cap the string a pattern is tested against (paths/commands are short)
+
+// Patterns prone to catastrophic backtracking. A rules.json may ride in with a
+// cloned repo, so an untrusted `(a+)+$` must not hang the daemon's event loop AND
+// the dashboard's UI thread (which re-evaluates every snapshot). This rejects the
+// classic ReDoS shapes — a quantified group/class that itself contains a
+// quantifier, and very large bounded repetition — before compiling.
+// A group that itself contains a quantifier and is then quantified again — the
+// classic `(a+)+`, `(.*,)*`, `(a+){2,}` shapes. (Not a perfect ReDoS detector; the
+// MAX_INPUT_LEN cap is the backstop for the rest.)
+const NESTED_QUANTIFIER = /\([^)]*[+*][^)]*\)\s*([+*]|\{)/;
+const HUGE_REPETITION = /\{\s*\d{4,}/;
 
 const baseName = (p: string): string => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
 const verb = (c: string): string => c.trim().split(/\s+/)[0] ?? c;
+const capInput = (s: string): string => (s.length > MAX_INPUT_LEN ? s.slice(0, MAX_INPUT_LEN) : s);
 const str = (e: TraceEvent, k: string): string | undefined =>
   typeof e.payload[k] === "string" ? (e.payload[k] as string) : undefined;
 
-// Compile a pattern defensively: bounded length, invalid regex → null (rule skipped).
+// Compile a pattern defensively: bounded length, no catastrophic-backtracking
+// shapes, invalid regex → null (rule skipped, never throws).
 function safeRegex(pattern: string): RegExp | null {
   if (typeof pattern !== "string" || pattern.length === 0 || pattern.length > MAX_PATTERN_LEN) return null;
+  if (NESTED_QUANTIFIER.test(pattern) || HUGE_REPETITION.test(pattern)) return null;
   try {
     return new RegExp(pattern);
   } catch {
@@ -91,13 +106,13 @@ export function evaluateRulePack(events: TraceEvent[], pack: RulePack): RuleFind
       for (const e of events) {
         if (e.kind !== kind) continue;
         const path = str(e, "path");
-        if (path && re.test(path)) offenders.push(baseName(path));
+        if (path && re.test(capInput(path))) offenders.push(baseName(path));
       }
     } else if (rule.type === "forbid-bash") {
       for (const e of events) {
         if (e.kind !== "bash") continue;
         const c = str(e, "command");
-        if (c && re.test(c)) offenders.push(verb(c));
+        if (c && re.test(capInput(c))) offenders.push(verb(c));
       }
     } else if (rule.type === "max-reads") {
       const limit = rule.limit ?? 1;
@@ -105,7 +120,7 @@ export function evaluateRulePack(events: TraceEvent[], pack: RulePack): RuleFind
       for (const e of events) {
         if (e.kind !== "file_read") continue;
         const path = str(e, "path");
-        if (path && re.test(path)) counts.set(path, (counts.get(path) ?? 0) + 1);
+        if (path && re.test(capInput(path))) counts.set(path, (counts.get(path) ?? 0) + 1);
       }
       for (const [path, n] of counts) if (n > limit) offenders.push(`${baseName(path)} ×${n}`);
     } else if (rule.type === "require-before-commit") {
@@ -114,7 +129,7 @@ export function evaluateRulePack(events: TraceEvent[], pack: RulePack): RuleFind
       const ordered = [...events].sort((a, b) => a.seq - b.seq);
       let satisfiedSince = false;
       for (const e of ordered) {
-        if (e.kind === "bash" && str(e, "command") && re.test(str(e, "command")!)) {
+        if (e.kind === "bash" && str(e, "command") && re.test(capInput(str(e, "command")!))) {
           const code = e.payload.exitCode;
           if (typeof code !== "number" || code === 0) satisfiedSince = true;
         }
