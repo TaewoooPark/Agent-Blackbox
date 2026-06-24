@@ -27,7 +27,7 @@
   <img src="https://img.shields.io/badge/Live%20stream-000000?style=flat-square&labelColor=000000&color=000000" alt="Live">
 </p>
 
-Agent-Blackbox is a **local-first flight recorder and context-efficiency profiler for coding agents.** It turns every agent run into a **live, replayable operational graph** — what the agent read, changed, ran, decided, delegated, blocked on, and verified — reconstructed from observed events, not from the agent's own summary. Then it **measures how economically that run used its context window** and tells you, concretely, how to make the next one cheaper and faster.
+Agent-Blackbox is a **local-first flight recorder and context-efficiency profiler for coding agents.** It turns every agent run into a **live, replayable operational graph** — what the agent read, changed, ran, decided, delegated, blocked on, and verified — reconstructed from observed events, not from the agent's own summary. Then it scores the run on **two axes** — how economically it used its context window, *and* whether the task actually landed — judged on a yardstick that **fits the task type** (research / debug / ops…) and **your own past runs**, and tells you, concretely, how to make the next one cheaper and faster.
 
 **Works with [Claude Code](https://www.claude.com/product/claude-code) and [OpenCode](https://opencode.ai)** — same recorder, same map, same efficiency score. Record either, or both at once.
 
@@ -133,6 +133,8 @@ npx @taewooopark/agent-blackbox uninstall
 | Lose the thread on long runs | **Scrub and replay** any moment in time |
 | One opaque agent | **Subagent genealogy** — who delegated what |
 | No idea what it cost | A **context-efficiency score** + reclaimable tokens |
+| "Did it actually work?" | A second **outcome** score — efficient-but-failed ≠ wasteful-but-shipped |
+| One yardstick for every task | **Task-tailored** (research / debug / ops) + scored vs **your own past runs** |
 | "Why is this run so expensive?" | **Concrete fixes**, optionally written by a local model |
 | Re-read everything to resume | One-click **handoff** summary |
 | Your code & prompts leave the machine | **Local-first**, minimal capture, **no API key** |
@@ -154,7 +156,9 @@ That is the whole idea: **open the black box while the flight is still in the ai
 - **Replay** — drag the navigation-chart timeline to any sequence point; the graph and files reflect state at exactly that moment.
 - **Click to focus** — select any moment for a detail popover (evidence, files, tokens); select an agent to isolate its lane; click a file to highlight every moment that touched it, with arcs drawn from each node's ring.
 - **Subagent genealogy** — real delegations (the `task` tool / child sessions) fork into their own branch, attributed to the subagent that did the work.
-- **Context efficiency** — a live score + metric meters (context pressure, cache hit, redundant reads, read amplification, large injections, retry waste, yield density) with one-tap optimization notations — **rule-based, or tailored by a free model with no API key**. `--suggest free` rotates a pool of free models across independent quotas (OpenCode Zen + Ollama cloud + local), failing over and cooling down on rate limits, so the AI suggestions stay free and durable over long sessions.
+- **Context efficiency** — a live score from **11 metrics** (context pressure, cache hit, redundant reads, read amplification, large injections, retry waste, yield density, tool overhead, edit churn, large file reads, unused reads) with one-tap optimization notations — **rule-based, or tailored by a free model with no API key**. `--suggest free` rotates a pool of free models across independent quotas (OpenCode Zen + Ollama cloud + local), failing over and cooling down on rate limits, so the AI suggestions stay free and durable over long sessions.
+- **Task-tailored & multi-axis scoring** — the score is judged on a yardstick that **fits the task** (a research run isn't dinged for reading widely; debug runs weigh retries/rework harder), shown as an archetype chip. A separate **outcome** score answers *did the task land?* (from edits, verification, failures) so an efficient-but-failed run reads differently from a wasteful-but-shipped one. And every run is scored against **your own past runs of the same kind in the same project** — *"score 40 vs your usual 87 for research."* (Full reference: **[docs/analysis.md](docs/analysis.md)**.)
+- **Custom checks** — drop a `.agent-blackbox/rules.json` to add project rules on top of the built-ins (e.g. *never read `node_modules`*, *run tests before committing*); findings surface in the panel, separate from the score.
 - **Handoff export** — a structured continuation summary (objective, files in play, decisions, commands, failures, blockers, next safe action), one click to copy as Markdown.
 - **Run picker** — one project log can hold many runs; the console follows the most recently *active* run and lets you pin any past one.
 - **Full event coverage** — whichever model you run, every action is captured (reads, edits, bash, skills, custom/MCP tools, permissions, todos, subagents, **slash commands, `/compact` context compaction, agent/model switches**) — keyed off the host event, never the model. Known noise (LSP, pty, file-watcher, MCP registry) is filtered; anything not yet modeled still surfaces as a labeled node, so nothing is silently dropped.
@@ -201,6 +205,11 @@ The score is **task-tailored and multi-axis** — a research run isn't judged on
 
 See **[docs/analysis.md](docs/analysis.md)** for the full reference — every metric + threshold, the archetype profiles, the effectiveness heuristic, the rules.json schema, and the honest known-limitations.
 
+<p align="center">
+  <img src="./docs/screenshots/efficiency-panel.jpeg" alt="The Agent-Blackbox context-efficiency panel for a real debug run: a 62 efficiency score with a 'debug' task-archetype chip, a separate 'OUTCOME · Succeeded · 100' axis (the task shipped — tests passed and committed — even though the run was wasteful), an 'Optimize future runs → write a reversible memory to CLAUDE.md' button, a 'Custom checks' section flagging a WARN rule ('Reading vendored code — skip node_modules' → index.js), and the eleven metric meters (redundant re-reads and yield density flagged in oxblood)." width="332">
+</p>
+<p align="center"><sub>One run, both axes: <b>efficient-but-wasteful (62)</b> yet the task <b>shipped (outcome 100)</b> — plus a task-archetype chip, a project rule check, and the reversible-memory button.</sub></p>
+
 Suggestions are **rule-based by default** (always on, no dependencies). To have them tailored by a model — with **no API key** — point `up` at a local/free model:
 
 ```bash
@@ -235,13 +244,13 @@ Verified end-to-end on a small local model: a redundant-reads finding turns from
 
 ### Close the loop — write the fix back *(experimental)*
 
-Advice you have to re-apply by hand is friction. `optimize` turns the last run's findings into a small, **cache-safe** memory block in your project's `AGENTS.md` — the file the agent already reads as context — so the *next* run avoids the waste before it happens. It's the actuator half of the recorder: observe → diagnose → **write → measure → roll back if it didn't help.**
+Advice you have to re-apply by hand is friction. `optimize` turns your findings into a small, **cache-safe** memory block in the file the agent already reads as context — **`CLAUDE.md` for Claude Code, `AGENTS.md` for OpenCode** — so the *next* run avoids the waste before it happens. It **accumulates across runs**: a pattern seen repeatedly ranks first (annotated `×N`) and one-offs fade, so the block reflects your project's real habits, not just the last run. It's the actuator half of the recorder: observe → diagnose → **write → measure → roll back if it didn't help.**
 
 ```bash
 # Preview what it would write (no changes)
 npm run optimize -- --project ~/code/my-app
 
-# Apply: append a managed block to AGENTS.md + record the baseline score
+# Apply: append a managed block to CLAUDE.md / AGENTS.md + record the baseline score
 npm run optimize -- --project ~/code/my-app --apply
 
 # After the next run, confirm it helped — auto-rolls-back on a clear score drop
@@ -256,7 +265,7 @@ The block is written **between markers at the end of the file**, so the stable p
 Prefer the dashboard? The **Optimize future runs** button in the right rail opens a popup that previews the *exact* block before anything is written — with the reclaimable-token target and the target path — then applies, updates, or reverts it in one click. A real, reversible file change, not advice:
 
 <p align="center">
-  <img src="./docs/screenshots/optimize-modal.jpeg" alt="The 'Optimize future runs' popup in the Agent-Blackbox dashboard: a 'Not applied' badge, the target AGENTS.md path, and a 'What gets written' preview of the exact memory block (reuse the verified 'npm test' command; read calculator.js, parser.js, calculator.test.js once and re-read only changed ranges), with 'Apply to AGENTS.md' and 'Cancel' buttons over the dimmed session map." width="100%">
+  <img src="./docs/screenshots/optimize-modal.jpeg" alt="The 'Optimize future runs' popup in the Agent-Blackbox dashboard: it writes a cache-safe, reversible note to CLAUDE.md (the host's memory file), a 'Not applied' badge, ~15k tokens targeted per run, the target CLAUDE.md path, and a 'What gets written' preview of the exact memory block — note 'accumulated across recent runs, frequent items (×N) rank first', then concrete levers (reuse the verified 'npm test' command; read ledger.ts once and in ranges; settle the approach before editing) — with 'Apply to CLAUDE.md' and 'Cancel' buttons." width="380">
 </p>
 
 #### Measured on a real run
@@ -284,7 +293,7 @@ Both runs started from the identical pristine repo (git-reset between them) and 
 
 ### In-run optimizer — cut the waste live, no re-run *(opt-in)*
 
-The AGENTS.md memory above pays off on *future* tasks. The in-run optimizer cuts waste **inside the current run** — the recorder stops being purely passive and serves re-reads cheaply through the OpenCode tool hooks. Enable it with `AGENT_BLACKBOX_OPTIMIZE=1` (or `--optimize` at install); off by default.
+The cross-run memory above pays off on *future* tasks. The in-run optimizer cuts waste **inside the current run** — the recorder stops being purely passive and serves re-reads cheaply through the OpenCode tool hooks. Enable it with `AGENT_BLACKBOX_OPTIMIZE=1` (or `--optimize` at install); off by default.
 
 - **Re-reads served as a no-op or a diff.** When the agent re-reads a file it already read this run, the `tool.execute.after` hook rewrites the result: *unchanged* → a one-line "reuse your earlier copy" note; *edited* → only the changed line range. Measured on a 120-line file: **96% fewer tokens on an unchanged re-read, 94% on an edited one** — in the same run, zero re-run.
 - **Correct by construction.** Re-reads are never blocked (you might genuinely need one). The no-op/diff only fires when **no compaction has happened since** the file was last served — so the content is provably still in context. After a compaction the full file is served again, because the agent may have lost it.
@@ -366,10 +375,11 @@ When you need to continue the run elsewhere — a teammate, the next agent, or t
 | `POST /events` | Ingest a canonical `TraceEvent` |
 | `GET /events` | The durable event log |
 | `GET /graph?seq=<n>` | Replay the graph up to a sequence |
-| `GET /snapshot?seq=<n>` | Events, graph, audit checks, efficiency report, and handoff markdown |
+| `GET /snapshot?seq=<n>` | Events, graph, audit checks, efficiency + **effectiveness** reports, **baselines**, **rule packs**, and handoff markdown |
 | `GET /audit` | Promise / claim checks |
-| `GET /efficiency?seq=<n>` | Context-efficiency report (scores + metrics) |
-| `POST /suggest` | Optimization suggestions for a posted report (deterministic or local-model) |
+| `GET /efficiency?seq=<n>` | Context-efficiency report (scores + metrics + archetype) |
+| `POST /suggest` | Optimization suggestions for a posted report + optional causal timeline (deterministic or local-model) |
+| `GET·POST /optimize[/apply\|/revert]?runId=<id>` | Preview / apply / revert the memory block for a run (reversible file write) |
 | `GET /handoff` | Generated handoff markdown |
 | `WS /stream` | Live snapshots pushed after each ingest |
 
@@ -404,8 +414,9 @@ npm run build
 ## Roadmap
 
 - More host adapters (Codex, PI, and other harnesses) on the same canonical core — **Claude Code and OpenCode** ship today.
-- Deeper audit: claim-vs-evidence verification and risky-command surfacing.
-- Cross-run efficiency trends and fleet-wide views.
+- **Shipped recently:** a second **outcome** axis, **task-archetype** scoring, **per-project baselines** ("vs your usual run"), **accumulative** optimize memory, and **custom rule packs** — see **[docs/analysis.md](docs/analysis.md)**.
+- **Fleet-wide** efficiency-trend charts across many runs (the per-run baseline data already lands locally; the longitudinal view is next).
+- Deeper audit: richer claim-vs-evidence verification and risky-command surfacing.
 
 ---
 
