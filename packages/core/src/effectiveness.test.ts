@@ -49,6 +49,24 @@ describe("computeEffectiveness", () => {
     expect(withContradiction.signals.some((s) => s.id === "contradicted")).toBe(true);
   });
 
+  it("doesn't tank a successful run for many transient API errors", () => {
+    const base = [
+      ev(1, "file_edit", { path: "a.ts", chars: 800 }),
+      ev(2, "bash", { command: "npm test", exitCode: 0, outputChars: 200 }),
+      ev(3, "git_commit", { command: "git commit", exitCode: 0, outputChars: 50 })
+    ];
+    const apiErrors = Array.from({ length: 30 }, (_, i) => ev(100 + i, "host_event", { event: "api_error", level: "error" }));
+    const r = computeEffectiveness([...base, ...apiErrors]);
+    expect(r.status).toBe("good"); // transient errors capped at -8, don't dominate
+    expect(r.signals.find((s) => s.id === "api-errors")?.tone).toBe("neutral");
+  });
+
+  it("reserves the 'succeeded' label for high confidence (medium reads 'likely ok')", () => {
+    const mediumConfidence = computeEffectiveness([ev(1, "file_edit", { path: "a.ts", chars: 800 })]); // only the output signal
+    expect(mediumConfidence.confidence).toBe("medium");
+    expect(mediumConfidence.label).not.toBe("succeeded");
+  });
+
   it("separates the two axes: a wasteful run can still be effective", () => {
     // Lots of redundant reads (efficiency would be low) but it shipped + verified.
     const r = computeEffectiveness([

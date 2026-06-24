@@ -33,7 +33,8 @@ export function computeEffectiveness(events: TraceEvent[], checks: PromiseCheck[
   let creates = 0;
   let commits = 0;
   let pushes = 0;
-  let errors = 0;
+  let hardErrors = 0; // session_error — a real run failure
+  let softErrors = 0; // host_event api_error — usually transient + auto-retried, weak signal
   let cmds = 0;
   let failCmds = 0;
   let lastVerify: "passed" | "failed" | undefined;
@@ -46,17 +47,19 @@ export function computeEffectiveness(events: TraceEvent[], checks: PromiseCheck[
       case "file_created":
         creates += 1;
         break;
-      case "git_commit":
-        if (num(e, "exitCode") !== 1) commits += 1; // count unless it explicitly failed
+      case "git_commit": {
+        const code = num(e, "exitCode");
+        if (code === undefined || code === 0) commits += 1; // only a clean commit counts
         break;
+      }
       case "git_push":
         pushes += 1;
         break;
       case "session_error":
-        errors += 1;
+        hardErrors += 1;
         break;
       case "host_event":
-        if (str(e, "level") === "error") errors += 1;
+        if (str(e, "level") === "error") softErrors += 1;
         break;
       case "bash": {
         const code = num(e, "exitCode");
@@ -97,7 +100,7 @@ export function computeEffectiveness(events: TraceEvent[], checks: PromiseCheck[
     evidence += 1;
     signals.push({ id: "verify", label: "tests/build passed", tone: "good" });
   } else if (lastVerify === "failed") {
-    score -= 22;
+    score -= 25;
     evidence += 1;
     signals.push({ id: "verify", label: "ended on a failing test/build", tone: "bad" });
   }
@@ -108,10 +111,16 @@ export function computeEffectiveness(events: TraceEvent[], checks: PromiseCheck[
     signals.push({ id: "commit", label: `${commits} commit${commits === 1 ? "" : "s"}${pushes > 0 ? " + push" : ""}`, tone: "good" });
   }
 
-  if (errors > 0) {
-    score -= Math.min(25, errors * 8);
+  if (hardErrors > 0) {
+    score -= Math.min(30, hardErrors * 15);
     evidence += 1;
-    signals.push({ id: "errors", label: `${errors} error event${errors === 1 ? "" : "s"}`, tone: "bad" });
+    signals.push({ id: "errors", label: `${hardErrors} session error${hardErrors === 1 ? "" : "s"}`, tone: "bad" });
+  }
+  if (softErrors > 0) {
+    // Transient API errors are mostly retried away — nudge, don't dominate, and
+    // don't treat them as strong evidence either way.
+    score -= Math.min(8, softErrors);
+    signals.push({ id: "api-errors", label: `${softErrors} transient API error${softErrors === 1 ? "" : "s"}`, tone: "neutral" });
   }
 
   if (cmds >= 3 && failCmds / cmds > 0.4) {
@@ -136,7 +145,17 @@ export function computeEffectiveness(events: TraceEvent[], checks: PromiseCheck[
 
   score = Math.max(0, Math.min(100, Math.round(score)));
   const status: EffectivenessStatus = score >= 70 ? "good" : score >= 45 ? "warn" : "bad";
+  // "succeeded" is a strong claim — reserve it for high confidence; a good score on
+  // medium evidence reads "likely ok", and low confidence never asserts an outcome.
   const label =
-    confidence === "low" ? "unclear" : status === "good" ? "succeeded" : status === "warn" ? "mixed" : "rough";
+    confidence === "low"
+      ? "unclear"
+      : status === "good"
+        ? confidence === "high"
+          ? "succeeded"
+          : "likely ok"
+        : status === "warn"
+          ? "mixed"
+          : "rough";
   return { score, status, label, confidence, signals };
 }

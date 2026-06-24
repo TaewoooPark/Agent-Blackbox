@@ -2397,13 +2397,15 @@ function ContextPanel({
             {report.headline}
             {report.estimated ? " · est." : ""}
           </span>
-          <span
-            className={`contextEffectiveness status-${effectiveness.status}`}
-            title={`Did the task land? ${effectiveness.confidence}-confidence heuristic from outcome + verification + failure signals${effectiveness.signals.length ? `: ${effectiveness.signals.map((s) => s.label).join("; ")}` : ""}. Separate from efficiency — a run can be efficient but fail, or wasteful but succeed.`}
-          >
-            <span className="contextEffLabel">{effectiveness.label}</span>
-            <span className="contextEffScore">{effectiveness.confidence === "low" ? "?" : effectiveness.score}</span>
-          </span>
+          {effectiveness.confidence !== "low" ? (
+            <span
+              className={`contextEffectiveness status-${effectiveness.status}`}
+              title={`Did the task land? ${effectiveness.confidence}-confidence heuristic from outcome + verification + failure signals${effectiveness.signals.length ? `: ${effectiveness.signals.map((s) => s.label).join("; ")}` : ""}. Separate from efficiency — a run can be efficient but fail, or wasteful but succeed.`}
+            >
+              <span className="contextEffLabel">{effectiveness.label}</span>
+              <span className="contextEffScore">{effectiveness.score}</span>
+            </span>
+          ) : null}
           {baseline && baseline.verdict !== "insufficient" ? (
             <span className={`contextBaseline verdict-${baseline.verdict}`} title="Compared against your past runs of the same task type.">
               {baseline.verdict === "better" ? "↑ " : baseline.verdict === "worse" ? "↓ " : "≈ "}
