@@ -9,6 +9,7 @@ import {
   generateHandoffMarkdown,
   materializeWorkflowGraph,
   projectKey,
+  roleFromPrompt,
   type BaselineComparison,
   type EffectivenessReport,
   type EfficiencyMetric,
@@ -642,7 +643,7 @@ export function DashboardApp() {
             >
               <span className="laneMarker" />
               <span className="laneMain">
-                <strong>{shortTitle(typeof agent.data?.agentName === "string" ? agent.data.agentName : agent.label)}</strong>
+                <strong>{agentDisplayName(agent)}</strong>
                 <span>{agent.type.toLowerCase()}</span>
               </span>
               <span className="laneBadges">
@@ -2323,6 +2324,15 @@ function latestConnectionSeq(connections: FileConnection[]): number {
 
 function shortTitle(value: string): string {
   return value.length > 42 ? `${value.slice(0, 39)}...` : value;
+}
+
+// A lane's display name. A lane labelled from its subagent's first prompt (no
+// concise spawn name) gets its role distilled at render time ("You are a
+// literature-search specialist" → "literature-search specialist"), so even runs
+// recorded before this still read as roles. A real name passes through untouched.
+function agentDisplayName(agent: { label: string; data?: { agentName?: unknown } }): string {
+  const raw = typeof agent.data?.agentName === "string" ? agent.data.agentName : agent.label;
+  return shortTitle(roleFromPrompt(raw) ?? raw);
 }
 
 function compactDescription(value: string): string {

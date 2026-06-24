@@ -1,6 +1,7 @@
 import {
   redactJsonObject,
   redactJsonValue,
+  roleFromPrompt,
   type JsonObject,
   type TraceEventInput
 } from "@agent-blackbox/core";
@@ -445,6 +446,9 @@ function shorten(v: string | undefined, max: number): string | undefined {
 // boilerplate preamble and cap short, so a transcript-only lane is still scannable
 // in the narrow lane rail rather than a wrapped sentence.
 function shortLabel(text: string): string {
+  // Prefer a distilled role ("You are a literature-search specialist" → the role).
+  const role = roleFromPrompt(text);
+  if (role) return role;
   let firstLine = (text.split("\n").find((l) => l.trim().length > 0) ?? text).trim();
   // Strip leading "ROLE/CONTEXT —"/":"-style preamble to surface the task itself.
   const sep = firstLine.search(/\s[—:-]\s/);
