@@ -10,6 +10,7 @@ import {
   type EfficiencyReport,
   type PromiseCheck,
   type RunSummary,
+  type TimelineEntry,
   type TraceEvent,
   type TraceHost,
   type WorkflowGraph,
@@ -354,12 +355,18 @@ async function handleRequest(
     if (url.pathname === "/suggest" && (request.method === "POST" || request.method === "GET")) {
       // POST a client-computed report (keeps it consistent with the per-run panel);
       // GET falls back to the whole-file report.
-      const body = request.method === "POST" ? ((await readJsonBody(request)) as { report?: EfficiencyReport }) : {};
+      const body =
+        request.method === "POST"
+          ? ((await readJsonBody(request)) as { report?: EfficiencyReport; timeline?: TimelineEntry[] })
+          : {};
       const report =
         body.report && Array.isArray(body.report.metrics)
           ? body.report
           : (await buildTraceSnapshot(eventsFile, replay)).efficiency;
-      const result = await generateSuggestions(report, suggestConfig);
+      // The client (which has the viewed run's events) may attach a redacted causal
+      // timeline so advice respects compaction boundaries; tolerate its absence.
+      const timeline = Array.isArray(body.timeline) ? body.timeline : undefined;
+      const result = await generateSuggestions(report, suggestConfig, timeline);
       sendJson(response, 200, { ok: true, data: result });
       return;
     }

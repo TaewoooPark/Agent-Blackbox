@@ -77,3 +77,5 @@ export {
 } from "./efficiencyMemory.js";
 export type { EfficiencyProfile, ProfileItem } from "./efficiencyProfile.js";
 export { accrueProfile, buildAccumulatedMemory, emptyProfile, isEfficiencyProfile } from "./efficiencyProfile.js";
+export type { TimelineAct, TimelineEntry } from "./timeline.js";
+export { buildCausalTimeline } from "./timeline.js";

@@ -1,4 +1,5 @@
 import {
+  buildCausalTimeline,
   buildDeterministicSuggestions,
   compareToBaseline,
   computeEffectiveness,
@@ -280,7 +281,9 @@ export function DashboardApp() {
       const response = await fetch(`${daemonUrl}/suggest`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ report: efficiency })
+        // Attach a redacted causal timeline so the model respects compaction
+        // boundaries (a re-read after a compact is expected, not waste).
+        body: JSON.stringify({ report: efficiency, timeline: buildCausalTimeline(visibleEvents) })
       });
       const json = (await response.json()) as { ok: boolean; data?: { suggestions: Suggestion[]; provider: string } };
       if (json.ok && json.data) setAiState(json.data);

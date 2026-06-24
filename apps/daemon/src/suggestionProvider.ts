@@ -1,7 +1,8 @@
 import {
   buildDeterministicSuggestions,
   type EfficiencyReport,
-  type Suggestion
+  type Suggestion,
+  type TimelineEntry
 } from "@agent-blackbox/core";
 import { spawn } from "node:child_process";
 
@@ -30,6 +31,8 @@ export type SuggestionResult = {
 // room to finish before falling back to the deterministic floor.
 const TIMEOUT_MS = 45_000;
 const SYSTEM_PROMPT = `You optimize the context-window economy of AI coding-agent runs. The agent has tools: file read/edit, bash, grep/glob, sub-agents, and prompt caching. You receive a JSON digest of the run's FLAGGED metrics (each: id, value, display, status, detail, reclaimableTokens, offenders). Return ONE concrete fix per flagged metric that the operator can apply on the next run.
+
+A "timeline" may accompany the metrics: a space-separated action sequence (read/reread/edit/create/bash/search/compact/error/subagent, some with a :target basename or verb). Use it for CAUSALITY. "reread" already means a re-read with NO compaction since — genuine waste worth flagging. A plain "read" AFTER a "compact" is the window being legitimately reloaded — never flag that as a redundant read. "edit X" then "reread X" means re-read only the changed range.
 
 # Every action MUST
 - Fit the run's "archetype" (task type): research/read-heavy runs SHOULD read widely — don't tell them to read less; debug runs care about retries/rework; ops runs live in command output. Tailor the fix to the task, never generic.
@@ -68,6 +71,7 @@ type Digest = {
   archetype: string; // inferred task type — tailor advice to it (don't tell a research task to read less)
   totalInputTokens: number;
   estimated: boolean;
+  timeline?: string; // compact causal action sequence (see SYSTEM_PROMPT), when available
   metrics: {
     id: string;
     label: string;
@@ -80,13 +84,16 @@ type Digest = {
   }[];
 };
 
-export function buildDigest(report: EfficiencyReport): Digest {
+export function buildDigest(report: EfficiencyReport, timeline?: TimelineEntry[]): Digest {
+  const timelineStr =
+    timeline && timeline.length > 0 ? timeline.map((t) => (t.target ? `${t.act}:${t.target}` : t.act)).join(" ") : undefined;
   return {
     overallScore: report.overallScore,
     headline: report.headline,
     archetype: report.archetype,
     totalInputTokens: report.totalInputTokens,
     estimated: report.estimated,
+    ...(timelineStr ? { timeline: timelineStr } : {}),
     metrics: report.metrics
       .filter((m) => m.status !== "good")
       .map((m) => ({
@@ -147,12 +154,16 @@ export function isQuotaError(error: unknown): boolean {
   );
 }
 
-export async function generateSuggestions(report: EfficiencyReport, config: SuggestionConfig): Promise<SuggestionResult> {
+export async function generateSuggestions(
+  report: EfficiencyReport,
+  config: SuggestionConfig,
+  timeline?: TimelineEntry[]
+): Promise<SuggestionResult> {
   const deterministic = buildDeterministicSuggestions(report);
   if (config.mode === "off" || deterministic.length === 0) {
     return { suggestions: deterministic, provider: "deterministic" };
   }
-  const digest = buildDigest(report);
+  const digest = buildDigest(report, timeline);
 
   // auto/free (no pinned model): rotate the free pool, fail over on quota errors,
   // cool throttled models down. One successful call per suggestion → light + durable.
