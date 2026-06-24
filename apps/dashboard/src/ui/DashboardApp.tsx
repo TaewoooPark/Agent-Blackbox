@@ -239,11 +239,15 @@ export function DashboardApp() {
   // (score + metrics) until you ask for fixes.
   const [adviceRequested, setAdviceRequested] = useState(false);
 
-  // Stale advice shouldn't bleed across runs; the score/metrics track live.
+  // Stale advice shouldn't bleed across runs. Key this on the run actually being
+  // VIEWED (activeRunId), not just the manual pick (selectedRunId): when the view
+  // auto-follows "latest" and a new run appears, activeRunId changes while
+  // selectedRunId stays null — so keying on selectedRunId let advice from the old run
+  // linger against the new run's score (the "advice shown, score 100" desync).
   useEffect(() => {
     setAiState(null);
     setAdviceRequested(false);
-  }, [selectedRunId]);
+  }, [activeRunId]);
 
   const requestAiSuggestions = async () => {
     setAiLoading(true);
@@ -262,7 +266,13 @@ export function DashboardApp() {
     }
   };
   // Reveal advice and kick off model-tailored suggestions, both only on request.
+  // Pin the view to the run the advice is about (stop auto-following "latest") so a
+  // run that becomes latest mid-request — e.g. the suggestion model's own
+  // `opencode run` — can't yank the view, and its score, out from under the advice.
+  // Pinning to the already-active run leaves activeRunId unchanged, so the reset
+  // effect above doesn't fire and clear the advice we're requesting.
   const requestAdvice = () => {
+    if (activeRunId) setSelectedRunId(activeRunId);
     setAdviceRequested(true);
     void requestAiSuggestions();
   };

@@ -8,6 +8,7 @@ import {
   type EfficiencyReport,
   type PromiseCheck,
   type TraceEvent,
+  type TraceHost,
   type WorkflowGraph,
   validateTraceEvent
 } from "@agent-blackbox/core";
@@ -24,6 +25,14 @@ export type TraceDaemonOptions = {
   port?: number;
   eventsFile?: string;
   suggest?: SuggestionConfig;
+  // When set, the daemon records ONLY these hosts; an event from any other host is
+  // dropped — not stored, not broadcast. `up --host claude-code` sets ["claude-code"]
+  // so a leftover global OpenCode recorder (or the suggestion model's own
+  // `opencode run`, which a stale recorder may still capture despite
+  // AGENT_BLACKBOX_DISABLE) can't inject a foreign, trivial run that hijacks "latest"
+  // and resets the score to 100. Unset / `--host all` records every host
+  // (back-compat for the `daemon` command and project-scoped mode).
+  recordHosts?: TraceHost[];
 };
 
 export type RunningTraceDaemon = {
@@ -59,10 +68,13 @@ type JsonResponse = {
 export async function startTraceDaemon(options: TraceDaemonOptions): Promise<RunningTraceDaemon> {
   const eventsFile = options.eventsFile ?? join(options.projectDir, ".agent-blackbox", "events.ndjson");
   const suggestConfig: SuggestionConfig = options.suggest ?? { mode: "auto" };
+  const recordHosts =
+    options.recordHosts && options.recordHosts.length > 0 ? new Set<TraceHost>(options.recordHosts) : null;
+  const hostAllowed = (host: TraceHost): boolean => recordHosts === null || recordHosts.has(host);
   const clients = new Set<WebSocket>();
   const scheduleBroadcast = makeBroadcastScheduler(clients, eventsFile);
   const server = createServer((request, response) => {
-    void handleRequest(request, response, eventsFile, clients, suggestConfig, options.projectDir, scheduleBroadcast);
+    void handleRequest(request, response, eventsFile, clients, suggestConfig, options.projectDir, scheduleBroadcast, hostAllowed);
   });
   const streamServer = new WebSocketServer({ noServer: true });
   server.on("upgrade", (request, socket, head) => {
@@ -101,6 +113,7 @@ export async function startTraceDaemon(options: TraceDaemonOptions): Promise<Run
     eventsFile,
     ingest: async (event: TraceEvent) => {
       if (!validateTraceEvent(event).ok) return;
+      if (!hostAllowed(event.host)) return;
       await appendTraceEvent(eventsFile, event);
       scheduleBroadcast();
     },
@@ -267,7 +280,8 @@ async function handleRequest(
   clients: Set<WebSocket>,
   suggestConfig: SuggestionConfig,
   projectDir: string,
-  scheduleBroadcast: () => void
+  scheduleBroadcast: () => void,
+  hostAllowed: (host: TraceHost) => boolean
 ): Promise<void> {
   try {
     applyCors(request, response);
@@ -359,9 +373,23 @@ async function handleRequest(
         });
         return;
       }
-      await appendTraceEvent(eventsFile, body as TraceEvent);
+      const event = body as TraceEvent;
+      // Host scoping: when the daemon is started for a specific host (e.g.
+      // `up --host claude-code`), drop events from any other host. A leftover global
+      // OpenCode recorder — or the suggestion model's own `opencode run` — would
+      // otherwise post a trivial foreign run that hijacks "latest" and resets the
+      // score to 100. Ack with accepted:false so the recorder doesn't error/retry,
+      // but neither store nor broadcast it.
+      if (!hostAllowed(event.host)) {
+        sendJson(response, 202, {
+          ok: true,
+          data: { accepted: false, reason: `host ${event.host} is not recorded by this daemon` }
+        });
+        return;
+      }
+      await appendTraceEvent(eventsFile, event);
       scheduleBroadcast();
-      sendJson(response, 202, { ok: true, data: { accepted: true, id: (body as TraceEvent).id } });
+      sendJson(response, 202, { ok: true, data: { accepted: true, id: event.id } });
       return;
     }
     sendJson(response, 404, { ok: false, error: { message: "Not found" } });

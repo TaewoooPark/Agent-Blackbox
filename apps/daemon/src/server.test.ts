@@ -119,6 +119,41 @@ describe("trace daemon", () => {
     }
   });
 
+  it("drops events whose host isn't recorded (the --host claude-code score-hijack guard)", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "agent-blackbox-daemon-"));
+    // Scoped to claude-code, like `up --host claude-code`.
+    const daemon = await startTraceDaemon({ projectDir: tempDir, port: 0, recordHosts: ["claude-code"] });
+    try {
+      const post = (host: "claude-code" | "opencode", runId: string) =>
+        fetch(`http://127.0.0.1:${daemon.port}/events`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(
+            createTraceEvent(1, { host, runId, sessionId: runId, kind: "file_read", payload: { path: "a.ts" } })
+          )
+        });
+
+      // A foreign opencode event (a leftover global recorder, or the suggestion
+      // model's own `opencode run`) is acked but NOT stored — so it can't become a
+      // new "latest" run that resets the score.
+      const foreign = await post("opencode", "opencode-suggestion-run");
+      expect(foreign.status).toBe(202);
+      expect((await foreign.json()).data).toMatchObject({ accepted: false });
+
+      // The host we ARE recording still goes through.
+      const native = await post("claude-code", "claude-run");
+      expect((await native.json()).data).toMatchObject({ accepted: true });
+
+      const listed = (await (await fetch(`http://127.0.0.1:${daemon.port}/events`)).json()) as {
+        data: { runId: string; host: string }[];
+      };
+      expect(listed.data).toHaveLength(1);
+      expect(listed.data[0]).toMatchObject({ host: "claude-code", runId: "claude-run" });
+    } finally {
+      await daemon.close();
+    }
+  });
+
   it("reflects CORS only for loopback origins (blocks cross-site)", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "agent-blackbox-daemon-"));
     const daemon = await startTraceDaemon({ projectDir: tempDir, port: 0 });

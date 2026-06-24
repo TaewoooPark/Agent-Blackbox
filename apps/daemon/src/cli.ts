@@ -81,7 +81,18 @@ async function main(argv: string[]): Promise<void> {
       const host = readHost(argv);
       const dataDir = globalDataDir();
       const eventsFile = join(dataDir, "events.ndjson");
-      daemon = await startTraceDaemon({ projectDir: dataDir, port, eventsFile, suggest });
+      // Scope what the daemon records to the chosen host (unless `all`). This is the
+      // root-cause guard for the "advice → score 100" bug: with `--host claude-code`,
+      // a leftover global OpenCode recorder (and the suggestion model's own
+      // `opencode run`) can no longer slip a trivial opencode run into the store and
+      // hijack "latest". `all` keeps recording every host.
+      daemon = await startTraceDaemon({
+        projectDir: dataDir,
+        port,
+        eventsFile,
+        suggest,
+        ...(host === "all" ? {} : { recordHosts: [host] })
+      });
 
       const recorders: string[] = [];
       if (host === "opencode" || host === "all") {
