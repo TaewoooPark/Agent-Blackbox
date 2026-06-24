@@ -61,6 +61,8 @@ export type {
   EffectivenessStatus
 } from "./effectiveness.js";
 export { computeEffectiveness } from "./effectiveness.js";
+export type { BaselineComparison, RunSummary } from "./baseline.js";
+export { BASELINE_MAX_HISTORY, compareToBaseline, upsertRunSummary } from "./baseline.js";
 export type { EfficiencyMemoryOptions } from "./efficiencyMemory.js";
 export {
   buildEfficiencyMemory,

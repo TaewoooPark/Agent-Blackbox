@@ -9,12 +9,14 @@ import {
   type EffectivenessReport,
   type EfficiencyReport,
   type PromiseCheck,
+  type RunSummary,
   type TraceEvent,
   type TraceHost,
   type WorkflowGraph,
   validateTraceEvent
 } from "@agent-blackbox/core";
 import { appendTraceEvent, parseTraceEvents, readTraceEvents } from "@agent-blackbox/storage";
+import { updateBaselines } from "./baselineStore.js";
 import { open, readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join } from "node:path";
@@ -54,6 +56,10 @@ export type TraceSnapshot = {
   checks: PromiseCheck[];
   efficiency: EfficiencyReport;
   effectiveness: EffectivenessReport;
+  // Recent per-run summaries (≤50) so the dashboard can score the run it's showing
+  // against your usual run of the same archetype. Small; the heavy history stays
+  // daemon-side.
+  baselines: RunSummary[];
   handoffMarkdown: string;
   replay: {
     mode: "live" | "seq" | "time";
@@ -262,6 +268,9 @@ export async function buildTraceSnapshot(
   const checks = evaluatePromiseChecks(visibleEvents);
   const efficiency = computeEfficiencyReport(visibleEvents);
   const effectiveness = computeEffectiveness(visibleEvents, checks);
+  // Best-effort: records recent runs (throttled) and returns the rolling history.
+  // Pass the whole-file events so every run is summarised, not just the visible one.
+  const baselines = await updateBaselines(eventsFile, events);
   const handoffMarkdown = generateHandoffMarkdown(graph, checks);
   return {
     events,
@@ -269,6 +278,7 @@ export async function buildTraceSnapshot(
     checks,
     efficiency,
     effectiveness,
+    baselines,
     handoffMarkdown,
     replay: {
       mode: replay.seq !== undefined ? "seq" : replay.at !== undefined ? "time" : "live",

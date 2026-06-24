@@ -686,6 +686,20 @@ h3 {
   font-variant-numeric: tabular-nums;
 }
 
+.contextBaseline {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: help;
+  width: fit-content;
+}
+.contextBaseline.verdict-better {
+  color: var(--good, #2f7d4f);
+}
+.contextBaseline.verdict-worse {
+  color: var(--bad, #b3261e);
+}
+
 .contextTopFixes {
   display: grid;
   gap: 6px;

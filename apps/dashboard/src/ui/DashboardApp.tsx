@@ -1,14 +1,17 @@
 import {
   buildDeterministicSuggestions,
+  compareToBaseline,
   computeEffectiveness,
   computeEfficiencyReport,
   evaluatePromiseChecks,
   generateHandoffMarkdown,
   materializeWorkflowGraph,
+  type BaselineComparison,
   type EffectivenessReport,
   type EfficiencyMetric,
   type EfficiencyReport,
   type PromiseCheck,
+  type RunSummary,
   type Suggestion,
   type TraceEvent,
   type WorkflowGraph,
@@ -77,6 +80,7 @@ type TraceSnapshot = {
   events: TraceEvent[];
   graph: WorkflowGraph;
   checks: PromiseCheck[];
+  baselines?: RunSummary[]; // optional — older daemons don't send it
   handoffMarkdown: string;
   replay: {
     mode: "live" | "seq" | "time";
@@ -237,6 +241,21 @@ export function DashboardApp() {
     [visibleEvents]
   );
   const suggestions = useMemo(() => buildDeterministicSuggestions(efficiency), [efficiency]);
+  // Score the viewed run against your usual run of the same archetype (heavy history
+  // lives daemon-side; the snapshot ships the compact summaries).
+  const baselineComparison = useMemo<BaselineComparison | null>(() => {
+    if (!snapshot?.baselines || !activeRunId) return null;
+    return compareToBaseline(
+      {
+        runId: activeRunId,
+        ts: "",
+        archetype: efficiency.archetype,
+        score: efficiency.overallScore,
+        inputTokens: efficiency.totalInputTokens
+      },
+      snapshot.baselines
+    );
+  }, [snapshot, activeRunId, efficiency]);
   const [metricHighlight, setMetricHighlight] = useState<{ ids: string[]; nonce: number }>({ ids: [], nonce: 0 });
   const [aiState, setAiState] = useState<{ suggestions: Suggestion[]; provider: string } | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -632,6 +651,7 @@ export function DashboardApp() {
           <ContextPanel
             report={efficiency}
             effectiveness={effectiveness}
+            baseline={baselineComparison}
             suggestions={aiState?.suggestions ?? suggestions}
             usage={tokenTotals}
             aiProvider={aiState?.provider ?? null}
@@ -2299,6 +2319,7 @@ function clamp(value: number, min: number, max: number): number {
 function ContextPanel({
   report,
   effectiveness,
+  baseline,
   suggestions,
   usage,
   aiProvider,
@@ -2312,6 +2333,7 @@ function ContextPanel({
 }: {
   report: EfficiencyReport;
   effectiveness: EffectivenessReport;
+  baseline: BaselineComparison | null;
   suggestions: Suggestion[];
   usage: TokenUsage;
   aiProvider: string | null;
@@ -2366,6 +2388,12 @@ function ContextPanel({
             <span className="contextEffLabel">{effectiveness.label}</span>
             <span className="contextEffScore">{effectiveness.confidence === "low" ? "?" : effectiveness.score}</span>
           </span>
+          {baseline && baseline.verdict !== "insufficient" ? (
+            <span className={`contextBaseline verdict-${baseline.verdict}`} title="Compared against your past runs of the same task type.">
+              {baseline.verdict === "better" ? "↑ " : baseline.verdict === "worse" ? "↓ " : "≈ "}
+              {baseline.note}
+            </span>
+          ) : null}
         </div>
       </div>
 
