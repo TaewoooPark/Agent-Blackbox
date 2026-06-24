@@ -1,4 +1,5 @@
 import type { TraceEvent } from "./events.js";
+import { ARCHETYPE_PROFILES, classifyRun, type TaskArchetype } from "./taskProfile.js";
 
 // Context Efficiency — derive how economically a run used its context window from
 // observed events (sizes captured by the adapter + token snapshots), never from
@@ -31,6 +32,12 @@ export type EfficiencyReport = {
   totalInputTokens: number;
   reclaimableTokens: number;
   estimated: boolean; // true when token figures are size-estimated (no real snapshots)
+  // The inferred task type + why, so the score is read against a fitting yardstick
+  // and downstream advice can be task-aware. "unknown"/neutral types score exactly
+  // as the unconditioned report.
+  archetype: TaskArchetype;
+  archetypeConfidence: number;
+  archetypeSignals: string[];
   metrics: EfficiencyMetric[];
 };
 
@@ -109,7 +116,13 @@ type TokenSnapshot = {
   cacheWrite: number;
 };
 
-export function computeEfficiencyReport(events: TraceEvent[]): EfficiencyReport {
+export type EfficiencyOptions = {
+  // Override the inferred task archetype (callers that already know it). Omitted →
+  // classified from the events.
+  archetype?: TaskArchetype;
+};
+
+export function computeEfficiencyReport(events: TraceEvent[], options: EfficiencyOptions = {}): EfficiencyReport {
   // --- token snapshots -------------------------------------------------------
   let finalSnapshot: TokenSnapshot | undefined;
   let peakInput = 0;
@@ -556,6 +569,33 @@ export function computeEfficiencyReport(events: TraceEvent[]): EfficiencyReport 
     });
   }
 
+  // --- task conditioning -----------------------------------------------------
+  // Judge the score on a yardstick that fits the task: re-weight metrics per the
+  // inferred archetype. A 0 multiplier means the dimension doesn't apply to this
+  // task type (e.g. read-amplification on a research run) — demote it to good so
+  // it neither scores, flags, nor nags. Neutral archetypes leave weights at 1, so
+  // their scores are byte-identical to the unconditioned report.
+  const classification = options.archetype
+    ? { archetype: options.archetype, confidence: 1, signals: ["caller-specified"] }
+    : classifyRun(events);
+  const profile = ARCHETYPE_PROFILES[classification.archetype] ?? {};
+  const expected = new Set(profile.expected ?? []);
+  const weightMult = profile.weight ?? {};
+  for (const m of metrics) {
+    if (expected.has(m.metric.id)) {
+      // Expected for this task type → treat as a passing non-issue: force it good so
+      // it lifts (never drags) the score, and drop its reclaimable from the total.
+      m.metric.score = 100;
+      if (m.metric.status !== "good") {
+        m.metric.status = "good";
+        m.metric.detail = `Expected for a ${classification.archetype} task — not counted against the score.`;
+        delete m.metric.reclaimableTokens;
+      }
+    }
+    const mult = weightMult[m.metric.id];
+    if (mult !== undefined && mult !== 1) m.weight *= mult;
+  }
+
   // --- overall ---------------------------------------------------------------
   const weighted = metrics.filter((m) => m.weight > 0);
   const overallScore =
@@ -571,6 +611,9 @@ export function computeEfficiencyReport(events: TraceEvent[]): EfficiencyReport 
     totalInputTokens,
     reclaimableTokens,
     estimated: !hasRealTokens,
+    archetype: classification.archetype,
+    archetypeConfidence: classification.confidence,
+    archetypeSignals: classification.signals,
     metrics: metrics.map((m) => m.metric)
   };
 }

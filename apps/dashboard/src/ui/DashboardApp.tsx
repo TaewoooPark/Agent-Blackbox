@@ -2335,7 +2335,17 @@ function ContextPanel({
       <div className="contextHead">
         <strong className={`contextScoreBig status-${report.status}`}>{report.overallScore}</strong>
         <div className="contextHeadMeta">
-          <h2>Context efficiency</h2>
+          <h2>
+            Context efficiency
+            {report.archetype && report.archetype !== "unknown" ? (
+              <span
+                className="contextArchetype"
+                title={`Scored as a ${report.archetype} task${report.archetypeSignals?.length ? ` — ${report.archetypeSignals.join("; ")}` : ""}. The yardstick adapts to the task type.`}
+              >
+                {report.archetype}
+              </span>
+            ) : null}
+          </h2>
           <span className="contextHeadline">
             {report.headline}
             {report.estimated ? " · est." : ""}

@@ -163,12 +163,17 @@ describe("context efficiency report", () => {
   });
 
   it("flags exploration waste when much-read text is never edited (edit run)", () => {
-    const report = computeEfficiencyReport([
-      ev(1, "file_read", { source: "tool.after", path: "$PROJECT/used.ts", chars: 2000 }),
-      ev(2, "file_read", { source: "tool.after", path: "$PROJECT/x.ts", chars: 200_000 }), // ~50k unused
-      ev(3, "file_read", { source: "tool.after", path: "$PROJECT/y.ts", chars: 80_000 }), //  ~20k unused
-      ev(4, "file_edit", { source: "tool.after", path: "$PROJECT/used.ts", chars: 400 })
-    ]);
+    // Pin the archetype to isolate the metric: with reads this far above edits the
+    // classifier would (correctly) call it research and demote the metric.
+    const report = computeEfficiencyReport(
+      [
+        ev(1, "file_read", { source: "tool.after", path: "$PROJECT/used.ts", chars: 2000 }),
+        ev(2, "file_read", { source: "tool.after", path: "$PROJECT/x.ts", chars: 200_000 }), // ~50k unused
+        ev(3, "file_read", { source: "tool.after", path: "$PROJECT/y.ts", chars: 80_000 }), //  ~20k unused
+        ev(4, "file_edit", { source: "tool.after", path: "$PROJECT/used.ts", chars: 400 })
+      ],
+      { archetype: "edit" }
+    );
     const m = metric(report, "exploration-waste");
     expect(m.status).not.toBe("good"); // ~70k unused
     expect(m.offenders?.[0]).toContain("x.ts");

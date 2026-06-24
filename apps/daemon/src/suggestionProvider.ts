@@ -32,6 +32,7 @@ const TIMEOUT_MS = 45_000;
 const SYSTEM_PROMPT = `You optimize the context-window economy of AI coding-agent runs. The agent has tools: file read/edit, bash, grep/glob, sub-agents, and prompt caching. You receive a JSON digest of the run's FLAGGED metrics (each: id, value, display, status, detail, reclaimableTokens, offenders). Return ONE concrete fix per flagged metric that the operator can apply on the next run.
 
 # Every action MUST
+- Fit the run's "archetype" (task type): research/read-heavy runs SHOULD read widely — don't tell them to read less; debug runs care about retries/rework; ops runs live in command output. Tailor the fix to the task, never generic.
 - Ground in this run's numbers: cite the metric's display/reclaimable, and name the offenders verbatim when present (e.g. "config.json ×5").
 - Name a concrete mechanism or tool — not a goal. "Reduce context" is banned; "after an edit, re-read only the changed line range instead of the whole file" is right.
 - State the expected effect (fewer tokens / cache hits / fewer steps).
@@ -64,6 +65,7 @@ Respond with ONLY this JSON, one entry per flagged metric, nothing else:
 type Digest = {
   overallScore: number;
   headline: string;
+  archetype: string; // inferred task type — tailor advice to it (don't tell a research task to read less)
   totalInputTokens: number;
   estimated: boolean;
   metrics: {
@@ -82,6 +84,7 @@ export function buildDigest(report: EfficiencyReport): Digest {
   return {
     overallScore: report.overallScore,
     headline: report.headline,
+    archetype: report.archetype,
     totalInputTokens: report.totalInputTokens,
     estimated: report.estimated,
     metrics: report.metrics

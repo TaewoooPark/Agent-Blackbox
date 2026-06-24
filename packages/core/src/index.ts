@@ -50,8 +50,10 @@ export {
 } from "./graph.js";
 export type { PromiseCheck, PromiseCheckSeverity, PromiseCheckStatus } from "./audit.js";
 export { evaluatePromiseChecks, generateHandoffMarkdown } from "./audit.js";
-export type { EfficiencyMetric, EfficiencyReport, EfficiencyStatus, Suggestion } from "./efficiency.js";
+export type { EfficiencyMetric, EfficiencyOptions, EfficiencyReport, EfficiencyStatus, Suggestion } from "./efficiency.js";
 export { buildDeterministicSuggestions, computeEfficiencyReport } from "./efficiency.js";
+export type { ArchetypeProfile, RunClassification, TaskArchetype } from "./taskProfile.js";
+export { ARCHETYPE_PROFILES, classifyRun, taskArchetypes } from "./taskProfile.js";
 export type { EfficiencyMemoryOptions } from "./efficiencyMemory.js";
 export {
   buildEfficiencyMemory,

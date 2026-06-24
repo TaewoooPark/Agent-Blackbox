@@ -632,6 +632,22 @@ h3 {
 
 .contextHeadMeta h2 {
   margin: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.contextArchetype {
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border: 1px solid var(--hairline, currentColor);
+  border-radius: 2px;
+  padding: 1px 5px;
+  cursor: help;
 }
 
 .contextHeadline {
