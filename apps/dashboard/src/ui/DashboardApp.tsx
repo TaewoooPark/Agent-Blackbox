@@ -1,9 +1,11 @@
 import {
   buildDeterministicSuggestions,
+  computeEffectiveness,
   computeEfficiencyReport,
   evaluatePromiseChecks,
   generateHandoffMarkdown,
   materializeWorkflowGraph,
+  type EffectivenessReport,
   type EfficiencyMetric,
   type EfficiencyReport,
   type PromiseCheck,
@@ -230,6 +232,10 @@ export function DashboardApp() {
   const workflowSteps = useMemo(() => createWorkflowSteps(visibleEvents), [visibleEvents]);
   const tokenTotals = useMemo(() => latestTokenUsage(visibleEvents), [visibleEvents]);
   const efficiency = useMemo(() => computeEfficiencyReport(visibleEvents), [visibleEvents]);
+  const effectiveness = useMemo(
+    () => computeEffectiveness(visibleEvents, evaluatePromiseChecks(visibleEvents)),
+    [visibleEvents]
+  );
   const suggestions = useMemo(() => buildDeterministicSuggestions(efficiency), [efficiency]);
   const [metricHighlight, setMetricHighlight] = useState<{ ids: string[]; nonce: number }>({ ids: [], nonce: 0 });
   const [aiState, setAiState] = useState<{ suggestions: Suggestion[]; provider: string } | null>(null);
@@ -625,6 +631,7 @@ export function DashboardApp() {
         <aside className="copilot" aria-label="Context efficiency and files">
           <ContextPanel
             report={efficiency}
+            effectiveness={effectiveness}
             suggestions={aiState?.suggestions ?? suggestions}
             usage={tokenTotals}
             aiProvider={aiState?.provider ?? null}
@@ -2291,6 +2298,7 @@ function clamp(value: number, min: number, max: number): number {
 
 function ContextPanel({
   report,
+  effectiveness,
   suggestions,
   usage,
   aiProvider,
@@ -2303,6 +2311,7 @@ function ContextPanel({
   memoryFile
 }: {
   report: EfficiencyReport;
+  effectiveness: EffectivenessReport;
   suggestions: Suggestion[];
   usage: TokenUsage;
   aiProvider: string | null;
@@ -2349,6 +2358,13 @@ function ContextPanel({
           <span className="contextHeadline">
             {report.headline}
             {report.estimated ? " · est." : ""}
+          </span>
+          <span
+            className={`contextEffectiveness status-${effectiveness.status}`}
+            title={`Did the task land? ${effectiveness.confidence}-confidence heuristic from outcome + verification + failure signals${effectiveness.signals.length ? `: ${effectiveness.signals.map((s) => s.label).join("; ")}` : ""}. Separate from efficiency — a run can be efficient but fail, or wasteful but succeed.`}
+          >
+            <span className="contextEffLabel">{effectiveness.label}</span>
+            <span className="contextEffScore">{effectiveness.confidence === "low" ? "?" : effectiveness.score}</span>
           </span>
         </div>
       </div>

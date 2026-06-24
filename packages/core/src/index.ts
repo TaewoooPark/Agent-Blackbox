@@ -54,6 +54,13 @@ export type { EfficiencyMetric, EfficiencyOptions, EfficiencyReport, EfficiencyS
 export { buildDeterministicSuggestions, computeEfficiencyReport } from "./efficiency.js";
 export type { ArchetypeProfile, RunClassification, TaskArchetype } from "./taskProfile.js";
 export { ARCHETYPE_PROFILES, classifyRun, taskArchetypes } from "./taskProfile.js";
+export type {
+  EffectivenessConfidence,
+  EffectivenessReport,
+  EffectivenessSignal,
+  EffectivenessStatus
+} from "./effectiveness.js";
+export { computeEffectiveness } from "./effectiveness.js";
 export type { EfficiencyMemoryOptions } from "./efficiencyMemory.js";
 export {
   buildEfficiencyMemory,

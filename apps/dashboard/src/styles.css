@@ -656,6 +656,36 @@ h3 {
   line-height: 1.3;
 }
 
+.contextEffectiveness {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: var(--fs-label);
+  cursor: help;
+  width: fit-content;
+}
+
+.contextEffLabel {
+  text-transform: capitalize;
+  font-weight: 600;
+}
+
+.contextEffectiveness.status-good .contextEffLabel {
+  color: var(--good, #2f7d4f);
+}
+.contextEffectiveness.status-warn .contextEffLabel {
+  color: var(--warn, #9a6b00);
+}
+.contextEffectiveness.status-bad .contextEffLabel {
+  color: var(--bad, #b3261e);
+}
+
+.contextEffScore {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .contextTopFixes {
   display: grid;
   gap: 6px;

@@ -1,10 +1,12 @@
 import {
+  computeEffectiveness,
   computeEfficiencyReport,
   evaluatePromiseChecks,
   generateHandoffMarkdown,
   materializeWorkflowGraph,
   replayWorkflowGraphAtSeq,
   replayWorkflowGraphAtTime,
+  type EffectivenessReport,
   type EfficiencyReport,
   type PromiseCheck,
   type TraceEvent,
@@ -51,6 +53,7 @@ export type TraceSnapshot = {
   graph: WorkflowGraph;
   checks: PromiseCheck[];
   efficiency: EfficiencyReport;
+  effectiveness: EffectivenessReport;
   handoffMarkdown: string;
   replay: {
     mode: "live" | "seq" | "time";
@@ -258,12 +261,14 @@ export async function buildTraceSnapshot(
   const visibleEvents = events.filter((event) => replayedEvents.has(event.id));
   const checks = evaluatePromiseChecks(visibleEvents);
   const efficiency = computeEfficiencyReport(visibleEvents);
+  const effectiveness = computeEffectiveness(visibleEvents, checks);
   const handoffMarkdown = generateHandoffMarkdown(graph, checks);
   return {
     events,
     graph,
     checks,
     efficiency,
+    effectiveness,
     handoffMarkdown,
     replay: {
       mode: replay.seq !== undefined ? "seq" : replay.at !== undefined ? "time" : "live",
