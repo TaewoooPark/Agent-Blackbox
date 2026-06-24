@@ -173,7 +173,7 @@ describe("createClaudeNormalizer", () => {
     const events = n.consume(userResult("r1", "x", { type: "text", file: { filePath: "/p/d.ts", content: "x" } }));
     const read = events.find((e) => e.kind === "file_read");
     expect(read?.agentId).toBe("abc123"); // identity unchanged
-    expect(read?.agentLabel).toBe("Adversarially verify this claimed bug in calc.t…"); // readable, capped at 48
+    expect(read?.agentLabel).toBe("Adversarially verify this claimed b…"); // readable, capped short for the lane rail
   });
 
   it("gives an Agent spawn a readable agentLabel (the subagent type)", () => {

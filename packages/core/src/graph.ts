@@ -300,18 +300,34 @@ function ensureAgent(graph: MutableGraph, event: TraceEvent): void {
     status: "ACTIVE",
     at: event.ts,
     eventId: event.id,
+    // agentName is intentionally NOT set here: ensureNode merges data, so passing
+    // it would let every event overwrite the name. The block below is the sole
+    // authority — it fills/keeps the most concise label across all of the lane's
+    // events.
     data: {
       agentId: event.agentId,
-      agentRole: event.agentRole ?? "unknown",
-      ...(event.agentLabel ? { agentName: event.agentLabel } : {})
+      agentRole: event.agentRole ?? "unknown"
     },
     keepStatusIfExists: true
   });
-  // Fill the display name once known — the lane node may have been created by an
-  // earlier event that lacked the agentLabel.
+  // Resolve the display name. A lane can be labelled from two sources: the spawn
+  // event (a concise role — `subagent_type`, `workflow:<name>`) and the subagent's
+  // own transcript (its first prompt, a whole sentence). Prefer the concise one
+  // regardless of arrival order: fill if empty, replace a generic placeholder, and
+  // otherwise prefer a shorter non-generic label — so a 60-lane workflow reads as
+  // roles, not walls of prompt text.
   if (event.agentLabel) {
     const node = graph.nodes.get(id);
-    if (node && !node.data.agentName) node.data.agentName = event.agentLabel;
+    if (node) {
+      const existing = typeof node.data.agentName === "string" ? node.data.agentName : "";
+      const candidate = event.agentLabel;
+      const generic = /^(subagent|agent|unknown)$/i;
+      const better =
+        existing.length === 0 ||
+        generic.test(existing) ||
+        (!generic.test(candidate) && candidate.length < existing.length);
+      if (better) node.data.agentName = candidate;
+    }
   }
   ensureEdge(graph, {
     from: sessionNodeId(event.sessionId),

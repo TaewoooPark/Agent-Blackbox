@@ -146,4 +146,28 @@ describe("agent lane labels", () => {
     expect(new Set(lanes.map((node) => node.label))).toEqual(new Set(["a1", "a2"])); // identity = agentId
     expect(lanes.every((node) => node.data?.agentName === "security auditor")).toBe(true); // readable, separate
   });
+
+  it("prefers a concise role label over a long prompt-derived one, regardless of order", () => {
+    const ev = (seq: number, label: string) =>
+      createTraceEvent(seq, {
+        host: "claude-code",
+        runId: "r",
+        sessionId: "r",
+        agentId: "x1",
+        agentRole: "subagent",
+        agentLabel: label,
+        kind: "file_read",
+        payload: { path: `f${seq}.ts`, chars: 10 }
+      });
+    const prompt = "Adversarially verify this claimed bug in calc.ts and report";
+    // prompt arrives first, the concise spawn name second
+    const a = materializeWorkflowGraph([ev(1, prompt), ev(2, "workflow:urp-report-korean")]);
+    expect(a.nodes.find((n) => n.id === "agent:x1")?.data?.agentName).toBe("workflow:urp-report-korean");
+    // and the other way round — concise first, prompt second → still concise
+    const b = materializeWorkflowGraph([ev(1, "general-purpose"), ev(2, prompt)]);
+    expect(b.nodes.find((n) => n.id === "agent:x1")?.data?.agentName).toBe("general-purpose");
+    // a generic placeholder is replaced by anything more specific
+    const c = materializeWorkflowGraph([ev(1, "subagent"), ev(2, prompt)]);
+    expect(c.nodes.find((n) => n.id === "agent:x1")?.data?.agentName).toBe(prompt);
+  });
 });

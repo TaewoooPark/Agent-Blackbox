@@ -67,6 +67,9 @@ const TREE_MAX_SCALE = 1;
 // >1 magnifies to read a dense run, <1 pulls back. Bounds keep it usable. The
 // ceiling is high because on a big run the auto-fit scale is small, so even 4×
 // left nodes tiny — 8× lets a dense tree reach roughly 1:1 and read clearly.
+// Effective scale a run should open at (fit × initial zoom). ~0.5 keeps node titles
+// legible on a dense tree; the user can still zoom out (or hit 100% to fit the whole).
+const READABLE_TARGET_SCALE = 0.5;
 const USER_ZOOM_MIN = 0.4;
 const USER_ZOOM_MAX = 8;
 const USER_ZOOM_STEP = 1.2;
@@ -643,7 +646,10 @@ export function DashboardApp() {
                 <span>{agent.type.toLowerCase()}</span>
               </span>
               <span className="laneBadges">
-                <StatusBadge status={agent.status} />
+                {/* A finished run shouldn't show every lane as ACTIVE — a subagent
+                    transcript rarely emits a clean end, so the node status sticks at
+                    ACTIVE. When the run isn't live, render those as DONE. */}
+                <StatusBadge status={runStatus !== "active" && agent.status === "ACTIVE" ? "DONE" : agent.status} />
               </span>
             </button>
           ))}
@@ -781,6 +787,23 @@ function SessionMap({
   const [treeFitScale, setTreeFitScale] = useState(1);
   const [userZoom, setUserZoom] = useState(1);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  // Open a dense run at a READABLE zoom, not fit-to-tiny. The fit scale (≤1) shrinks
+  // a big tree until everything fits — illegible at 60 lanes. On a run change we
+  // reset to fit, then once the fit is measured we bump the manual zoom so the
+  // effective scale clears a readable floor. The user's own zoom afterward sticks;
+  // the % button still resets to 100% = fit the whole tree.
+  const zoomInitForRun = useRef<string>("");
+  const runSignature = events[0]?.runId ?? "";
+  useEffect(() => {
+    setUserZoom(1);
+    zoomInitForRun.current = "";
+  }, [runSignature]);
+  useEffect(() => {
+    if (runSignature && zoomInitForRun.current !== runSignature && treeFitScale > 0 && treeFitScale < 1) {
+      zoomInitForRun.current = runSignature;
+      setUserZoom(clamp(READABLE_TARGET_SCALE / treeFitScale, 1, USER_ZOOM_MAX));
+    }
+  }, [runSignature, treeFitScale]);
   // Live "tracing": keep the newest node in view as events stream in. On by default
   // so a running session auto-follows; any direct map gesture (click/drag/wheel-pan)
   // pins the view, and the Tracing button re-engages it.
@@ -2857,7 +2880,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function StatusBadge({ status }: { status: WorkflowNode["status"] }) {
+function StatusBadge({ status }: { status: string }) {
   return <span className={`status status-${status.toLowerCase()}`}>{status}</span>;
 }
 

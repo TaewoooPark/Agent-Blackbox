@@ -2435,6 +2435,12 @@ h3 {
   color: var(--text-secondary);
 }
 
+.status-done,
+.status-stale {
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+}
+
 @media (max-width: 980px) {
   .workspace {
     grid-template-columns: 1fr;

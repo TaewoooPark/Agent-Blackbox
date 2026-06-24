@@ -440,10 +440,16 @@ function shorten(v: string | undefined, max: number): string | undefined {
   return v.length <= max ? v : `${v.slice(0, max)}...`;
 }
 
-// A compact one-line lane label from a subagent's task prompt.
+// A compact one-line lane label from a subagent's task prompt — used only when no
+// concise spawn name (subagent_type / workflow) is available. Drop a common
+// boilerplate preamble and cap short, so a transcript-only lane is still scannable
+// in the narrow lane rail rather than a wrapped sentence.
 function shortLabel(text: string): string {
-  const firstLine = (text.split("\n").find((l) => l.trim().length > 0) ?? text).trim();
-  return firstLine.length > 48 ? `${firstLine.slice(0, 47)}…` : firstLine;
+  let firstLine = (text.split("\n").find((l) => l.trim().length > 0) ?? text).trim();
+  // Strip leading "ROLE/CONTEXT —"/":"-style preamble to surface the task itself.
+  const sep = firstLine.search(/\s[—:-]\s/);
+  if (sep > 0 && sep < 28) firstLine = firstLine.slice(sep + 3).trim();
+  return firstLine.length > 36 ? `${firstLine.slice(0, 35)}…` : firstLine;
 }
 
 // Detect a git commit/push inside a (possibly compound) Bash command so it renders
