@@ -130,6 +130,51 @@ describe("context efficiency report", () => {
     expect(suggestions.every((s) => s.action.length > 20 && s.source === "deterministic")).toBe(true);
   });
 
+  it("flags edit churn when one file is rewritten many times", () => {
+    const report = computeEfficiencyReport([
+      ev(1, "file_edit", { source: "tool.after", path: "$PROJECT/a.ts", chars: 200 }),
+      ev(2, "file_edit", { source: "tool.after", path: "$PROJECT/a.ts", chars: 200 }),
+      ev(3, "file_edit", { source: "tool.after", path: "$PROJECT/a.ts", chars: 200 }),
+      ev(4, "file_edit", { source: "tool.after", path: "$PROJECT/a.ts", chars: 200 }),
+      ev(5, "file_edit", { source: "tool.after", path: "$PROJECT/a.ts", chars: 200 })
+    ]);
+    const m = metric(report, "edit-thrash");
+    expect(m.value).toBe(5);
+    expect(m.status).toBe("bad"); // > 4
+    expect(m.offenders?.[0]).toContain("a.ts ×5");
+  });
+
+  it("flags a single oversized file read, even with no edits", () => {
+    const report = computeEfficiencyReport([
+      ev(1, "file_read", { source: "tool.after", path: "$PROJECT/huge.json", chars: 160_000 }) // ~40k tokens
+    ]);
+    const m = metric(report, "big-file-read");
+    expect(m.value).toBe(40_000);
+    expect(m.status).toBe("bad"); // > 30k
+    expect(m.offenders?.[0]).toContain("huge.json");
+  });
+
+  it("does not add exploration-waste on a pure-read run (reading is the point)", () => {
+    const report = computeEfficiencyReport([
+      ev(1, "file_read", { source: "tool.after", path: "$PROJECT/a.ts", chars: 4000 }),
+      ev(2, "file_read", { source: "tool.after", path: "$PROJECT/b.ts", chars: 4000 })
+    ]);
+    expect(report.metrics.find((m) => m.id === "exploration-waste")).toBeUndefined();
+  });
+
+  it("flags exploration waste when much-read text is never edited (edit run)", () => {
+    const report = computeEfficiencyReport([
+      ev(1, "file_read", { source: "tool.after", path: "$PROJECT/used.ts", chars: 2000 }),
+      ev(2, "file_read", { source: "tool.after", path: "$PROJECT/x.ts", chars: 200_000 }), // ~50k unused
+      ev(3, "file_read", { source: "tool.after", path: "$PROJECT/y.ts", chars: 80_000 }), //  ~20k unused
+      ev(4, "file_edit", { source: "tool.after", path: "$PROJECT/used.ts", chars: 400 })
+    ]);
+    const m = metric(report, "exploration-waste");
+    expect(m.status).not.toBe("good"); // ~70k unused
+    expect(m.offenders?.[0]).toContain("x.ts");
+    expect(m.reclaimableTokens).toBeGreaterThan(0);
+  });
+
   it("produces no suggestions for a clean run", () => {
     const report = computeEfficiencyReport([
       ev(1, "file_read", { source: "tool.after", path: "$PROJECT/a.ts", chars: 800 }),

@@ -56,6 +56,13 @@ export function buildEfficiencyMemory(
     );
   }
 
+  const bigReads = dedupe(offendersOf("big-file-read")).slice(0, 4);
+  if (bigReads.length > 0) {
+    lines.push(
+      `- **Read these in ranges, not whole** (grep/symbol-search or \`head\`/\`sed\` to the relevant lines): ${bigReads.join(", ")}`
+    );
+  }
+
   const retries = dedupe(offendersOf("retry-waste")).slice(0, 4);
   if (retries.length > 0) {
     lines.push(`- **Fix the root cause before re-running** (read the first failure's stderr): ${retries.join(", ")}`);
@@ -73,6 +80,11 @@ export function buildEfficiencyMemory(
   }
   if (flagged.has("tool-overhead")) {
     lines.push("- **Batch related edits** into one change; skip exploratory tool calls that don't lead to an edit.");
+  }
+  if (flagged.has("edit-thrash")) {
+    lines.push(
+      "- **Settle the approach before editing**: a file was rewritten several times last run — read the surrounding code once, decide, then edit in as few passes as possible."
+    );
   }
 
   if (lines.length === 0) return null;

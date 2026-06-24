@@ -81,6 +81,12 @@ function deterministicActionFor(metric: EfficiencyMetric): string | undefined {
       return `A lot of context produced few concrete changes (${metric.display}). Split into smaller verifiable steps, recite the current goal/todo each step to keep it in recent tokens (models under-use the middle of long contexts), and offload exploration to a sub-agent.`;
     case "tool-overhead":
       return `Many tool calls per outcome (${metric.display}). Batch related edits into one change, drop exploratory calls that don't lead to an edit, and trim to a minimal non-overlapping tool set.`;
+    case "edit-thrash":
+      return `${worst ? `${worst} was rewritten repeatedly` : `A file was edited ${metric.display}`}. Repeated rewrites of one file usually mean the approach wasn't settled — read the surrounding code once, decide the change, then make it in as few edits as possible.`;
+    case "big-file-read":
+      return `A single file read pulled in ${metric.display}${worst ? ` (${worst})` : ""}. Read large files in ranges — grep/symbol-search to the relevant lines, or head/sed a slice — instead of the whole file.`;
+    case "exploration-waste":
+      return `About ${metric.display} was read from files you never edited${worst ? ` (${worst})` : ""}${reclaim}. Push wide exploration into a sub-agent that returns a ~1-2k-token summary, and keep only the files you actually change in the main thread.`;
     default:
       return metric.detail;
   }
@@ -440,6 +446,112 @@ export function computeEfficiencyReport(events: TraceEvent[]): EfficiencyReport 
             ? "Tool calls translated into work without much churn."
             : "Many tool calls relative to concrete outcomes.",
         evidenceEventIds: []
+      }
+    });
+  }
+
+  // --- 9. edit churn / thrash (same file rewritten many times = rework) -----
+  {
+    const editsByPath = new Map<string, number>();
+    for (const e of edits) editsByPath.set(e.path, (editsByPath.get(e.path) ?? 0) + 1);
+    let maxEdits = 0;
+    const offenders: { label: string; n: number }[] = [];
+    for (const [path, n] of editsByPath.entries()) {
+      maxEdits = Math.max(maxEdits, n);
+      if (n >= 3) offenders.push({ label: `${baseName(path)} ×${n}`, n });
+    }
+    const { score, status } = lowerIsBetter(maxEdits, 2, 4);
+    const thrashOffenders = offenders.sort((a, b) => b.n - a.n).slice(0, 3).map((o) => o.label);
+    metrics.push({
+      weight: 1,
+      metric: {
+        id: "edit-thrash",
+        label: "Edit churn",
+        value: maxEdits,
+        unit: "count",
+        display: maxEdits <= 2 ? "none" : `${maxEdits}×`,
+        score,
+        status,
+        detail:
+          status === "good"
+            ? "No file was rewritten many times."
+            : `A file was edited ${maxEdits}× — repeated rewrites of one file point to an unsettled approach; decide the change before editing.`,
+        evidenceEventIds: [],
+        ...(thrashOffenders.length > 0 ? { offenders: thrashOffenders } : {})
+      }
+    });
+  }
+
+  // --- 10. large single file reads (whole big file pulled in at once) -------
+  // Distinct from large-injections (tool/bash output) and read-amplification
+  // (read÷edit ratio, edits-only): a single oversized file_read, even on a
+  // pure-read run, is worth reading in ranges.
+  {
+    const sortedReads = [...reads].sort((a, b) => b.tokens - a.tokens);
+    const biggestRead = sortedReads[0]?.tokens ?? 0;
+    const bigReads = sortedReads.filter((r) => r.tokens >= 12_000);
+    const { score, status } = lowerIsBetter(biggestRead, 12_000, 30_000);
+    const seenBig = new Set<string>();
+    const bigOffenders: string[] = [];
+    for (const r of bigReads) {
+      const b = baseName(r.path);
+      if (seenBig.has(b)) continue;
+      seenBig.add(b);
+      bigOffenders.push(`${b} ~${formatTokens(r.tokens)}`);
+      if (bigOffenders.length >= 3) break;
+    }
+    metrics.push({
+      weight: 1,
+      metric: {
+        id: "big-file-read",
+        label: "Large file reads",
+        value: biggestRead,
+        unit: "tokens",
+        display: biggestRead >= 12_000 ? formatTokens(biggestRead) : "none",
+        score,
+        status,
+        detail:
+          status === "good"
+            ? "No single file read dominated the context."
+            : `A single file read pulled in ${formatTokens(biggestRead)} — read large files in ranges (grep/symbol search, or head/sed a slice), not whole.`,
+        evidenceEventIds: bigReads.slice(0, 5).map((r) => r.id),
+        ...(bigOffenders.length > 0 ? { offenders: bigOffenders } : {})
+      }
+    });
+  }
+
+  // --- 11. exploration waste (lots of read text never edited) ---------------
+  // Only meaningful on an edit-oriented run; a pure research/read task SHOULD
+  // read widely, so the metric isn't added there (no weight drag either).
+  if (edits.length > 0) {
+    const firstReadByPath = new Map<string, { tokens: number; id: string }>();
+    for (const r of reads) if (!firstReadByPath.has(r.path)) firstReadByPath.set(r.path, { tokens: r.tokens, id: r.id });
+    let unusedTokens = 0;
+    const unused: { label: string; tokens: number; id: string }[] = [];
+    for (const [path, first] of firstReadByPath.entries()) {
+      if (editedPaths.has(path)) continue;
+      unusedTokens += first.tokens;
+      unused.push({ label: `${baseName(path)} ~${formatTokens(first.tokens)}`, tokens: first.tokens, id: first.id });
+    }
+    const { score, status } = lowerIsBetter(unusedTokens, 30_000, 80_000);
+    const unusedOffenders = unused.sort((a, b) => b.tokens - a.tokens).slice(0, 3).map((o) => o.label);
+    metrics.push({
+      weight: 0.5,
+      metric: {
+        id: "exploration-waste",
+        label: "Unused reads",
+        value: unusedTokens,
+        unit: "tokens",
+        display: unusedTokens < 30_000 ? "lean" : formatTokens(unusedTokens),
+        score,
+        status,
+        detail:
+          status === "good"
+            ? "Most files read were actually changed."
+            : `About ${formatTokens(unusedTokens)} was read from files never edited — push wide exploration into a sub-agent that returns a short summary.`,
+        evidenceEventIds: unused.slice(0, 5).map((o) => o.id),
+        ...(status !== "good" ? { reclaimableTokens: Math.round(unusedTokens * 0.5) } : {}),
+        ...(unusedOffenders.length > 0 ? { offenders: unusedOffenders } : {})
       }
     });
   }

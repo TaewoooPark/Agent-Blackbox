@@ -46,6 +46,9 @@ const SYSTEM_PROMPT = `You optimize the context-window economy of AI coding-agen
 - retry-waste: don't re-run blindly — read the first failure's stderr, fix the root cause, retry once; keep the failed attempt in context so the model doesn't repeat it.
 - yield-density: split into smaller verifiable steps; recite the goal/todo each step to keep it in recent tokens (models under-use the middle of long contexts); offload exploration to a sub-agent to keep the main thread lean.
 - tool-overhead: batch related edits into one change, drop exploratory calls that don't lead to an edit, and trim to a minimal non-overlapping tool set.
+- edit-thrash: a file was rewritten repeatedly — read the surrounding code once, settle the change, then apply it in as few edits as possible instead of iterating live against tool output.
+- big-file-read: a whole large file was pulled into context — locate the relevant lines with grep/symbol search and read only that range (or head/sed a slice).
+- exploration-waste: a lot of read text was never edited — move wide exploration into a sub-agent that returns a ~1-2k-token summary, and keep only the files you change in the main thread.
 
 # Contrast (do this)
 metricId "redundant-reads", reclaimableTokens ~12000, offenders ["calculator.js ×4"]:
