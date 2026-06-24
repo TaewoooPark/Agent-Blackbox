@@ -1833,7 +1833,18 @@ h3 {
   white-space: nowrap;
 }
 
-.agentPill span {
+/* The role name shrinks and ellipsises; the status chip stays put. The name is a
+   flex child, so it needs its own min-width:0 + ellipsis — text-overflow on the
+   flex container alone never truncates a raw text child. */
+.agentPillName {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentPillStatus {
   background: var(--surface-tint);
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -1860,7 +1871,7 @@ h3 {
   width: 7px;
 }
 
-.treeGrid.fit .agentPill span {
+.treeGrid.fit .agentPillStatus {
   display: none;
 }
 
@@ -2608,7 +2619,7 @@ h3 {
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
-.treeGrid.fit .agentPill span {
+.treeGrid.fit .agentPillStatus {
   display: none;
 }
 .treeGrid.fit .stepBadges {
