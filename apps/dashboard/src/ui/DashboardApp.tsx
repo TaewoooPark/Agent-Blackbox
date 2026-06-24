@@ -580,7 +580,19 @@ export function DashboardApp() {
             aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
             title={theme === "dark" ? "Light mode" : "Dark mode"}
           >
-            {theme === "dark" ? "☀" : "☾"}
+            {theme === "dark" ? (
+              // Sun — switch to light. Inline SVG so it renders identically on every
+              // platform (the ☀/☾ glyphs fall back to tofu in the serif stack on Windows).
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="4.5" />
+                <path d="M12 1.5v2.5M12 20v2.5M3.5 12H1M23 12h-2.5M5.1 5.1 3.3 3.3M20.7 20.7l-1.8-1.8M18.9 5.1l1.8-1.8M3.3 20.7l1.8-1.8" />
+              </svg>
+            ) : (
+              // Moon — switch to dark.
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+              </svg>
+            )}
           </button>
           <button
             className="topbarAction"
