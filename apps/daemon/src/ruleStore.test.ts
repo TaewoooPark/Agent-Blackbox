@@ -1,7 +1,7 @@
 import { createTraceEvent, type TraceEvent } from "@agent-blackbox/core";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { loadRulePacks, resetRuleCache } from "./ruleStore.js";
@@ -28,7 +28,9 @@ const readIn = (cwd: string): TraceEvent[] => [
 describe("loadRulePacks", () => {
   it("keys each project's pack by its cwd basename, so the viewed run can pick its own", async () => {
     const dir = await projectWithRules(JSON.stringify({ rules: [{ id: "x", type: "forbid-read", pattern: "node_modules" }] }));
-    const key = dir.split("/").pop()!;
+    // Derive the expected key the way the code does (basename), so the assertion is
+    // separator-portable — a Windows temp dir (C:\...\abb-rules-X) has no "/" to split.
+    const key = basename(dir);
     const packs = await loadRulePacks(readIn(dir), 1000);
     expect(packs[key]?.rules.map((r: { id: string }) => r.id)).toEqual(["x"]);
   });
@@ -39,8 +41,8 @@ describe("loadRulePacks", () => {
     // Window dominated by project B's events, but A's run is still present.
     const events = [...readIn(b), ...readIn(b), ...readIn(a)];
     const packs = await loadRulePacks(events, 1000);
-    expect(packs[a.split("/").pop()!]?.rules.map((r: { id: string }) => r.id)).toEqual(["a-rule"]);
-    expect(packs[b.split("/").pop()!]?.rules.map((r: { id: string }) => r.id)).toEqual(["b-rule"]);
+    expect(packs[basename(a)]?.rules.map((r: { id: string }) => r.id)).toEqual(["a-rule"]);
+    expect(packs[basename(b)]?.rules.map((r: { id: string }) => r.id)).toEqual(["b-rule"]);
   });
 
   it("omits projects with no/empty/corrupt rules and never throws", async () => {
