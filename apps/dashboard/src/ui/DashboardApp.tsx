@@ -39,6 +39,7 @@ import {
   type WorkflowBranch,
   type WorkflowStep
 } from "../graphLayout.js";
+import { fileNameFromPath, normalizedProjectPath, pathSegments } from "../filePath.js";
 import { filterEventsForRun, latestRunId, listRuns } from "../runSelection.js";
 
 declare global {
@@ -2423,17 +2424,6 @@ function stepDisplayTitle(step: WorkflowStep, fileCount: number): string {
   return step.title;
 }
 
-function pathSegments(path: string): string[] {
-  return normalizedProjectPath(path).split("/").filter(Boolean);
-}
-
-function normalizedProjectPath(path: string): string {
-  return path.replace(/^\$PROJECT\/?/, "").replace(/^\/+/, "");
-}
-
-function fileNameFromPath(path: string): string {
-  return pathSegments(path).at(-1) ?? path;
-}
 
 function latestConnectionSeq(connections: FileConnection[]): number {
   return Math.max(...connections.map((connection) => connection.seq));
