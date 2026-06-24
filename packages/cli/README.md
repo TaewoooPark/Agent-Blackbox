@@ -79,6 +79,8 @@ uninstall                            # remove the global recorder (+ any Claude 
 Full docs, screenshots, architecture, and the optimization actuator:
 **https://github.com/TaewoooPark/Agent-Blackbox**
 
+📊 **[Scoring & analysis reference](https://github.com/TaewoooPark/Agent-Blackbox/blob/main/docs/analysis.md)** — every metric + threshold, the task archetypes, the effectiveness axis, the `rules.json` schema, and the honest known-limitations.
+
 [English](https://github.com/TaewoooPark/Agent-Blackbox/blob/main/README.md) ·
 [한국어](https://github.com/TaewoooPark/Agent-Blackbox/blob/main/README.ko.md) ·
 [中文](https://github.com/TaewoooPark/Agent-Blackbox/blob/main/README.zh.md) ·

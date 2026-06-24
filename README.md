@@ -187,6 +187,19 @@ Every run gets a score from observed sizes and token snapshots — never the age
 | **Large injections** | a single tool output flooding the window |
 | **Retry waste** | failing commands re-run before the cause was fixed |
 | **Yield density** | how much concrete change each 1k tokens produced |
+| **Tool overhead** | tool calls relative to concrete outcomes |
+| **Edit churn** | one file rewritten many times (rework / unsettled approach) |
+| **Large file reads** | a single oversized file pulled in whole — read it in ranges |
+| **Unused reads** | read text never edited — push wide exploration into a sub-agent |
+
+The score is **task-tailored and multi-axis** — a research run isn't judged on an edit run's yardstick, and "did it use context well" is kept separate from "did the task land":
+
+- **Task archetype** (research / debug / ops / feature / edit) conditions the score so reading widely on a research run isn't penalised; shown as a chip, applied only once the classification is confident.
+- **Effectiveness** — a second score (*did the task actually land?*) from outcome + verification + failure signals, with a confidence flag, so an efficient-but-failed run and a wasteful-but-shipped run read differently.
+- **Relative baselines** — *"score 40 vs your usual 87 for research"*, compared against your past runs of the same kind **in the same project**.
+- **Custom checks** — drop a `.agent-blackbox/rules.json` to add project rules (e.g. "never read node_modules", "run tests before committing").
+
+See **[docs/analysis.md](docs/analysis.md)** for the full reference — every metric + threshold, the archetype profiles, the effectiveness heuristic, the rules.json schema, and the honest known-limitations.
 
 Suggestions are **rule-based by default** (always on, no dependencies). To have them tailored by a model — with **no API key** — point `up` at a local/free model:
 
@@ -369,11 +382,14 @@ apps/
   daemon/             local ingest, replay, efficiency, suggestion routing, static dashboard, websocket
   dashboard/          operator console (session map, replay, inspector, efficiency, handoff)
 packages/
-  core/                 canonical events, graph model, redaction, replay, audit, handoff, efficiency
+  core/                 canonical events, graph, redaction, replay, audit, handoff, efficiency,
+                        archetypes, effectiveness, baselines, accumulative memory, timeline, rule packs
   storage/              NDJSON persistence
   claude-code-adapter/  Claude Code transcript tailer + in-run actuator hooks
   opencode-adapter/     OpenCode plugin / SDK bridge
 ```
+
+Per-project state the daemon writes (all local, best-effort, reversible) lives under `<project>/.agent-blackbox/`: `optimization.json` + `efficiency-profile.json` (the accumulated memory), and you can add `rules.json` (custom checks). Cross-run baselines live next to the daemon's event store as `baselines.json`. See **[docs/analysis.md](docs/analysis.md)**.
 
 ## Development
 
