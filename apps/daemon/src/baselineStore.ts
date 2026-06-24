@@ -1,6 +1,7 @@
 import {
   BASELINE_MAX_HISTORY,
   computeEfficiencyReport,
+  projectKey,
   upsertRunSummary,
   type RunSummary,
   type TraceEvent
@@ -97,12 +98,14 @@ export async function updateBaselines(eventsFile: string, events: TraceEvent[], 
       if (!didWork) continue;
       const report = computeEfficiencyReport(runEvents);
       const ts = runEvents.reduce((max, e) => (e.ts > max ? e.ts : max), "");
+      const project = projectKey(runEvents);
       state.history = upsertRunSummary(state.history, {
         runId,
         ts,
         archetype: report.archetype,
         score: report.overallScore,
-        inputTokens: report.totalInputTokens
+        inputTokens: report.totalInputTokens,
+        ...(project ? { project } : {})
       });
       state.dirty = true;
     }

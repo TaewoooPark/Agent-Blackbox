@@ -81,3 +81,4 @@ export type { TimelineAct, TimelineEntry } from "./timeline.js";
 export { buildCausalTimeline } from "./timeline.js";
 export type { Rule, RuleFinding, RulePack, RuleSeverity } from "./rulePack.js";
 export { evaluateRulePack, parseRulePack } from "./rulePack.js";
+export { dominantCwd, projectKey } from "./projectPath.js";

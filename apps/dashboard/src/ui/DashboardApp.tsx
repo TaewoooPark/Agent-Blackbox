@@ -8,6 +8,7 @@ import {
   evaluateRulePack,
   generateHandoffMarkdown,
   materializeWorkflowGraph,
+  projectKey,
   type BaselineComparison,
   type EffectivenessReport,
   type EfficiencyMetric,
@@ -256,17 +257,19 @@ export function DashboardApp() {
   // lives daemon-side; the snapshot ships the compact summaries).
   const baselineComparison = useMemo<BaselineComparison | null>(() => {
     if (!snapshot?.baselines || !activeRunId) return null;
+    const project = projectKey(visibleEvents);
     return compareToBaseline(
       {
         runId: activeRunId,
         ts: "",
         archetype: efficiency.archetype,
         score: efficiency.overallScore,
-        inputTokens: efficiency.totalInputTokens
+        inputTokens: efficiency.totalInputTokens,
+        ...(project ? { project } : {})
       },
       snapshot.baselines
     );
-  }, [snapshot, activeRunId, efficiency]);
+  }, [snapshot, activeRunId, efficiency, visibleEvents]);
   const [metricHighlight, setMetricHighlight] = useState<{ ids: string[]; nonce: number }>({ ids: [], nonce: 0 });
   const [aiState, setAiState] = useState<{ suggestions: Suggestion[]; provider: string } | null>(null);
   const [aiLoading, setAiLoading] = useState(false);

@@ -58,4 +58,16 @@ describe("compareToBaseline", () => {
     const c = compareToBaseline(sum("new", "research", 95, 80_000), history);
     expect(c.verdict).toBe("better");
   });
+
+  it("scopes the comparison to the same project when the current run has one", () => {
+    const withProjects: RunSummary[] = [
+      { ...sum("a1", "research", 80, 100_000), project: "repo-a" },
+      { ...sum("a2", "research", 78, 100_000), project: "repo-a" },
+      { ...sum("a3", "research", 82, 100_000), project: "repo-a" },
+      { ...sum("b1", "research", 10, 100_000), project: "repo-b" } // different project — must be ignored
+    ];
+    const c = compareToBaseline({ ...sum("new", "research", 80, 100_000), project: "repo-a" }, withProjects);
+    expect(c.sampleSize).toBe(3); // only repo-a peers
+    expect(c.verdict).toBe("typical"); // not dragged by repo-b's score 10
+  });
 });

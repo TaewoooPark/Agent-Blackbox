@@ -1,6 +1,6 @@
-import { parseRulePack, type RulePack, type TraceEvent } from "@agent-blackbox/core";
+import { dominantCwd, parseRulePack, type RulePack, type TraceEvent } from "@agent-blackbox/core";
 import { readFile, stat } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { join } from "node:path";
 
 // Loads a project's optional rule pack from <project>/.agent-blackbox/rules.json,
 // resolving <project> from the run's dominant cwd (the same dir the optimizer
@@ -13,18 +13,6 @@ const cache = new Map<string, Cached>();
 const TTL_MS = 10_000;
 const MAX_BYTES = 64 * 1024;
 const EMPTY: RulePack = { rules: [] };
-
-function dominantCwd(events: TraceEvent[]): string | null {
-  const counts = new Map<string, number>();
-  for (const e of events) {
-    const cwd = e.cwd;
-    if (typeof cwd === "string" && cwd.length > 0 && isAbsolute(cwd)) counts.set(cwd, (counts.get(cwd) ?? 0) + 1);
-  }
-  let best: string | null = null;
-  let bestN = 0;
-  for (const [cwd, n] of counts) if (n > bestN) ((best = cwd), (bestN = n));
-  return best;
-}
 
 export async function loadRulePack(events: TraceEvent[], now = Date.now()): Promise<RulePack> {
   const dir = dominantCwd(events);

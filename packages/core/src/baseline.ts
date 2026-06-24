@@ -11,6 +11,7 @@ export type RunSummary = {
   archetype: TaskArchetype;
   score: number; // overall efficiency
   inputTokens: number; // totalInputTokens (peak proxy)
+  project?: string; // project key (dominant-cwd basename) — scopes the comparison
 };
 
 export type BaselineComparison = {
@@ -51,7 +52,15 @@ export function upsertRunSummary(history: RunSummary[], summary: RunSummary, cap
  * prior samples — we never invent a trend from one or two runs.
  */
 export function compareToBaseline(current: RunSummary, history: RunSummary[]): BaselineComparison {
-  const peers = history.filter((h) => h.archetype === current.archetype && h.runId !== current.runId);
+  // Same task type, excluding the run itself — and same PROJECT when we know it, so
+  // a global daemon doesn't compare your research run here against research runs in
+  // five other repos. (No project on the current run → fall back to all projects.)
+  const peers = history.filter(
+    (h) =>
+      h.archetype === current.archetype &&
+      h.runId !== current.runId &&
+      (current.project === undefined || h.project === current.project)
+  );
   if (peers.length < MIN_SAMPLES) {
     return {
       archetype: current.archetype,

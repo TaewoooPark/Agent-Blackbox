@@ -2,6 +2,7 @@ import {
   accrueProfile,
   buildAccumulatedMemory,
   computeEfficiencyReport,
+  dominantCwd,
   emptyProfile,
   hasManagedBlock,
   isEfficiencyProfile,
@@ -11,7 +12,7 @@ import {
   type TraceEvent
 } from "@agent-blackbox/core";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { loadTraceEvents } from "./server.js";
 
 // The actuator half of the loop: ABB stops at advice today; `optimize` turns the
@@ -280,29 +281,6 @@ function latestRun(events: TraceEvent[]): { runId: string | null; events: TraceE
   if (!latest) return { runId: null, events: [] };
   const runId = latest.runId;
   return { runId, events: events.filter((e) => e.runId === runId) };
-}
-
-// The directory most of a run's events ran in — the project root to write the
-// memory file into. Counts only absolute cwds (defense-in-depth on the write
-// target); ties resolve to the first-seen, and an empty result lets the caller
-// fall back to its own projectDir.
-function dominantCwd(events: TraceEvent[]): string | null {
-  const counts = new Map<string, number>();
-  for (const e of events) {
-    const cwd = e.cwd;
-    if (typeof cwd === "string" && cwd.length > 0 && isAbsolute(cwd)) {
-      counts.set(cwd, (counts.get(cwd) ?? 0) + 1);
-    }
-  }
-  let best: string | null = null;
-  let bestN = 0;
-  for (const [cwd, n] of counts) {
-    if (n > bestN) {
-      best = cwd;
-      bestN = n;
-    }
-  }
-  return best;
 }
 
 // Pin build/test/run commands worth reusing — not read-only exploration, which
