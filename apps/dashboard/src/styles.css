@@ -666,6 +666,15 @@ h3 {
   width: fit-content;
 }
 
+.contextEffCaption {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  opacity: 0.75;
+}
+
 .contextEffLabel {
   text-transform: capitalize;
   font-weight: 600;

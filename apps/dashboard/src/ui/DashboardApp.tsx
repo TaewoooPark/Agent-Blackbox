@@ -2403,8 +2403,9 @@ function ContextPanel({
           {effectiveness.confidence !== "low" ? (
             <span
               className={`contextEffectiveness status-${effectiveness.status}`}
-              title={`Did the task land? ${effectiveness.confidence}-confidence heuristic from outcome + verification + failure signals${effectiveness.signals.length ? `: ${effectiveness.signals.map((s) => s.label).join("; ")}` : ""}. Separate from efficiency — a run can be efficient but fail, or wasteful but succeed.`}
+              title={`Did the task land? ${effectiveness.confidence}-confidence heuristic from outcome + verification + failure signals${effectiveness.signals.length ? `: ${effectiveness.signals.map((s) => s.label).join("; ")}` : ""}. Separate from efficiency (the ${report.overallScore} above) — a run can be efficient but fail, or wasteful but succeed.`}
             >
+              <span className="contextEffCaption">outcome</span>
               <span className="contextEffLabel">{effectiveness.label}</span>
               <span className="contextEffScore">{effectiveness.score}</span>
             </span>
