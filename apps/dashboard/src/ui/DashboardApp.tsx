@@ -821,6 +821,10 @@ function SessionMap({
   const userZoomRef = useRef(userZoom);
   panRef.current = pan;
   userZoomRef.current = userZoom;
+  // Latches once a trackpad is seen (a wheel event with horizontal or sub-pixel
+  // deltas — gestures a notched mouse never produces) so a two-finger swipe pans
+  // instead of zooming, even through the integer momentum tail of a fling.
+  const trackpadRef = useRef(false);
   // Open a dense run at a READABLE zoom, not fit-to-tiny. The fit scale (≤1) shrinks
   // a big tree until everything fits — illegible at 60 lanes. On a run change we
   // reset to fit, then once the fit is measured we bump the manual zoom so the
@@ -1016,9 +1020,10 @@ function SessionMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [metricHighlight.nonce, treeLayout]);
 
-  // Wheel over the map zooms (cursor-anchored); panning is the middle-button drag.
-  // Attached natively (not via React's passive onWheel) so we can preventDefault and
-  // stop the page from scrolling underneath the canvas.
+  // Wheel over the map: trackpad two-finger swipe pans, pinch/⌘-wheel and the mouse
+  // wheel zoom (cursor-anchored); the middle-button drag also pans. Attached natively
+  // (not via React's passive onWheel) so we can preventDefault and stop the page from
+  // scrolling underneath the canvas.
   useEffect(() => {
     const container = mapRef.current;
     if (!container) return undefined;
@@ -1027,12 +1032,33 @@ function SessionMap({
       const target = event.target as HTMLElement | null;
       if (target?.closest(".fileStructure, .glassInspector")) return;
       event.preventDefault();
-      // Wheel = zoom, anchored under the cursor (Google-Maps style); pinch (ctrl/⌘
-      // +wheel) zooms the same way. Panning is the middle-button drag. Taking the
-      // wheel pins the view (drops .following) so it tracks the pointer, not eases.
+      // Taking the wheel pins the view (drops .following) so it tracks the pointer.
       setFollow(false);
-      // Normalize line/page deltas to ~pixels so a notched mouse wheel and a trackpad
-      // pinch both zoom at a sane rate.
+
+      // Route by gesture so both input devices feel native:
+      //   • pinch / ctrl-⌘+wheel → zoom        (trackpad pinch and mouse alike)
+      //   • two-finger trackpad swipe → pan     (the gesture a trackpad has no other way to do)
+      //   • notched mouse wheel → zoom          (what a mouse user asked for)
+      // A trackpad emits horizontal and/or fractional sub-pixel deltas a mouse wheel
+      // never does; latch that verdict so a fling's integer momentum tail keeps panning.
+      const zoomGesture = event.ctrlKey || event.metaKey;
+      const trackpadScroll =
+        Math.abs(event.deltaX) > 0 || (event.deltaMode === 0 && !Number.isInteger(event.deltaY));
+      if (!zoomGesture && trackpadScroll) trackpadRef.current = true;
+      if (!zoomGesture && (trackpadScroll || trackpadRef.current)) {
+        // Two-finger swipe → pan, content following the fingers.
+        const nextPan = {
+          x: Math.round(panRef.current.x - event.deltaX),
+          y: Math.round(panRef.current.y - event.deltaY)
+        };
+        panRef.current = nextPan;
+        setPan(nextPan);
+        requestLayoutMeasure();
+        return;
+      }
+
+      // Zoom, anchored under the cursor. Normalize line/page deltas to ~pixels so a
+      // notched mouse wheel and a trackpad pinch both zoom at a sane rate.
       const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? container.clientHeight : 1;
       const factor = Math.exp(-event.deltaY * unit * 0.0015);
       const prevZoom = userZoomRef.current;
