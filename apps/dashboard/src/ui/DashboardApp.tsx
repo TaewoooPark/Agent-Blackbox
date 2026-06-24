@@ -555,7 +555,7 @@ export function DashboardApp() {
         </div>
       ) : null}
 
-      {showOptimize ? <OptimizeModal onClose={() => setShowOptimize(false)} /> : null}
+      {showOptimize ? <OptimizeModal onClose={() => setShowOptimize(false)} runId={activeRunId} /> : null}
 
       {error ? (
         <div className="banner">
@@ -2467,17 +2467,20 @@ const shortenPath = (path: string): string => {
 // The actuator's UI: previews the exact AGENTS.md memory block ABB would write
 // from the last run, and lets you apply or revert it — a real, reversible change,
 // not just advice. Separate from the "Sharpen advice" suggestion flow on purpose.
-function OptimizeModal({ onClose }: { onClose: () => void }) {
+function OptimizeModal({ onClose, runId }: { onClose: () => void; runId: string | null }) {
   const [preview, setPreview] = useState<OptimizePreview | null>(null);
   const [applied, setApplied] = useState(false);
   const [note, setNote] = useState<{ text: string; tone: "done" | "error" } | null>(null);
   const [phase, setPhase] = useState<"loading" | "ready" | "working" | "error">("loading");
+  // Act on the run the dashboard is showing, not whichever is globally-latest — so
+  // optimizing while several Claude Code sessions run at once targets the right one.
+  const runQuery = runId ? `?runId=${encodeURIComponent(runId)}` : "";
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
-        const res = await fetch(`${daemonUrl}/optimize`);
+        const res = await fetch(`${daemonUrl}/optimize${runQuery}`);
         const json = (await res.json()) as { ok: boolean; data?: OptimizePreview };
         if (cancelled) return;
         if (!json.ok || !json.data) throw new Error("daemon error");
@@ -2491,13 +2494,13 @@ function OptimizeModal({ onClose }: { onClose: () => void }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [runQuery]);
 
   const act = async (mode: "apply" | "revert") => {
     setPhase("working");
     setNote(null);
     try {
-      const res = await fetch(`${daemonUrl}/optimize/${mode}`, { method: "POST" });
+      const res = await fetch(`${daemonUrl}/optimize/${mode}${runQuery}`, { method: "POST" });
       const json = (await res.json()) as { ok: boolean; data?: OptimizePreview };
       if (!json.ok || !json.data) throw new Error("daemon error");
       setApplied(json.data.applied);

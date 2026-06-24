@@ -61,6 +61,7 @@ export async function runOptimize(options: {
   projectDir: string;
   mode: OptimizeMode;
   eventsFile?: string;
+  runId?: string;
 }): Promise<OptimizeResult> {
   const result = await computeOptimize(options);
   const content = await readMaybe(result.agentsMdPath);
@@ -71,20 +72,31 @@ async function computeOptimize(options: {
   projectDir: string;
   mode: OptimizeMode;
   eventsFile?: string;
+  runId?: string;
 }): Promise<Omit<OptimizeResult, "applied">> {
   const eventsFile = options.eventsFile ?? join(options.projectDir, ".agent-blackbox", "events.ndjson");
   const events = await loadTraceEvents(eventsFile);
-  const { runId, events: runEvents } = latestRun(events);
-  // Write AGENTS.md to the project the run actually happened in (carried on
-  // event.cwd), not the daemon's own dir. This is what makes the actuator correct
-  // in global-recorder mode, where one daemon records many projects and its
+  // Optimize the run the caller asked for (the dashboard passes the run it's
+  // SHOWING) — falling back to the most recent run when none is given or the
+  // requested id has no events. Without this, a user running several Claude Code
+  // sessions at once would optimize whichever happens to be globally-latest, not
+  // the one they're looking at.
+  const requested =
+    options.runId !== undefined ? events.filter((e) => e.runId === options.runId) : [];
+  const { runId, events: runEvents } =
+    requested.length > 0 ? { runId: options.runId ?? null, events: requested } : latestRun(events);
+  // Write AGENTS.md/CLAUDE.md to the project the run actually happened in (carried
+  // on event.cwd), not the daemon's own dir. This is what makes the actuator
+  // correct in global-recorder mode, where one daemon records many projects and its
   // projectDir is the shared data dir. Older traces lack cwd → fall back.
   // `cwd` rides in on POSTed events, so treat it as untrusted: only honor an
   // absolute path (reject relative/odd values that could escape). The daemon's
   // loopback-only CORS is the primary guard against forged events; this is
-  // defense-in-depth on the write target.
-  const runCwd = runEvents.find((e) => typeof e.cwd === "string" && e.cwd.length > 0)?.cwd;
-  const targetDir = runCwd && isAbsolute(runCwd) ? runCwd : options.projectDir;
+  // defense-in-depth on the write target. Use the run's DOMINANT cwd (the dir most
+  // of its events ran in), not the first — a session's first event can carry a
+  // transient subdir (e.g. an output folder), while the project root is where the
+  // bulk of the work happened and where the next session will read the memory.
+  const targetDir = dominantCwd(runEvents) ?? options.projectDir;
   const runHost = runEvents.find((e) => typeof e.host === "string")?.host;
   const memoryFileName = memoryFileFor(runHost);
   const agentsMdPath = join(targetDir, memoryFileName);
@@ -251,6 +263,29 @@ function latestRun(events: TraceEvent[]): { runId: string | null; events: TraceE
   if (!latest) return { runId: null, events: [] };
   const runId = latest.runId;
   return { runId, events: events.filter((e) => e.runId === runId) };
+}
+
+// The directory most of a run's events ran in — the project root to write the
+// memory file into. Counts only absolute cwds (defense-in-depth on the write
+// target); ties resolve to the first-seen, and an empty result lets the caller
+// fall back to its own projectDir.
+function dominantCwd(events: TraceEvent[]): string | null {
+  const counts = new Map<string, number>();
+  for (const e of events) {
+    const cwd = e.cwd;
+    if (typeof cwd === "string" && cwd.length > 0 && isAbsolute(cwd)) {
+      counts.set(cwd, (counts.get(cwd) ?? 0) + 1);
+    }
+  }
+  let best: string | null = null;
+  let bestN = 0;
+  for (const [cwd, n] of counts) {
+    if (n > bestN) {
+      best = cwd;
+      bestN = n;
+    }
+  }
+  return best;
 }
 
 // Pin build/test/run commands worth reusing — not read-only exploration, which

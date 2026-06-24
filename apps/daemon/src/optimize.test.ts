@@ -167,6 +167,53 @@ describe("optimize (AGENTS.md efficiency memory)", () => {
     expect(await readFile(join(dir, "AGENTS.md"), "utf8")).toContain("agent-blackbox:efficiency:start");
   });
 
+  it("writes to the run's DOMINANT cwd, not a transient first one", async () => {
+    // A session's first event can carry a transient subdir (e.g. an output folder);
+    // the project root — where the bulk of the work ran and the next session reads
+    // the memory — must win.
+    const projectRoot = await mkdtemp(join(tmpdir(), "abb-root-"));
+    const subdir = await mkdtemp(join(tmpdir(), "abb-sub-"));
+    try {
+      const events = wasteful("run-d", "2026-06-01T00:00:00.000Z").map((e, i) => ({
+        ...e,
+        cwd: i === 0 ? subdir : projectRoot
+      }));
+      await seed(events);
+      const applied = await runOptimize({ projectDir: dir, mode: "apply" });
+      expect(applied.agentsMdPath).toBe(join(projectRoot, "AGENTS.md"));
+      await expect(readFile(join(subdir, "AGENTS.md"), "utf8")).rejects.toThrow();
+      await runOptimize({ projectDir: dir, mode: "revert" });
+    } finally {
+      await rm(projectRoot, { recursive: true, force: true });
+      await rm(subdir, { recursive: true, force: true });
+    }
+  });
+
+  it("optimizes the requested run, not whichever is globally-latest", async () => {
+    // Several sessions at once: the dashboard passes the run it's showing so optimize
+    // doesn't act on a different, newer session.
+    const older = await mkdtemp(join(tmpdir(), "abb-older-"));
+    const newer = await mkdtemp(join(tmpdir(), "abb-newer-"));
+    try {
+      const events = [
+        ...wasteful("run-old", "2026-06-01T00:00:00.000Z").map((e) => ({ ...e, cwd: older })),
+        ...wasteful("run-new", "2026-06-02T00:00:00.000Z").map((e) => ({ ...e, cwd: newer }))
+      ];
+      await seed(events);
+      // Default → the globally-latest run.
+      expect((await runOptimize({ projectDir: dir, mode: "preview" })).agentsMdPath).toBe(join(newer, "AGENTS.md"));
+      // Targeted → the run the caller asked for.
+      const targeted = await runOptimize({ projectDir: dir, mode: "apply", runId: "run-old" });
+      expect(targeted.agentsMdPath).toBe(join(older, "AGENTS.md"));
+      expect(await readFile(join(older, "AGENTS.md"), "utf8")).toContain("agent-blackbox:efficiency:start");
+      await expect(readFile(join(newer, "AGENTS.md"), "utf8")).rejects.toThrow();
+      await runOptimize({ projectDir: dir, mode: "revert", runId: "run-old" });
+    } finally {
+      await rm(older, { recursive: true, force: true });
+      await rm(newer, { recursive: true, force: true });
+    }
+  });
+
   // --- host-aware target file (Claude Code reads CLAUDE.md, OpenCode AGENTS.md) ---
   const wastefulCC = (runId: string, ts: string) =>
     wasteful(runId, ts).map((e) => ({ ...e, host: "claude-code" as const }));

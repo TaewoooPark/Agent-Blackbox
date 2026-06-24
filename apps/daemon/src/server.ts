@@ -351,16 +351,29 @@ async function handleRequest(
     // The actuator, exposed to the dashboard. GET previews the AGENTS.md memory
     // block (no write); POST .../apply writes it; POST .../revert removes it.
     // Every write is to a marked, reversible region — see optimize.ts.
+    // The dashboard passes ?runId=<the run it's showing> so optimize acts on that
+    // run, not whichever is globally-latest (they differ when several sessions run
+    // at once). Omitted → the actuator falls back to the most recent run.
+    const optimizeRunId = url.searchParams.get("runId") || undefined;
     if (request.method === "GET" && url.pathname === "/optimize") {
-      sendJson(response, 200, { ok: true, data: await runOptimize({ projectDir, eventsFile, mode: "preview" }) });
+      sendJson(response, 200, {
+        ok: true,
+        data: await runOptimize({ projectDir, eventsFile, mode: "preview", ...(optimizeRunId ? { runId: optimizeRunId } : {}) })
+      });
       return;
     }
     if (request.method === "POST" && url.pathname === "/optimize/apply") {
-      sendJson(response, 200, { ok: true, data: await runOptimize({ projectDir, eventsFile, mode: "apply" }) });
+      sendJson(response, 200, {
+        ok: true,
+        data: await runOptimize({ projectDir, eventsFile, mode: "apply", ...(optimizeRunId ? { runId: optimizeRunId } : {}) })
+      });
       return;
     }
     if (request.method === "POST" && url.pathname === "/optimize/revert") {
-      sendJson(response, 200, { ok: true, data: await runOptimize({ projectDir, eventsFile, mode: "revert" }) });
+      sendJson(response, 200, {
+        ok: true,
+        data: await runOptimize({ projectDir, eventsFile, mode: "revert", ...(optimizeRunId ? { runId: optimizeRunId } : {}) })
+      });
       return;
     }
     if (request.method === "POST" && url.pathname === "/events") {
