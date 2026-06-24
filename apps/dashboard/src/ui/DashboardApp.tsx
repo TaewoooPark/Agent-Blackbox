@@ -242,10 +242,10 @@ export function DashboardApp() {
   const workflowSteps = useMemo(() => createWorkflowSteps(visibleEvents), [visibleEvents]);
   const tokenTotals = useMemo(() => latestTokenUsage(visibleEvents), [visibleEvents]);
   const efficiency = useMemo(() => computeEfficiencyReport(visibleEvents), [visibleEvents]);
-  const effectiveness = useMemo(
-    () => computeEffectiveness(visibleEvents, evaluatePromiseChecks(visibleEvents)),
-    [visibleEvents]
-  );
+  // Promise-checks scan message text with regexes — compute once and share between
+  // the effectiveness axis and the handoff markdown (was run twice per render).
+  const promiseChecks = useMemo(() => evaluatePromiseChecks(visibleEvents), [visibleEvents]);
+  const effectiveness = useMemo(() => computeEffectiveness(visibleEvents, promiseChecks), [visibleEvents, promiseChecks]);
   const suggestions = useMemo(() => buildDeterministicSuggestions(efficiency), [efficiency]);
   // Project's custom rule pack, evaluated against the viewed run (separate from the
   // efficiency score so house rules don't distort cross-project baselines).
@@ -334,8 +334,8 @@ export function DashboardApp() {
   const runStatus = useMemo(() => deriveRunStatus(visibleEvents), [visibleEvents]);
   const riskMomentCount = useMemo(() => workflowSteps.filter((step) => step.tone === "risk").length, [workflowSteps]);
   const handoffMarkdown = useMemo(
-    () => (graph ? generateHandoffMarkdown(graph, evaluatePromiseChecks(visibleEvents)) : ""),
-    [graph, visibleEvents]
+    () => (graph ? generateHandoffMarkdown(graph, promiseChecks) : ""),
+    [graph, promiseChecks]
   );
   const orderedEvents = useMemo(() => [...visibleEvents].sort((a, b) => a.seq - b.seq), [visibleEvents]);
   const marks = useMemo(() => createTimelineMarks(orderedEvents), [orderedEvents]);
