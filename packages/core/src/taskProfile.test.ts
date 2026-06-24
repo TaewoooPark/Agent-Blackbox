@@ -90,6 +90,20 @@ describe("archetype conditioning of the efficiency score", () => {
     expect(report.archetypeSignals.length).toBeGreaterThan(0);
   });
 
+  it("withholds conditioning until the classification is confident (no early-run swing)", () => {
+    const big = (seq: number, name: string) => ev(seq, "file_read", { source: "tool.after", path: `$P/${name}`, chars: 160_000 });
+    // 2 distinct reads → research but low confidence (0.4) → NOT conditioned yet.
+    const lowConf = computeEfficiencyReport([big(1, "a.json"), big(2, "b.json")]);
+    expect(lowConf.archetype).toBe("research");
+    expect(lowConf.archetypeConfidence).toBeLessThan(0.55);
+    expect(lowConf.metrics.find((m) => m.id === "big-file-read")?.status).not.toBe("good"); // still flagged
+
+    // 3 distinct reads → confident enough → research expects big reads → demoted.
+    const highConf = computeEfficiencyReport([big(1, "a.json"), big(2, "b.json"), big(3, "c.json")]);
+    expect(highConf.archetypeConfidence).toBeGreaterThanOrEqual(0.55);
+    expect(highConf.metrics.find((m) => m.id === "big-file-read")?.status).toBe("good"); // not scored for research
+  });
+
   it("leaves neutral archetypes byte-identical to the unconditioned score", () => {
     const events = [
       ev(1, "file_read", { source: "tool.after", path: "$P/a.ts", chars: 800 }),

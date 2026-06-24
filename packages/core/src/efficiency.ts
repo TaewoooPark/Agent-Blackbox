@@ -578,7 +578,14 @@ export function computeEfficiencyReport(events: TraceEvent[], options: Efficienc
   const classification = options.archetype
     ? { archetype: options.archetype, confidence: 1, signals: ["caller-specified"] }
     : classifyRun(events);
-  const profile = ARCHETYPE_PROFILES[classification.archetype] ?? {};
+  // Only condition the score once the classification is confident enough. Early in
+  // a live run the event set is still growing and the archetype can flip
+  // (research→debug as the first test appears); gating on confidence keeps the score
+  // from swinging while it settles. Below the bar we still REPORT the guess, but
+  // score it neutrally (identical to the unconditioned report).
+  const CONDITION_MIN_CONFIDENCE = 0.55;
+  const conditioningActive = options.archetype !== undefined || classification.confidence >= CONDITION_MIN_CONFIDENCE;
+  const profile = conditioningActive ? ARCHETYPE_PROFILES[classification.archetype] ?? {} : {};
   const expected = new Set(profile.expected ?? []);
   const weightMult = profile.weight ?? {};
   for (const m of metrics) {

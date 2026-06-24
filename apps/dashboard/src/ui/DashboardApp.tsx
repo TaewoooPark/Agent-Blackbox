@@ -2384,10 +2384,10 @@ function ContextPanel({
         <div className="contextHeadMeta">
           <h2>
             Context efficiency
-            {report.archetype && report.archetype !== "unknown" ? (
+            {report.archetype && report.archetype !== "unknown" && report.archetypeConfidence >= 0.55 ? (
               <span
                 className="contextArchetype"
-                title={`Scored as a ${report.archetype} task${report.archetypeSignals?.length ? ` — ${report.archetypeSignals.join("; ")}` : ""}. The yardstick adapts to the task type.`}
+                title={`Scored as a ${report.archetype} task${report.archetypeSignals?.length ? ` — ${report.archetypeSignals.join("; ")}` : ""}. The yardstick adapts to the task type once the classification is confident.`}
               >
                 {report.archetype}
               </span>
