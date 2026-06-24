@@ -700,6 +700,43 @@ h3 {
   color: var(--bad, #b3261e);
 }
 
+.contextRules {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.contextRulesLabel {
+  margin: 0 0 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.contextRule {
+  display: grid;
+  gap: 1px;
+  padding: 5px 8px;
+  border: 1px solid var(--hairline, currentColor);
+  border-left-width: 3px;
+  border-radius: 2px;
+  font-size: 11px;
+}
+.contextRule.severity-bad {
+  border-left-color: var(--bad, #b3261e);
+}
+.contextRule.severity-warn {
+  border-left-color: var(--warn, #9a6b00);
+}
+.contextRule.severity-info {
+  border-left-color: var(--text-muted);
+}
+.contextRuleOffenders {
+  color: var(--text-muted);
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+}
+
 .contextTopFixes {
   display: grid;
   gap: 6px;

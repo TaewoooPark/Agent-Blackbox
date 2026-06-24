@@ -5,6 +5,7 @@ import {
   computeEffectiveness,
   computeEfficiencyReport,
   evaluatePromiseChecks,
+  evaluateRulePack,
   generateHandoffMarkdown,
   materializeWorkflowGraph,
   type BaselineComparison,
@@ -12,6 +13,8 @@ import {
   type EfficiencyMetric,
   type EfficiencyReport,
   type PromiseCheck,
+  type RuleFinding,
+  type RulePack,
   type RunSummary,
   type Suggestion,
   type TraceEvent,
@@ -82,6 +85,7 @@ type TraceSnapshot = {
   graph: WorkflowGraph;
   checks: PromiseCheck[];
   baselines?: RunSummary[]; // optional — older daemons don't send it
+  rulePack?: RulePack; // optional — the project's custom checks, evaluated client-side
   handoffMarkdown: string;
   replay: {
     mode: "live" | "seq" | "time";
@@ -242,6 +246,12 @@ export function DashboardApp() {
     [visibleEvents]
   );
   const suggestions = useMemo(() => buildDeterministicSuggestions(efficiency), [efficiency]);
+  // Project's custom rule pack, evaluated against the viewed run (separate from the
+  // efficiency score so house rules don't distort cross-project baselines).
+  const ruleFindings = useMemo<RuleFinding[]>(
+    () => (snapshot?.rulePack ? evaluateRulePack(visibleEvents, snapshot.rulePack) : []),
+    [snapshot, visibleEvents]
+  );
   // Score the viewed run against your usual run of the same archetype (heavy history
   // lives daemon-side; the snapshot ships the compact summaries).
   const baselineComparison = useMemo<BaselineComparison | null>(() => {
@@ -655,6 +665,7 @@ export function DashboardApp() {
             report={efficiency}
             effectiveness={effectiveness}
             baseline={baselineComparison}
+            ruleFindings={ruleFindings}
             suggestions={aiState?.suggestions ?? suggestions}
             usage={tokenTotals}
             aiProvider={aiState?.provider ?? null}
@@ -2323,6 +2334,7 @@ function ContextPanel({
   report,
   effectiveness,
   baseline,
+  ruleFindings,
   suggestions,
   usage,
   aiProvider,
@@ -2337,6 +2349,7 @@ function ContextPanel({
   report: EfficiencyReport;
   effectiveness: EffectivenessReport;
   baseline: BaselineComparison | null;
+  ruleFindings: RuleFinding[];
   suggestions: Suggestion[];
   usage: TokenUsage;
   aiProvider: string | null;
@@ -2421,6 +2434,18 @@ function ContextPanel({
           </span>
         ) : null}
       </div>
+
+      {ruleFindings.length > 0 ? (
+        <div className="contextRules" aria-label="Custom rule checks">
+          <p className="contextRulesLabel">Custom checks</p>
+          {ruleFindings.map((finding) => (
+            <div className={`contextRule severity-${finding.severity}`} key={finding.ruleId} title={`Rule: ${finding.ruleId}`}>
+              <span className="contextRuleMsg">{finding.message}</span>
+              {finding.offenders.length > 0 ? <span className="contextRuleOffenders">{finding.offenders.join(", ")}</span> : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       {adviceRequested ? (
         topFixes.length > 0 ? (
