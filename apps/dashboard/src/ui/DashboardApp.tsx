@@ -410,17 +410,29 @@ export function DashboardApp() {
       // that band so a zoomed-out-of-view node never trails a line across the rest
       // of the console.
       const mapEl = workspace.querySelector<HTMLElement>(".mapCanvas");
-      const mapRect = mapEl ? mapEl.getBoundingClientRect() : wsRect;
+      // Without the map's bounds we can't prove a line stays out of the co-pilot, so
+      // draw nothing rather than risk bleeding the full width.
+      if (!mapEl) {
+        setFileEdges([]);
+        setEdgeClip({ left: 0, top: 0, width: 0, height: 0 });
+        return;
+      }
+      const mapRect = mapEl.getBoundingClientRect();
       // Clip lines to the map viewport (left + top/bottom band, extending right to
       // the files). A line whose origin scrolls out of view is partially clipped at
       // the boundary — like a node — rather than vanishing whole.
       const clipLeft = Math.max(0, mapRect.left - wsRect.left);
       const clipTop = Math.max(0, mapRect.top - wsRect.top);
       const clipBottom = Math.min(wsRect.height, mapRect.bottom - wsRect.top);
+      // Hard-stop every line at the map's right edge. The co-pilot (right panel) is
+      // sacrosanct: a file line is only ever a hint leaving the map *toward* the files,
+      // so it must never paint into the panel — no matter how wide the tree is or how
+      // far a node has scrolled off-screen. Clipping to the map column guarantees it.
+      const mapRight = mapRect.right - wsRect.left;
       setEdgeClip({
         left: clipLeft,
         top: clipTop,
-        width: Math.max(0, wsRect.width - clipLeft),
+        width: Math.max(0, mapRight - clipLeft),
         height: Math.max(0, clipBottom - clipTop)
       });
       const stepEls = new Map<string, HTMLElement>();
@@ -443,7 +455,14 @@ export function DashboardApp() {
         const f = fileEl.getBoundingClientRect();
         const startX = ringCx - wsRect.left;
         const startY = ringCy - wsRect.top;
-        const endX = f.left - wsRect.left;
+        // The node's own ring is clipped to the map; once it scrolls past the map's
+        // right edge there's nothing on-screen to anchor a line to, so drop it rather
+        // than draw a stub hugging the boundary (or, worse, a backward sweep).
+        if (startX >= mapRight) return [];
+        // Aim at the file row's height, but never right of the map edge: the line ends
+        // at the boundary and hands off to the files panel across the gap instead of
+        // crossing into it.
+        const endX = Math.min(f.left - wsRect.left, mapRight);
         const endY = f.top + f.height / 2 - wsRect.top;
         const bend = Math.max(40, Math.min(180, (endX - startX) / 2));
         return [
@@ -482,6 +501,12 @@ export function DashboardApp() {
       workspace.removeEventListener("scroll", schedule, true);
     };
   }, [fileConnections]);
+  // A run switch (manual pick or auto-latest) invalidates every measured line at once —
+  // their origin nodes belong to the previous run's DOM. Clear immediately so none of
+  // the old lines linger over the new run until the next measure rebuilds them.
+  useEffect(() => {
+    setFileEdges([]);
+  }, [activeRunId]);
   const chooseRun = (runId: string | null) => {
     setSelectedRunId(runId);
     // A selection or replay position from the previous run is meaningless in the
@@ -1034,6 +1059,11 @@ function SessionMap({
       if (tree.height > map.height) dy = clamp(dy, map.bottom - tree.bottom, map.top - tree.top);
       if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return; // already centered → don't churn
       setPan((current) => ({ x: Math.round(current.x + dx), y: Math.round(current.y + dy) }));
+      // The file-connection lines live in un-transformed workspace space, so an eased
+      // follow pan slides the nodes (CSS transform) out from under them. Nudge a
+      // re-measure burst so the lines track the moving camera instead of lingering
+      // where the nodes used to be.
+      requestLayoutMeasure();
     });
     return () => window.cancelAnimationFrame(frame);
   }, [follow, latestItem, appliedScale]);
