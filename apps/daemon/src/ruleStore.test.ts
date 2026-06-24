@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { loadRulePack, resetRuleCache } from "./ruleStore.js";
+import { loadRulePacks, resetRuleCache } from "./ruleStore.js";
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -25,20 +25,27 @@ const readIn = (cwd: string): TraceEvent[] => [
   createTraceEvent(2, { host: "claude-code", runId: "r", sessionId: "r", kind: "file_read", payload: { path: "b.ts" } as never, cwd })
 ];
 
-describe("loadRulePack", () => {
-  it("loads + parses the pack from the run's dominant cwd", async () => {
+describe("loadRulePacks", () => {
+  it("keys each project's pack by its cwd basename, so the viewed run can pick its own", async () => {
     const dir = await projectWithRules(JSON.stringify({ rules: [{ id: "x", type: "forbid-read", pattern: "node_modules" }] }));
-    const pack = await loadRulePack(readIn(dir), 1000);
-    expect(pack.rules.map((r) => r.id)).toEqual(["x"]);
+    const key = dir.split("/").pop()!;
+    const packs = await loadRulePacks(readIn(dir), 1000);
+    expect(packs[key]?.rules.map((r: { id: string }) => r.id)).toEqual(["x"]);
   });
 
-  it("returns an empty pack when there's no cwd to resolve", async () => {
-    const noCwd = [createTraceEvent(1, { host: "claude-code", runId: "r", sessionId: "r", kind: "file_read", payload: { path: "a.ts" } as never })];
-    expect((await loadRulePack(noCwd, 1000)).rules).toEqual([]);
+  it("scopes packs per project — project B's rules don't leak to project A", async () => {
+    const a = await projectWithRules(JSON.stringify({ rules: [{ id: "a-rule", type: "forbid-read", pattern: "secrets" }] }));
+    const b = await projectWithRules(JSON.stringify({ rules: [{ id: "b-rule", type: "forbid-edit", pattern: "dist" }] }));
+    // Window dominated by project B's events, but A's run is still present.
+    const events = [...readIn(b), ...readIn(b), ...readIn(a)];
+    const packs = await loadRulePacks(events, 1000);
+    expect(packs[a.split("/").pop()!]?.rules.map((r: { id: string }) => r.id)).toEqual(["a-rule"]);
+    expect(packs[b.split("/").pop()!]?.rules.map((r: { id: string }) => r.id)).toEqual(["b-rule"]);
   });
 
-  it("tolerates a corrupt rules file (empty pack, no throw)", async () => {
-    const dir = await projectWithRules("{ not json");
-    await expect(loadRulePack(readIn(dir), 1000)).resolves.toEqual({ rules: [] });
+  it("omits projects with no/empty/corrupt rules and never throws", async () => {
+    expect(await loadRulePacks([createTraceEvent(1, { host: "claude-code", runId: "r", sessionId: "r", kind: "file_read", payload: { path: "a.ts" } as never })], 1000)).toEqual({});
+    const bad = await projectWithRules("{ not json");
+    await expect(loadRulePacks(readIn(bad), 1000)).resolves.toEqual({});
   });
 });

@@ -19,7 +19,7 @@ import {
 } from "@agent-blackbox/core";
 import { appendTraceEvent, parseTraceEvents, readTraceEvents } from "@agent-blackbox/storage";
 import { updateBaselines } from "./baselineStore.js";
-import { loadRulePack } from "./ruleStore.js";
+import { loadRulePacks } from "./ruleStore.js";
 import { open, readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join } from "node:path";
@@ -63,9 +63,10 @@ export type TraceSnapshot = {
   // against your usual run of the same archetype. Small; the heavy history stays
   // daemon-side.
   baselines: RunSummary[];
-  // The project's optional custom rule pack (parsed); the dashboard evaluates it
-  // against the viewed run. Empty when the project has no rules file.
-  rulePack: RulePack;
+  // Optional custom rule packs keyed by project (cwd basename); the dashboard picks
+  // the pack for the run it's VIEWING and evaluates it there. Only projects that
+  // actually have a rules.json appear.
+  rulePacks: Record<string, RulePack>;
   handoffMarkdown: string;
   replay: {
     mode: "live" | "seq" | "time";
@@ -277,7 +278,7 @@ export async function buildTraceSnapshot(
   // Best-effort: records recent runs (throttled) and returns the rolling history.
   // Pass the whole-file events so every run is summarised, not just the visible one.
   const baselines = await updateBaselines(eventsFile, events);
-  const rulePack = await loadRulePack(events);
+  const rulePacks = await loadRulePacks(events);
   const handoffMarkdown = generateHandoffMarkdown(graph, checks);
   return {
     events,
@@ -286,7 +287,7 @@ export async function buildTraceSnapshot(
     efficiency,
     effectiveness,
     baselines,
-    rulePack,
+    rulePacks,
     handoffMarkdown,
     replay: {
       mode: replay.seq !== undefined ? "seq" : replay.at !== undefined ? "time" : "live",

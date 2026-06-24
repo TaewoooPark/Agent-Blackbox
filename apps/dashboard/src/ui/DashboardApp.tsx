@@ -86,7 +86,7 @@ type TraceSnapshot = {
   graph: WorkflowGraph;
   checks: PromiseCheck[];
   baselines?: RunSummary[]; // optional — older daemons don't send it
-  rulePack?: RulePack; // optional — the project's custom checks, evaluated client-side
+  rulePacks?: Record<string, RulePack>; // optional — custom checks keyed by project (cwd basename)
   handoffMarkdown: string;
   replay: {
     mode: "live" | "seq" | "time";
@@ -249,10 +249,13 @@ export function DashboardApp() {
   const suggestions = useMemo(() => buildDeterministicSuggestions(efficiency), [efficiency]);
   // Project's custom rule pack, evaluated against the viewed run (separate from the
   // efficiency score so house rules don't distort cross-project baselines).
-  const ruleFindings = useMemo<RuleFinding[]>(
-    () => (snapshot?.rulePack ? evaluateRulePack(visibleEvents, snapshot.rulePack) : []),
-    [snapshot, visibleEvents]
-  );
+  const ruleFindings = useMemo<RuleFinding[]>(() => {
+    // Pick the pack for the project of the run we're VIEWING (not whichever project
+    // dominates the daemon's whole window).
+    const proj = projectKey(visibleEvents);
+    const pack = proj ? snapshot?.rulePacks?.[proj] : undefined;
+    return pack ? evaluateRulePack(visibleEvents, pack) : [];
+  }, [snapshot, visibleEvents]);
   // Score the viewed run against your usual run of the same archetype (heavy history
   // lives daemon-side; the snapshot ships the compact summaries).
   const baselineComparison = useMemo<BaselineComparison | null>(() => {
@@ -2390,6 +2393,7 @@ function ContextPanel({
             {report.archetype && report.archetype !== "unknown" && report.archetypeConfidence >= 0.55 ? (
               <span
                 className="contextArchetype"
+                aria-label={`Task type: ${report.archetype}`}
                 title={`Scored as a ${report.archetype} task${report.archetypeSignals?.length ? ` — ${report.archetypeSignals.join("; ")}` : ""}. The yardstick adapts to the task type once the classification is confident.`}
               >
                 {report.archetype}
@@ -2403,6 +2407,7 @@ function ContextPanel({
           {effectiveness.confidence !== "low" ? (
             <span
               className={`contextEffectiveness status-${effectiveness.status}`}
+              aria-label={`Outcome (separate from the efficiency score): ${effectiveness.label}, ${effectiveness.score} of 100, ${effectiveness.confidence} confidence`}
               title={`Did the task land? ${effectiveness.confidence}-confidence heuristic from outcome + verification + failure signals${effectiveness.signals.length ? `: ${effectiveness.signals.map((s) => s.label).join("; ")}` : ""}. Separate from efficiency (the ${report.overallScore} above) — a run can be efficient but fail, or wasteful but succeed.`}
             >
               <span className="contextEffCaption">outcome</span>
@@ -2411,7 +2416,11 @@ function ContextPanel({
             </span>
           ) : null}
           {baseline && baseline.verdict !== "insufficient" ? (
-            <span className={`contextBaseline verdict-${baseline.verdict}`} title="Compared against your past runs of the same task type.">
+            <span
+              className={`contextBaseline verdict-${baseline.verdict}`}
+              aria-label={`Versus your past runs (${baseline.verdict}): ${baseline.note}`}
+              title="Compared against your past runs of the same task type in this project."
+            >
               {baseline.verdict === "better" ? "↑ " : baseline.verdict === "worse" ? "↓ " : "≈ "}
               {baseline.note}
             </span>
@@ -2445,8 +2454,17 @@ function ContextPanel({
         <div className="contextRules" aria-label="Custom rule checks">
           <p className="contextRulesLabel">Custom checks</p>
           {ruleFindings.map((finding) => (
-            <div className={`contextRule severity-${finding.severity}`} key={finding.ruleId} title={`Rule: ${finding.ruleId}`}>
-              <span className="contextRuleMsg">{finding.message}</span>
+            <div
+              className={`contextRule severity-${finding.severity}`}
+              key={finding.ruleId}
+              title={`Rule: ${finding.ruleId}`}
+              aria-label={`${finding.severity}: ${finding.message}${finding.offenders.length ? ` — ${finding.offenders.join(", ")}` : ""}`}
+            >
+              <span className="contextRuleMsg">
+                {/* Text severity tag, not colour alone — distinguishable in forced-colors / for colour-blind users. */}
+                <span className={`contextRuleSev sev-${finding.severity}`}>{finding.severity}</span>
+                {finding.message}
+              </span>
               {finding.offenders.length > 0 ? <span className="contextRuleOffenders">{finding.offenders.join(", ")}</span> : null}
             </div>
           ))}

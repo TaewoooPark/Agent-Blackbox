@@ -740,6 +740,28 @@ h3 {
 .contextRule.severity-info {
   border-left-color: var(--text-muted);
 }
+.contextRuleSev {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 4px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: 1px;
+}
+.contextRuleSev.sev-bad {
+  color: var(--bad, #b3261e);
+}
+.contextRuleSev.sev-warn {
+  color: var(--warn, #9a6b00);
+}
+.contextRuleSev.sev-info {
+  color: var(--text-muted);
+}
+
 .contextRuleOffenders {
   color: var(--text-muted);
   font-family: var(--font-mono, monospace);
