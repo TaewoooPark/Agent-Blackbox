@@ -28,75 +28,88 @@ const dedupe = (xs: string[]): string[] => [...new Set(xs.filter(Boolean))];
  * Deliberately terse: every line added here is context the next run must carry,
  * so it must earn its place or it worsens the very pressure it aims to cut.
  */
-export function buildEfficiencyMemory(
-  report: EfficiencyReport,
-  options: EfficiencyMemoryOptions = {}
-): string | null {
+// The flag-only levers (no offender list — a whole-run habit). Order = render order.
+export const MEMORY_FLAG_LEVERS = ["context-pressure", "cache-hit", "tool-overhead", "edit-thrash"] as const;
+export type MemoryFlagLever = (typeof MEMORY_FLAG_LEVERS)[number];
+
+// A normalised, render-ready set of levers, decoupled from where they came from
+// (a single run's report, or a profile accumulated across runs). Labels are
+// pre-formatted strings, so the accumulator can append "(×N)" without the renderer
+// needing to know about counts.
+export type MemoryLevers = {
+  commands: string[];
+  reread: string[]; // redundant-reads ∪ read-amplification
+  injections: string[]; // large-injections
+  bigReads: string[]; // big-file-read
+  retries: string[]; // retry-waste
+  flags: Set<MemoryFlagLever>;
+};
+
+export function leversFromReport(report: EfficiencyReport, options: EfficiencyMemoryOptions = {}): MemoryLevers {
   const flagged = new Map(report.metrics.filter((m) => m.status !== "good").map((m) => [m.id, m]));
   const offendersOf = (id: string): string[] => (flagged.get(id)?.offenders ?? []).map(offenderLabel);
+  return {
+    commands: dedupe(options.verifiedCommands ?? []).slice(0, 4),
+    reread: dedupe([...offendersOf("redundant-reads"), ...offendersOf("read-amplification")]).slice(0, 6),
+    injections: dedupe(offendersOf("large-injections")).slice(0, 4),
+    bigReads: dedupe(offendersOf("big-file-read")).slice(0, 4),
+    retries: dedupe(offendersOf("retry-waste")).slice(0, 4),
+    flags: new Set(MEMORY_FLAG_LEVERS.filter((id) => flagged.has(id)))
+  };
+}
 
+// Render a lever set into the managed block (markers included), or null when there's
+// nothing worth pinning. The single source of the line templates — both the
+// single-run and accumulated paths go through here.
+export function renderMemoryBlock(levers: MemoryLevers, headerNote: string): string | null {
   const lines: string[] = [];
-
-  const commands = dedupe(options.verifiedCommands ?? []).slice(0, 4);
-  if (commands.length > 0) {
-    lines.push(`- **Reuse these verified commands** (don't rediscover): ${commands.map((c) => `\`${c}\``).join(", ")}`);
+  if (levers.commands.length > 0) {
+    lines.push(`- **Reuse these verified commands** (don't rediscover): ${levers.commands.map((c) => `\`${c}\``).join(", ")}`);
   }
-
-  const reread = dedupe([...offendersOf("redundant-reads"), ...offendersOf("read-amplification")]).slice(0, 6);
-  if (reread.length > 0) {
+  if (levers.reread.length > 0) {
     lines.push(
-      `- **Read these once, then reuse** — re-read only the changed line range after an edit, never the whole file: ${reread.join(", ")}`
+      `- **Read these once, then reuse** — re-read only the changed line range after an edit, never the whole file: ${levers.reread.join(", ")}`
     );
   }
-
-  const injections = dedupe(offendersOf("large-injections")).slice(0, 4);
-  if (injections.length > 0) {
+  if (levers.injections.length > 0) {
+    lines.push(`- **Scope these large outputs** (narrow paths, \`max-count\`/\`head\`, or summarise): ${levers.injections.join(", ")}`);
+  }
+  if (levers.bigReads.length > 0) {
     lines.push(
-      `- **Scope these large outputs** (narrow paths, \`max-count\`/\`head\`, or summarise): ${injections.join(", ")}`
+      `- **Read these in ranges, not whole** (grep/symbol-search or \`head\`/\`sed\` to the relevant lines): ${levers.bigReads.join(", ")}`
     );
   }
-
-  const bigReads = dedupe(offendersOf("big-file-read")).slice(0, 4);
-  if (bigReads.length > 0) {
-    lines.push(
-      `- **Read these in ranges, not whole** (grep/symbol-search or \`head\`/\`sed\` to the relevant lines): ${bigReads.join(", ")}`
-    );
+  if (levers.retries.length > 0) {
+    lines.push(`- **Fix the root cause before re-running** (read the first failure's stderr): ${levers.retries.join(", ")}`);
   }
-
-  const retries = dedupe(offendersOf("retry-waste")).slice(0, 4);
-  if (retries.length > 0) {
-    lines.push(`- **Fix the root cause before re-running** (read the first failure's stderr): ${retries.join(", ")}`);
-  }
-
-  if (flagged.has("context-pressure")) {
+  if (levers.flags.has("context-pressure")) {
     lines.push(
       "- **Keep the window lean**: compact resolved turns into a short decisions + open-bugs note, and delegate deep exploration to a sub-agent that returns a brief summary."
     );
   }
-  if (flagged.has("cache-hit")) {
+  if (levers.flags.has("cache-hit")) {
     lines.push(
       "- **Protect the prompt cache**: keep the prefix byte-stable (no timestamps/volatile data) and append turns instead of editing earlier ones."
     );
   }
-  if (flagged.has("tool-overhead")) {
+  if (levers.flags.has("tool-overhead")) {
     lines.push("- **Batch related edits** into one change; skip exploratory tool calls that don't lead to an edit.");
   }
-  if (flagged.has("edit-thrash")) {
+  if (levers.flags.has("edit-thrash")) {
     lines.push(
-      "- **Settle the approach before editing**: a file was rewritten several times last run — read the surrounding code once, decide, then edit in as few passes as possible."
+      "- **Settle the approach before editing**: a file was rewritten repeatedly — read the surrounding code once, decide, then edit in as few passes as possible."
     );
   }
 
   if (lines.length === 0) return null;
+  return [EFFICIENCY_MEMORY_START, "## Context-efficiency notes", `<!-- ${headerNote} -->`, "", ...lines, EFFICIENCY_MEMORY_END].join("\n");
+}
 
-  return [
-    EFFICIENCY_MEMORY_START,
-    "## Context-efficiency notes",
-    "<!-- Auto-generated by Agent-Blackbox from the last run. Put your own notes ABOVE this block; everything between these markers is regenerated. -->",
-    "",
-    ...lines,
-    EFFICIENCY_MEMORY_END
-  ].join("\n");
+export function buildEfficiencyMemory(report: EfficiencyReport, options: EfficiencyMemoryOptions = {}): string | null {
+  return renderMemoryBlock(
+    leversFromReport(report, options),
+    "Auto-generated by Agent-Blackbox from the last run. Put your own notes ABOVE this block; everything between these markers is regenerated."
+  );
 }
 
 const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

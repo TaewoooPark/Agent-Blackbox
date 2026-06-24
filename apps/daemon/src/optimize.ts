@@ -1,9 +1,13 @@
 import {
-  buildEfficiencyMemory,
+  accrueProfile,
+  buildAccumulatedMemory,
   computeEfficiencyReport,
+  emptyProfile,
   hasManagedBlock,
+  isEfficiencyProfile,
   removeManagedBlock,
   upsertManagedBlock,
+  type EfficiencyProfile,
   type TraceEvent
 } from "@agent-blackbox/core";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
@@ -101,6 +105,7 @@ async function computeOptimize(options: {
   const memoryFileName = memoryFileFor(runHost);
   const agentsMdPath = join(targetDir, memoryFileName);
   const statePath = join(targetDir, ".agent-blackbox", "optimization.json");
+  const profilePath = join(targetDir, ".agent-blackbox", "efficiency-profile.json");
   const latestTs = runEvents.reduce((max, e) => (e.ts > max ? e.ts : max), "");
   const report = runEvents.length > 0 ? computeEfficiencyReport(runEvents) : null;
   const score = report ? report.overallScore : null;
@@ -109,7 +114,16 @@ async function computeOptimize(options: {
     return revert(agentsMdPath, statePath, score);
   }
 
-  const block = report ? buildEfficiencyMemory(report, { verifiedCommands: verifiedCommands(runEvents) }) : null;
+  // Accumulate across runs: fold this run's levers into the project's profile so the
+  // block ranks recurring patterns first and one-offs fade — instead of regenerating
+  // from only the last run. accrue is idempotent per runId, so preview shows exactly
+  // what apply will write, and apply persists the accrual (preview does not).
+  const priorProfile = await readProfile(profilePath);
+  const nextProfile =
+    report && runId
+      ? accrueProfile(priorProfile, report, { runId, ts: latestTs, verifiedCommands: verifiedCommands(runEvents) })
+      : priorProfile;
+  const block = report ? buildAccumulatedMemory(nextProfile) : null;
 
   if (options.mode === "preview") {
     return {
@@ -133,6 +147,9 @@ async function computeOptimize(options: {
     const { prior, next } = await serializeWrite(agentsMdPath, async () => {
       const prior = await readMaybe(agentsMdPath);
       const next = upsertManagedBlock(prior ?? "", block);
+      // Persist the accrued profile when this run added to it (even if the rendered
+      // block bytes happen to match — the recurrence counts still advanced).
+      if (nextProfile !== priorProfile) await writeProfile(profilePath, nextProfile);
       // Skip a redundant re-apply: when the managed block is already present and
       // byte-identical, don't churn AGENTS.md's mtime or reset the saved baseline.
       if (prior === null || next !== prior) {
@@ -333,6 +350,23 @@ async function readState(path: string): Promise<OptimizeState | null> {
 
 async function writeState(path: string, state: OptimizeState): Promise<void> {
   await writeFileAtomic(path, `${JSON.stringify(state, null, 2)}\n`);
+}
+
+// The accumulated efficiency profile (cross-run memory). Best-effort: a missing or
+// corrupt file starts a fresh profile, never throws.
+async function readProfile(path: string): Promise<EfficiencyProfile> {
+  const raw = await readMaybe(path);
+  if (!raw) return emptyProfile();
+  try {
+    const parsed = JSON.parse(raw);
+    return isEfficiencyProfile(parsed) ? parsed : emptyProfile();
+  } catch {
+    return emptyProfile();
+  }
+}
+
+async function writeProfile(path: string, profile: EfficiencyProfile): Promise<void> {
+  await writeFileAtomic(path, `${JSON.stringify(profile, null, 2)}\n`);
 }
 
 // Crash-safe write: a kill/power-loss/ENOSPC mid-write leaves the original intact

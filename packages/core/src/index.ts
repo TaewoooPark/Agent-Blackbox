@@ -63,12 +63,17 @@ export type {
 export { computeEffectiveness } from "./effectiveness.js";
 export type { BaselineComparison, RunSummary } from "./baseline.js";
 export { BASELINE_MAX_HISTORY, compareToBaseline, upsertRunSummary } from "./baseline.js";
-export type { EfficiencyMemoryOptions } from "./efficiencyMemory.js";
+export type { EfficiencyMemoryOptions, MemoryFlagLever, MemoryLevers } from "./efficiencyMemory.js";
 export {
   buildEfficiencyMemory,
   EFFICIENCY_MEMORY_END,
   EFFICIENCY_MEMORY_START,
   hasManagedBlock,
+  leversFromReport,
+  MEMORY_FLAG_LEVERS,
   removeManagedBlock,
+  renderMemoryBlock,
   upsertManagedBlock
 } from "./efficiencyMemory.js";
+export type { EfficiencyProfile, ProfileItem } from "./efficiencyProfile.js";
+export { accrueProfile, buildAccumulatedMemory, emptyProfile, isEfficiencyProfile } from "./efficiencyProfile.js";
