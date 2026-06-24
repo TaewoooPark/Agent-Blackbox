@@ -63,10 +63,10 @@ export function redactJsonValue<T extends JsonValue>(
     if (typeof current === "string") {
       let next = current;
       if (options.projectDir) {
-        next = replaceLiteral(next, options.projectDir, "$PROJECT", "project-dir", applied);
+        next = replaceDir(next, options.projectDir, "$PROJECT", "project-dir", applied);
       }
       if (options.homeDir) {
-        next = replaceLiteral(next, options.homeDir, "~", "home-dir", applied);
+        next = replaceDir(next, options.homeDir, "~", "home-dir", applied);
       }
       for (const rule of rules) {
         if (rule.pattern.test(next)) {
@@ -100,6 +100,31 @@ export function redactJsonValue<T extends JsonValue>(
     rulesApplied: [...applied].sort(),
     truncated
   };
+}
+
+// A home/project dir must be stripped no matter which path-separator style a value
+// uses. On Windows the dir is "C:\\proj" but a tool may emit "C:/proj" for the same
+// path (Claude Code mixes the two), and a literal match on one form would miss the
+// other — leaving an absolute home path (a leak) in the trace and skipping the
+// $PROJECT/~ rewrite. Replace every separator variant; it only ever redacts more.
+function replaceDir(
+  value: string,
+  dir: string,
+  replacement: string,
+  ruleName: string,
+  applied: Set<string>
+): string {
+  let next = value;
+  for (const variant of dirSeparatorVariants(dir)) {
+    next = replaceLiteral(next, variant, replacement, ruleName, applied);
+  }
+  return next;
+}
+
+function dirSeparatorVariants(dir: string): string[] {
+  const slash = dir.replace(/\\/g, "/");
+  const back = dir.replace(/\//g, "\\");
+  return slash === back ? [dir] : [slash, back];
 }
 
 function replaceLiteral(

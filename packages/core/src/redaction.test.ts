@@ -18,6 +18,25 @@ describe("redaction", () => {
     expect(result.rulesApplied).toEqual(["github-token", "home-dir"]);
   });
 
+  it("strips a Windows home/project dir regardless of path separator (no leak on '/' or '\\')", () => {
+    // Claude Code on Windows emits both separators for the same dir. Each form must be
+    // stripped — otherwise an absolute home path survives in the persisted trace.
+    const result = redactJsonObject(
+      {
+        backslash: "C:\\Users\\rt\\proj\\src\\foo.ts",
+        forwardslash: "C:/Users/rt/proj/src/bar.ts",
+        homeButNotProject: "C:/Users/rt/other/x.ts"
+      },
+      { homeDir: "C:\\Users\\rt", projectDir: "C:\\Users\\rt\\proj" }
+    );
+
+    expect(result.value.backslash).toBe("$PROJECT\\src\\foo.ts");
+    expect(result.value.forwardslash).toBe("$PROJECT/src/bar.ts");
+    expect(result.value.homeButNotProject).toBe("~/other/x.ts");
+    // Belt-and-suspenders: no raw home path leaks in any field, in any separator form.
+    expect(JSON.stringify(result.value)).not.toContain("Users");
+  });
+
   it("truncates long command output", () => {
     const result = redactJsonObject({ output: "a".repeat(16) }, { maxStringLength: 5 });
 
