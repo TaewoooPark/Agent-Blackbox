@@ -88,7 +88,7 @@ export async function startClaudeCodeTailer(sink: TraceSink, options: ClaudeReco
       await fh.close();
     }
 
-    const lines = state.buffer.split("\n");
+    const lines = state.buffer.split(/\r?\n/); // CRLF-safe: a Windows transcript ends lines with \r\n
     state.buffer = lines.pop() ?? ""; // trailing partial line stays buffered
     for (const raw of lines) {
       const line = raw.trim();
