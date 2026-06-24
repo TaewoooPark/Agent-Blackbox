@@ -813,6 +813,14 @@ function SessionMap({
   const [treeFitScale, setTreeFitScale] = useState(1);
   const [userZoom, setUserZoom] = useState(1);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  // Latest committed pan/zoom, readable from the once-attached wheel/middle-drag
+  // handlers without re-binding them. Kept in sync below on every render and updated
+  // synchronously inside the handlers so rapid wheel ticks compound instead of all
+  // computing off the same stale value.
+  const panRef = useRef(pan);
+  const userZoomRef = useRef(userZoom);
+  panRef.current = pan;
+  userZoomRef.current = userZoom;
   // Open a dense run at a READABLE zoom, not fit-to-tiny. The fit scale (≤1) shrinks
   // a big tree until everything fits — illegible at 60 lanes. On a run change we
   // reset to fit, then once the fit is measured we bump the manual zoom so the
@@ -1008,9 +1016,9 @@ function SessionMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [metricHighlight.nonce, treeLayout]);
 
-  // Wheel over the map: pinch / ctrl+wheel zooms, a plain wheel pans. Attached
-  // natively (not via React's passive onWheel) so we can preventDefault and stop
-  // the page from scrolling underneath the canvas.
+  // Wheel over the map zooms (cursor-anchored); panning is the middle-button drag.
+  // Attached natively (not via React's passive onWheel) so we can preventDefault and
+  // stop the page from scrolling underneath the canvas.
   useEffect(() => {
     const container = mapRef.current;
     if (!container) return undefined;
@@ -1019,15 +1027,34 @@ function SessionMap({
       const target = event.target as HTMLElement | null;
       if (target?.closest(".fileStructure, .glassInspector")) return;
       event.preventDefault();
-      // Any wheel gesture (pinch-zoom or pan) is the user taking manual control, so
-      // pin the view — this also drops the .following transition so the gesture
-      // tracks the pointer instead of easing behind it.
+      // Wheel = zoom, anchored under the cursor (Google-Maps style); pinch (ctrl/⌘
+      // +wheel) zooms the same way. Panning is the middle-button drag. Taking the
+      // wheel pins the view (drops .following) so it tracks the pointer, not eases.
       setFollow(false);
-      if (event.ctrlKey || event.metaKey) {
-        const factor = Math.exp(-event.deltaY * 0.0015);
-        setUserZoom((zoom) => clamp(zoom * factor, USER_ZOOM_MIN, USER_ZOOM_MAX));
-      } else {
-        setPan((current) => ({ x: current.x - event.deltaX, y: current.y - event.deltaY }));
+      // Normalize line/page deltas to ~pixels so a notched mouse wheel and a trackpad
+      // pinch both zoom at a sane rate.
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? container.clientHeight : 1;
+      const factor = Math.exp(-event.deltaY * unit * 0.0015);
+      const prevZoom = userZoomRef.current;
+      const nextZoom = clamp(prevZoom * factor, USER_ZOOM_MIN, USER_ZOOM_MAX);
+      userZoomRef.current = nextZoom;
+      setUserZoom(nextZoom);
+      const ratio = prevZoom === 0 ? 1 : nextZoom / prevZoom;
+      const grid = container.querySelector<HTMLElement>(".treeGrid");
+      if (grid && Math.abs(1 - ratio) > 1e-4) {
+        // Hold the tree point under the cursor fixed: pan += (cursor − treeLeft)·(1−ratio).
+        const treeRect = grid.getBoundingClientRect();
+        // The tree column is flex-centered horizontally, so scaling it also shifts its
+        // centre by renderWidth·(1−ratio)/2; subtract that so X stays anchored. The
+        // column is top-aligned, so Y has no matching shift.
+        const column = container.querySelector<HTMLElement>(".workflowTree");
+        const centeringShiftX = column ? (column.getBoundingClientRect().width * (1 - ratio)) / 2 : 0;
+        const nextPan = {
+          x: Math.round(panRef.current.x + (event.clientX - treeRect.left) * (1 - ratio) - centeringShiftX),
+          y: Math.round(panRef.current.y + (event.clientY - treeRect.top) * (1 - ratio))
+        };
+        panRef.current = nextPan;
+        setPan(nextPan);
       }
       requestLayoutMeasure();
     };
@@ -1299,6 +1326,40 @@ function SessionMap({
       start: point
     });
   };
+  // Middle-button (wheel press) drag pans the map in every direction — the standard
+  // 2D-canvas gesture. Tracks pointer-space 1:1 (pan lives in screen px), pins the
+  // view, and reads/writes panRef so it composes with wheel zoom without stale state.
+  const beginPanDrag = (event: ReactPointerEvent<HTMLElement>) => {
+    event.preventDefault();
+    setFollow(false);
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const startPan = panRef.current;
+    document.body.style.cursor = "grabbing";
+    const move = (moveEvent: PointerEvent) => {
+      const next = {
+        x: Math.round(startPan.x + (moveEvent.clientX - startX)),
+        y: Math.round(startPan.y + (moveEvent.clientY - startY))
+      };
+      panRef.current = next;
+      setPan(next);
+      requestLayoutMeasure();
+    };
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      document.body.style.cursor = "";
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop, { once: true });
+  };
+  const beginMapPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
+    if (event.button === 1) {
+      beginPanDrag(event);
+      return;
+    }
+    beginSelectionDrag(event);
+  };
   const zoomBy = (factor: number) => {
     setUserZoom((zoom) => clamp(zoom * factor, USER_ZOOM_MIN, USER_ZOOM_MAX));
     requestLayoutMeasure();
@@ -1375,7 +1436,7 @@ function SessionMap({
         className={`mapCanvas ${autoLayouting ? "autoLayouting" : ""} ${hasFocus ? "hasFocus" : ""} ${
           nodeDrag ? "nodeDragging" : ""
         } ${follow ? "following" : ""}`}
-        onPointerDown={beginSelectionDrag}
+        onPointerDown={beginMapPointerDown}
         ref={mapRef}
         style={
           {
@@ -1623,8 +1684,8 @@ function TreeItemCard({
       <span className="stepMain">
         {step.agentLabel ? (
           <span className="agentPill">
-            {shortTitle(step.agentName ?? step.agentLabel)}
-            {agentStatus ? <span>{agentStatus.toLowerCase()}</span> : null}
+            <span className="agentPillName">{shortTitle(step.agentName ?? step.agentLabel)}</span>
+            {agentStatus ? <span className="agentPillStatus">{agentStatus.toLowerCase()}</span> : null}
           </span>
         ) : null}
         <strong>{shortTitle(stepDisplayTitle(step, fileCount))}</strong>
