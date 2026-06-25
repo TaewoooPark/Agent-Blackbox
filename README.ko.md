@@ -32,7 +32,7 @@ Agent-Blackbox는 **코딩 에이전트를 위한 로컬 우선(local-first) 플
 [**taewoopark.com** — 제작자 사이트](https://taewoopark.com)
 
 <p align="center">
-  <img src="./docs/screenshots/session-map.jpeg" alt="Agent-Blackbox 세션 맵 — Mark Lombardi 내러티브 구조로 렌더된 복잡한 OpenCode 실행." width="100%">
+  <img src="./docs/screenshots/hero-open-blackbox.jpeg" alt="Agent-Blackbox 히어로 이미지: 세션 맵 대시보드와 'Open your agent's black box.' 문구." width="100%">
 </p>
 
 ---
@@ -44,6 +44,10 @@ Agent-Blackbox는 **코딩 에이전트를 위한 로컬 우선(local-first) 플
 > 그러니 묻지 말고 — **재세요.** Agent-Blackbox는 모든 실행을 관측된 세션 맵으로 재구성하고, 비용을 정확히 점수로 매긴 뒤, 고쳐서 되돌려줍니다.
 
 <sub>Bai et al., *How Do AI Agents Spend Your Money? Analyzing and Predicting Token Consumption in Agentic Coding Tasks*, [arXiv:2604.22750](https://arxiv.org/abs/2604.22750) (2026).</sub>
+
+<p align="center">
+  <img src="./docs/screenshots/session-map.jpeg" alt="Agent-Blackbox 세션 맵 — Mark Lombardi 내러티브 구조로 렌더된 복잡한 OpenCode 실행." width="100%">
+</p>
 
 ---
 

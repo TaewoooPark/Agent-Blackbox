@@ -36,7 +36,7 @@ Agent-Blackbox is a **local-first flight recorder and context-efficiency profile
 [**taewoopark.com** — author site](https://taewoopark.com)
 
 <p align="center">
-  <img src="./docs/screenshots/session-map.jpeg" alt="Agent-Blackbox session map — a real multi-agent OpenCode + oh-my-openagent ultrawork run ('Add modulo operation to ledger', Claude Sonnet) rendered as a Mark Lombardi narrative structure: 38 moments as hollow rings with serif labels, the trunk forks into the Sisyphus ultraworker and explore subagent branches with two failed-test risk moments, and thin sweeping arcs connect each node to the files it touched. Monochrome graphite on paper. The right rail shows an 80 context-efficiency score flagging redundant re-reads across 9 files with reclaimable tokens." width="100%">
+  <img src="./docs/screenshots/hero-open-blackbox.jpeg" alt="Agent-Blackbox hero image: a pale session-map dashboard fading into the headline 'Open your agent's black box.'" width="100%">
 </p>
 
 ---
@@ -48,6 +48,10 @@ You can't just **ask** the agent what a task cost. A 2026 study of eight frontie
 > So don't ask — **measure.** Agent-Blackbox replays every run as an observed session map, scores exactly what it cost, and writes the fix back.
 
 <sub>Bai et al., *How Do AI Agents Spend Your Money? Analyzing and Predicting Token Consumption in Agentic Coding Tasks*, [arXiv:2604.22750](https://arxiv.org/abs/2604.22750) (2026).</sub>
+
+<p align="center">
+  <img src="./docs/screenshots/session-map.jpeg" alt="Agent-Blackbox session map — a real multi-agent OpenCode + oh-my-openagent ultrawork run ('Add modulo operation to ledger', Claude Sonnet) rendered as a Mark Lombardi narrative structure: 38 moments as hollow rings with serif labels, the trunk forks into the Sisyphus ultraworker and explore subagent branches with two failed-test risk moments, and thin sweeping arcs connect each node to the files it touched. Monochrome graphite on paper. The right rail shows an 80 context-efficiency score flagging redundant re-reads across 9 files with reclaimable tokens." width="100%">
+</p>
 
 ---
 

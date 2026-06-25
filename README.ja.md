@@ -32,7 +32,7 @@ Agent-Blackbox は、**コーディングエージェントのためのローカ
 [**taewoopark.com** — 作者サイト](https://taewoopark.com)
 
 <p align="center">
-  <img src="./docs/screenshots/session-map.jpeg" alt="Agent-Blackbox セッションマップ — Mark Lombardi のナラティブ構造で描かれた複雑な OpenCode 実行。" width="100%">
+  <img src="./docs/screenshots/hero-open-blackbox.jpeg" alt="Agent-Blackbox hero image: a pale session-map dashboard fading into the headline 'Open your agent's black box.'" width="100%">
 </p>
 
 ---
@@ -44,6 +44,10 @@ Agent-Blackbox は、**コーディングエージェントのためのローカ
 > だから訊くな ── **計れ。** Agent-Blackbox は各実行を観測されたセッションマップに再構成し、そのコストを正確に採点し、修正を書き戻します。
 
 <sub>Bai et al., *How Do AI Agents Spend Your Money? Analyzing and Predicting Token Consumption in Agentic Coding Tasks*, [arXiv:2604.22750](https://arxiv.org/abs/2604.22750) (2026).</sub>
+
+<p align="center">
+  <img src="./docs/screenshots/session-map.jpeg" alt="Agent-Blackbox セッションマップ — Mark Lombardi のナラティブ構造で描かれた複雑な OpenCode 実行。" width="100%">
+</p>
 
 ---
 
