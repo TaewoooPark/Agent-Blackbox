@@ -17,7 +17,9 @@
     "paths": {
       "@agent-blackbox/core": ["packages/core/src/index.ts"],
       "@agent-blackbox/storage": ["packages/storage/src/index.ts"],
-      "@agent-blackbox/opencode-adapter": ["packages/opencode-adapter/src/index.ts"]
+      "@agent-blackbox/opencode-adapter": ["packages/opencode-adapter/src/index.ts"],
+      "@agent-blackbox/claude-code-adapter": ["packages/claude-code-adapter/src/index.ts"],
+      "@agent-blackbox/gjc-adapter": ["packages/gjc-adapter/src/index.ts"]
     }
   }
 }

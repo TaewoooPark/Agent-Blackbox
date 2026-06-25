@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { startClaudeCodeTailer } from "@agent-blackbox/claude-code-adapter";
+import { startGjcTailer } from "@agent-blackbox/gjc-adapter";
 import { evaluatePromiseChecks, generateHandoffMarkdown, materializeWorkflowGraph } from "@agent-blackbox/core";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -120,8 +121,12 @@ async function main(argv: string[]): Promise<void> {
           }
         }
       }
+      if (host === "gjc" || host === "all") {
+        const tailer = await startGjcTailer({ write: (event) => daemon.ingest(event) });
+        recorders.push(`Gajae-Code sessions tailed ← ${tailer.sessionsDir} (no install)`);
+      }
       if (host === "codex") {
-        recorders.push("Codex recorder isn't built yet (see local-planning/). Use --host opencode|claude-code|all.");
+        recorders.push("Codex recorder isn't built yet (see local-planning/). Use --host opencode|claude-code|gjc|all.");
       }
 
       const ui = await startDashboardServer({ distDir: dashboardDistDir, port: uiPort, daemonUrl });
@@ -135,6 +140,9 @@ async function main(argv: string[]): Promise<void> {
       if (!argv.includes("--no-open")) openInBrowser(dashboardUrl);
       if (host === "claude-code" || host === "all") {
         console.log("Now use Claude Code however you already do — the map fills in live as it writes transcripts.");
+      }
+      if (host === "gjc" || host === "all") {
+        console.log("Now use Gajae-Code however you already do — the map fills in live as it writes sessions.");
       }
       if (host === "opencode" || host === "all") {
         console.log("Now use OpenCode however you already do (terminal or the desktop app) — the map fills in live.");
@@ -288,7 +296,7 @@ function printHelp(): void {
   console.log("");
   console.log("Usage:");
   console.log("  agent-blackbox up                       # GLOBAL: record every OpenCode session (any folder / the app) + daemon + dashboard");
-  console.log("  agent-blackbox up --host claude-code     # record Claude Code instead — no install, tails transcripts (also: opencode | codex | all)");
+  console.log("  agent-blackbox up --host claude-code     # record Claude Code instead — no install, tails transcripts (also: opencode | gjc | all)");
   console.log("  agent-blackbox up --project <dir>        # scope the recorder to one project instead");
   console.log("       [--port <port>] [--ui-port <port>] [--suggest auto|free|off|ollama|opencode|openai-compat] [--suggest-model <id>] [--optimize] [--no-open]");
   console.log("       [--optimize]  with --host claude-code: also install the in-run actuator (read-dedup + working-set hooks)");
@@ -338,8 +346,8 @@ function portArg(raw: string | undefined, fallback: number): number {
   return Number.isInteger(n) && n >= 0 && n <= 65535 ? n : fallback;
 }
 
-function readHost(argv: string[]): "opencode" | "claude-code" | "codex" | "all" {
-  const allowed = ["opencode", "claude-code", "codex", "all"] as const;
+function readHost(argv: string[]): "opencode" | "claude-code" | "gjc" | "codex" | "all" {
+  const allowed = ["opencode", "claude-code", "gjc", "codex", "all"] as const;
   const raw = readFlag(argv, "--host") ?? process.env.AGENT_BLACKBOX_HOST ?? "opencode";
   return (allowed as readonly string[]).includes(raw) ? (raw as (typeof allowed)[number]) : "opencode";
 }

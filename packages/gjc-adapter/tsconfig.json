@@ -6,11 +6,7 @@
     "outDir": "dist"
   },
   "references": [
-    { "path": "../../packages/core" },
-    { "path": "../../packages/storage" },
-    { "path": "../../packages/claude-code-adapter" },
-    { "path": "../../packages/gjc-adapter" }
+    { "path": "../core" }
   ],
   "include": ["src/**/*.ts", "src/**/*.test.ts"]
 }
-
