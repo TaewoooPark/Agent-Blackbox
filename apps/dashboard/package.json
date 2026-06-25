@@ -2,6 +2,7 @@
   "name": "@agent-blackbox/dashboard",
   "version": "0.1.0",
   "description": "Agent-Blackbox operator dashboard.",
+  "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

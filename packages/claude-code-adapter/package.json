@@ -2,6 +2,7 @@
   "name": "@agent-blackbox/claude-code-adapter",
   "version": "0.1.0",
   "description": "Claude Code adapter for Agent-Blackbox (transcript tailer).",
+  "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

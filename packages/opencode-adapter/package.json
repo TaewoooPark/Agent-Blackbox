@@ -2,6 +2,7 @@
   "name": "@agent-blackbox/opencode-adapter",
   "version": "0.1.0",
   "description": "OpenCode adapter for Agent-Blackbox.",
+  "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

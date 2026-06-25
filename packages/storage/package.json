@@ -2,6 +2,7 @@
   "name": "@agent-blackbox/storage",
   "version": "0.1.0",
   "description": "Persistence layer for Agent-Blackbox traces.",
+  "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -19,4 +20,3 @@
     "@agent-blackbox/core": "file:../core"
   }
 }
-

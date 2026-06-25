@@ -2,6 +2,7 @@
   "name": "@agent-blackbox/core",
   "version": "0.1.0",
   "description": "Canonical event and graph core for Agent-Blackbox.",
+  "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -16,4 +17,3 @@
     "typecheck": "tsc -b --pretty false"
   }
 }
-
