@@ -23,7 +23,7 @@
   <img src="https://img.shields.io/badge/API%20key%20불필요-000000?style=flat-square&labelColor=000000&color=000000" alt="No API key">
 </p>
 
-Agent-Blackbox는 **코딩 에이전트를 위한 로컬 우선(local-first) 플라이트 레코더이자 컨텍스트 효율 프로파일러**입니다. 에이전트가 무엇을 읽고 바꾸고 실행하고 위임했는지, 어디서 막혔는지를 에이전트 자신의 요약이 아니라 **실제로 관측된 이벤트**로 재구성합니다. 그렇게 실시간으로 보고 되감아 볼 수 있는 작업 그래프가 펼쳐집니다. 그리고 그 실행을 **두 축**으로 채점합니다 — 컨텍스트를 얼마나 아껴 썼는지, *그리고* 태스크가 실제로 됐는지 — **태스크 유형**(리서치/디버그/운영…)과 **당신의 과거 런**에 맞춘 잣대로. 거기서 멈추지 않고 짚어낸 낭비를 에이전트 메모리(**Claude Code면 `CLAUDE.md`, OpenCode면 `AGENTS.md`**)에 직접 고쳐 써넣어, 실제 OMO(OpenCode) 헤비 런에서 효율 점수를 **80 → 99로 끌어올리고 토큰을 44% 줄였습니다.** 전부 로컬에서, **API 키 없이 `npx` 한 줄로.**
+Agent-Blackbox는 **코딩 에이전트를 위한 로컬 우선(local-first) 플라이트 레코더이자 컨텍스트 효율 프로파일러**입니다. 모든 에이전트 실행을 **실시간으로 보고 되감아 볼 수 있는 작업 그래프**로 바꿉니다 — 에이전트가 무엇을 읽고, 바꾸고, 실행하고, 결정하고, 위임하고, 어디서 막혔고, 무엇을 검증했는지를 에이전트 자신의 요약이 아니라 **실제로 관측된 이벤트**로 재구성합니다. 그리고 그 실행을 **두 축**으로 채점합니다 — 컨텍스트 윈도를 얼마나 경제적으로 썼는지, *그리고* 태스크가 실제로 착지했는지 — **태스크 유형**(리서치/디버그/운영…)과 **당신의 과거 런**에 맞춘 잣대로 판단하고, 다음 실행을 더 싸고 빠르게 만들 방법을 구체적으로 알려줍니다.
 
 **[Claude Code](https://www.claude.com/product/claude-code)와 [OpenCode](https://opencode.ai) 모두에서 동작합니다** — 같은 레코더, 같은 맵, 같은 효율 점수. 둘 중 하나만, 혹은 둘 다 한꺼번에 기록하세요.
 
@@ -119,13 +119,11 @@ npx @taewooopark/agent-blackbox uninstall
 
 ---
 
-## 한 번에 세 가지
+## 한 번에 두 가지
 
 **1 · 에이전트가 실제로 한 일을 본다.** 코딩 에이전트는 파일 수십 개를 읽고, 명령을 돌리고, 코드를 고치고, 서브에이전트를 띄운 뒤 깔끔한 요약을 건넵니다. 정작 당신 손에 쥐어지는 건 끝없이 스크롤되는 트랜스크립트와, 믿을 수밖에 없는 그 요약뿐입니다. Agent-Blackbox는 이것을 한눈에 읽히는 **세션 맵**으로 바꿉니다.
 
 **2 · 그 비용을 잰다.** 컨텍스트는 곧 돈이고 지연이며 넘을 수 없는 윈도 한계입니다. Agent-Blackbox는 각 실행이 컨텍스트를 얼마나 알뜰하게 썼는지(캐시 재사용, 중복 재읽기, 읽기-수정 증폭, 거대 도구 출력, 재시도 낭비) 점수로 매기고 **구체적인 최적화**를 짚어 줍니다. 규칙으로 잡아내거나, **API 키 없이 도는 무료 로컬 모델**이 직접 써 내려갑니다.
-
-**3 · 그리고 고친다.** 낭비를 보여주는 데서 멈추는 도구는 많습니다. Agent-Blackbox는 짚어낸 낭비를 에이전트가 이미 읽는 파일 — **Claude Code면 `CLAUDE.md`, OpenCode면 `AGENTS.md`** — 에 **되돌려 써넣어**, 다음 실행이 같은 실수를 반복하지 않게 합니다. 게다가 **여러 런에 걸쳐 누적**돼(자주 나온 항목 `×N` 우선), 직전 한 런이 아니라 프로젝트의 실제 습관을 담습니다. 대시보드의 *Optimize future runs* 버튼 한 번이면 되고, 언제든 되돌릴 수 있습니다.
 
 | 트랜스크립트 읽기 | Agent-Blackbox |
 |---|---|
@@ -135,6 +133,8 @@ npx @taewooopark/agent-blackbox uninstall
 | 긴 실행에서 길을 잃음 | 어느 순간이든 **스크럽·리플레이** |
 | 불투명한 한 덩어리 | **서브에이전트 계보** — 누가 무엇을 위임했나 |
 | 비용을 알 수 없음 | **컨텍스트 효율 점수** + 회수 가능 토큰 |
+| "정말 됐나?" | 두 번째 **outcome** 점수 — 효율적이지만 실패한 런 ≠ 낭비했지만 ship한 런 |
+| 모든 태스크에 같은 잣대 | **태스크 맞춤형**(research / debug / ops) + **내 과거 런** 대비 점수 |
 | "왜 이렇게 비싸지?" | **구체적 수정안**, 원하면 로컬 모델이 작성 |
 | 이어가려면 전부 다시 읽음 | 원클릭 **핸드오프** 요약 |
 | 코드·프롬프트가 머신을 떠남 | **로컬 우선**, 최소 캡처, **API 키 불필요** |
@@ -157,10 +157,12 @@ npx @taewooopark/agent-blackbox uninstall
 - **클릭 포커싱** — 모먼트 선택 시 상세 팝오버(증거·파일·토큰), 에이전트 선택 시 해당 레인만 분리, 파일 클릭 시 그 파일을 건드린 모든 모먼트가 각 노드의 링에서 뻗는 아크로 강조.
 - **서브에이전트 계보** — 실제 위임(`task` 도구 / 자식 세션 / 워크플로우 팬아웃)이 자기 분기로 갈라지고, 일을 한 서브에이전트에 귀속. 각 레인은 **역할**로 명명됩니다 — 스폰 타입, 또는 태스크 프롬프트에서 추출(`"너는 내용 충실성 감사관이다…"` → `내용 충실성 감사관`) — 수십 개 병렬 에이전트도 문단이 아니라 역할로 읽힙니다. 밀집 런은 **읽히는 줌으로 열리고**(% 버튼 = 전체 트리 fit), 끝난 런의 레인은 ACTIVE가 아니라 **DONE**으로 표시됩니다.
 - **맵 조작** — 입력 장치에 맞춰 동작하는 팬·줌 캔버스입니다. **트랙패드:** 두 손가락 스와이프로 패닝, 핀치로 확대/축소. **마우스:** 휠로 확대/축소(커서 위치 기준 앵커), 휠 버튼(가운데) 드래그로 패닝. 공통으로 빈 공간 드래그로 노드 **다중 선택**, 노드 클릭으로 포커싱, 툴바 `−` / `%` / `+`로 줌(**%**는 전체 트리 fit으로 리셋), **Tracing**은 최신 노드 실시간 추적/뷰 고정, **Auto layout**은 재정렬.
-- **컨텍스트 효율** — 실시간 점수 + 지표 미터(컨텍스트 압력, 캐시 적중, 중복 읽기, 읽기 증폭, 거대 주입, 재시도 낭비, 산출 밀도)와 원탭 최적화 노테이션 — **규칙 기반, 또는 무료/로컬 모델 라우팅(API 키 불필요)**.
+- **컨텍스트 효율** — **11개 지표**(컨텍스트 압력, 캐시 적중, 중복 읽기, 읽기 증폭, 거대 주입, 재시도 낭비, 산출 밀도, 도구 오버헤드, 편집 처닝, 거대 파일 읽기, 안 쓴 읽기)의 실시간 점수와 원탭 최적화 노테이션 — **규칙 기반, 또는 API 키 없는 무료 모델 맞춤 제안**. `--suggest free`는 OpenCode Zen + Ollama cloud + 로컬 모델의 독립 quota pool을 순환하고, rate limit이 난 모델은 식힌 뒤 failover하므로 긴 세션에서도 무료 제안이 오래 버팁니다.
+- **태스크 맞춤·다축 채점** — 점수는 **태스크에 맞는 잣대**로 판단됩니다(리서치 런은 넓게 읽는다고 벌점받지 않고, 디버그 런은 재시도/재작업을 더 무겁게 봅니다). 별도의 **outcome** 점수는 *태스크가 실제로 착지했는가?* 를 답해, 효율적이지만 실패한 런과 낭비했지만 ship한 런을 다르게 읽게 합니다. 모든 런은 **같은 프로젝트의 같은 종류 과거 런**과도 비교됩니다 — *"research 평소 87점 대비 40점."* (전체 레퍼런스: **[docs/analysis.md](docs/analysis.md)**.)
+- **커스텀 체크** — `.agent-blackbox/rules.json`을 두면 내장 규칙 위에 프로젝트 규칙을 얹을 수 있습니다(예: *`node_modules`는 절대 읽지 마*, *커밋 전에 테스트 실행*). 발견 사항은 점수와 별개로 패널에 표시됩니다.
 - **핸드오프 내보내기** — 구조화된 인계 요약(목표·관여 파일·결정·명령·실패·블로커·다음 안전한 행동)을 원클릭으로 Markdown 복사.
 - **런 피커** — 한 프로젝트 로그에 여러 실행, 콘솔은 가장 최근 *활성* 실행을 따르고 과거 실행도 고정 가능.
-- **전체 이벤트 커버리지** — 어떤 모델을 쓰든 모든 행동(읽기·수정·bash·스킬·커스텀/MCP 도구·권한·todo·서브에이전트)이 호스트 이벤트 기준으로 캡처됨(모델 무관).
+- **전체 이벤트 커버리지** — 어떤 모델을 쓰든 모든 행동(읽기·수정·bash·스킬·커스텀/MCP 도구·권한·todo·서브에이전트, **slash command, `/compact` 컨텍스트 압축, 에이전트/모델 전환**)이 호스트 이벤트 기준으로 캡처됩니다. 알려진 노이즈(LSP, pty, file watcher, MCP registry)는 걸러지고, 아직 모델링되지 않은 이벤트도 라벨 있는 노드로 남아 조용히 사라지지 않습니다.
 - **원커맨드 부트스트랩** — `npm run up` 한 줄로 레코더 플러그인 설치 + 데몬 시작 + 대시보드 서빙.
 
 <p align="center">
@@ -195,7 +197,14 @@ npx @taewooopark/agent-blackbox uninstall
 | **거대 파일 읽기** | 단일 거대 파일을 통째로 읽음 — 구간으로 읽어라 |
 | **안 쓴 읽기** | 읽고 한 번도 수정 안 한 텍스트 — 탐색은 서브에이전트로 |
 
-점수는 **태스크 맞춤·다축**입니다 — 리서치 런을 편집 런 잣대로 재지 않고, "컨텍스트를 잘 썼나"와 "태스크가 실제로 됐나"를 분리합니다: **태스크 아키타입**(research/debug/ops/feature/edit) 조건화, **효과성**(성공했나? 2번째 점수, 신뢰도 포함), **상대 기준선**("같은 프로젝트의 평소 대비"), **커스텀 체크**(`.agent-blackbox/rules.json`). 전체 레퍼런스 — 지표·임계값·아키타입·효과성 휴리스틱·rules.json 스키마·한계 — 는 **[docs/analysis.md](docs/analysis.md)** 참고.
+점수는 **태스크 맞춤·다축**입니다 — 리서치 런을 편집 런 잣대로 재지 않고, "컨텍스트를 잘 썼나"와 "태스크가 실제로 됐나"를 분리합니다:
+
+- **태스크 아키타입**(research / debug / ops / feature / edit)은 리서치 런이 넓게 읽었다고 벌점받지 않도록 점수를 조건화합니다. 분류가 충분히 확실해졌을 때만 칩으로 표시됩니다.
+- **효과성** — 두 번째 점수(*태스크가 실제로 착지했나?*)는 outcome + verification + failure 신호로 계산되고 confidence flag를 달아, 효율적이지만 실패한 런과 낭비했지만 ship한 런을 다르게 읽게 합니다.
+- **상대 기준선** — *"research 평소 87점 대비 40점"*처럼 **같은 프로젝트의 같은 종류 과거 런**과 비교합니다.
+- **커스텀 체크** — `.agent-blackbox/rules.json`을 두면 프로젝트 규칙을 추가할 수 있습니다(예: "`node_modules`는 절대 읽지 마", "커밋 전에 테스트 실행").
+
+전체 레퍼런스 — 모든 지표와 임계값, 아키타입 프로필, 효과성 휴리스틱, `rules.json` 스키마, 정직한 한계 — 는 **[docs/analysis.md](docs/analysis.md)** 참고.
 
 <p align="center">
   <img src="./docs/screenshots/efficiency-panel.jpeg" alt="실제 debug 런의 컨텍스트 효율 패널: 효율 점수 62 + 'debug' 아키타입 칩, 별도의 'OUTCOME · Succeeded · 100' 축(테스트 통과·커밋으로 태스크는 성공 — 런은 낭비였지만), 'CLAUDE.md에 되돌릴 수 있는 메모리 작성' 버튼, WARN 규칙('node_modules 읽지 마' → index.js)을 띄운 '커스텀 체크' 섹션, 그리고 11개 지표 미터(중복 재읽기·산출 밀도가 옥스블러드로 플래그)." width="332">
@@ -205,7 +214,10 @@ npx @taewooopark/agent-blackbox uninstall
 제안은 **기본 규칙 기반**(항상 동작, 의존성 없음). 모델이 맞춤 작성하게 하려면 — **API 키 없이** — `up`을 로컬/무료 모델로 가리키면 됩니다:
 
 ```bash
-# Ollama (권장): 로컬, 키 불필요
+# 무료·지속형 기본값: 독립 quota pool의 무료 모델들을 순환
+npx @taewooopark/agent-blackbox up --suggest free
+
+# Ollama: 로컬, 키 불필요
 npx @taewooopark/agent-blackbox up --suggest ollama --suggest-model qwen2.5-coder
 
 # OpenAI 호환 localhost 서버 (LM Studio, llama.cpp)
@@ -215,7 +227,7 @@ npx @taewooopark/agent-blackbox up --suggest openai-compat --suggest-base-url ht
 npx @taewooopark/agent-blackbox up --suggest opencode --suggest-model opencode/deepseek-v4-flash-free
 ```
 
-`--suggest auto`(기본)는 위 순서로 탐지 후 규칙 기반으로 폴백합니다. 로컬 모델에도 **redact된 파생 다이제스트**만 전송됩니다: 지표 상태·횟수·크기, 그리고 거친 **가해자 라벨 — 파일 basename과 명령 verb**(예: `billing.ts ×2`, `deploy ×2` — 무엇을 고칠지 짚기 위함) — 하지만 **파일 내용·디렉터리 경로·명령 인자·프롬프트·비밀은 절대 보내지 않습니다**.
+**`--suggest free`**(그리고 기본 `auto`)는 **무료** 모델 pool을 **독립 quota pool**에 걸쳐 순환합니다 — OpenCode Zen(`opencode/*-free`) + Ollama cloud + 로컬 모델. 호출마다 하나의 모델을 쓰고, 부하를 나누기 위해 회전하며, rate limit(429)을 맞은 모델은 10분간 cooldown 후 failover합니다. 모든 pool이 소진될 때만 규칙 기반 제안으로 내려갑니다. 그래서 긴 세션에서도 AI 제안이 무료로 오래 지속되고, quota 하나를 계속 지켜볼 필요가 없습니다. 로컬 모델을 포함해 모델로 보내지는 것은 **redact된 파생 다이제스트**뿐입니다: 지표 상태·횟수·크기, 그리고 거친 **가해자 라벨 — 파일 basename과 명령 verb**(예: `billing.ts ×2`, `deploy ×2` — 무엇을 고칠지 짚기 위함) — 하지만 **파일 내용·디렉터리 경로·명령 인자·프롬프트·비밀은 절대 보내지 않습니다**.
 
 ### 조언의 근거 자료
 
@@ -231,6 +243,68 @@ npx @taewooopark/agent-blackbox up --suggest opencode --suggest-model opencode/d
 
 작은 로컬 모델에서 종단 검증: 중복 읽기 발견이 "파일을 한 번만 읽으세요"에서 **"`calculator.js`가 2회 읽혔습니다(~282 회수 가능) — 한 번만 읽고 캐시한 뒤, 편집 후에는 전체 파일이 아니라 변경된 라인 범위만 다시 읽으세요."** 로 바뀝니다.
 
+### 루프 닫기 — 수정안을 되돌려 쓰기 *(실험적)*
+
+매번 손으로 다시 적용해야 하는 조언은 마찰입니다. `optimize`는 발견 사항을 에이전트가 이미 컨텍스트로 읽는 파일 — **Claude Code는 `CLAUDE.md`, OpenCode는 `AGENTS.md`** — 안의 작고 **cache-safe**한 메모리 블록으로 바꿉니다. 그래서 *다음* 실행은 낭비가 발생하기 전에 피합니다. 이 블록은 **여러 런에 걸쳐 누적**됩니다: 반복해서 보인 패턴은 `×N`으로 우선순위가 올라가고, 일회성 항목은 뒤로 밀려, 직전 런 하나가 아니라 프로젝트의 실제 습관을 반영합니다. 플라이트 레코더의 actuator 절반입니다: 관측 → 진단 → **쓰기 → 측정 → 효과 없으면 롤백**.
+
+```bash
+# 쓸 내용을 미리보기 (변경 없음)
+npm run optimize -- --project ~/code/my-app
+
+# 적용: CLAUDE.md / AGENTS.md에 관리 블록 추가 + 기준 점수 기록
+npm run optimize -- --project ~/code/my-app --apply
+
+# 다음 런 뒤 효과 확인 — 뚜렷한 점수 하락이면 자동 롤백
+npm run optimize -- --project ~/code/my-app --check
+
+# 언제든 되돌리기
+npm run optimize -- --project ~/code/my-app --revert
+```
+
+블록은 **파일 끝의 marker 사이**에 쓰이므로 stable prompt-cache prefix를 건드리지 않습니다. 한 번만 읽을 파일, scope를 줄일 큰 출력, 재사용할 검증된 build/test 명령처럼 구체적 offender를 이름으로 적고, 모든 write는 표시되고 opt-in이며 조용히 일어나지 않습니다.
+
+대시보드가 더 편하다면, 우측 패널의 **Optimize future runs** 버튼이 팝업을 열어 아무것도 쓰기 전 *정확한* 블록을 미리 보여줍니다 — 회수 가능 토큰 목표와 대상 경로 포함 — 그리고 한 번의 클릭으로 적용·갱신·되돌리기까지 합니다. 조언이 아니라 실제로 되돌릴 수 있는 파일 변경입니다:
+
+<p align="center">
+  <img src="./docs/screenshots/optimize-modal.jpeg" alt="Agent-Blackbox 대시보드의 'Optimize future runs' 팝업: CLAUDE.md(호스트 메모리 파일)에 cache-safe·되돌릴 수 있는 노트를 작성. 'Not applied' 배지, 런당 ~15k 토큰 목표, 대상 CLAUDE.md 경로, 그리고 실제로 쓰일 메모리 블록 미리보기 — '최근 런들에 걸쳐 누적, 자주 나온 항목(×N)이 먼저' + 구체 레버(검증된 'npm test' 재사용, ledger.ts는 한 번·범위로 읽기, 편집 전 접근법 확정) — 와 'Apply to CLAUDE.md'·'Cancel' 버튼." width="380">
+</p>
+
+#### 실제 런에서 측정
+
+실제 **oh-my-openagent `ultrawork`** 런의 공정한 전후 비교입니다(Claude Sonnet이 전체 다중 에이전트 팀을 구동, 같은 태스크 — *"modulo operation을 end-to-end로 추가"*). Run A의 explore 서브에이전트가 9개 파일을 재읽었고, Agent-Blackbox가 이를 잡아 *"`calculator.js`, `parser.js`, `formatter.js`를 한 번씩만 읽어라"*를 `AGENTS.md`에 고정했습니다. Run B — **같은 태스크, 같은 모델, 완전히 새 cold session, 추가된 것은 메모리뿐** — 에서는 각 파일을 한 번만 읽었습니다:
+
+| | 전 (run A) | 후 (run B) |
+|---|---|---|
+| 컨텍스트 효율 점수 | 80 | **99** |
+| 중복 재읽기 | 9개 파일 (~1.8k 재확보 가능) | **없음** |
+| 총 토큰 | 939k | **521k** (−44%) |
+| 도구 호출/이벤트 | 619 | **253** |
+| 산출 밀도 | 63/k | **154/k** |
+
+두 실행 모두 동일한 깨끗한 레포(중간에 git reset)와 새 OpenCode 세션에서 시작했습니다 — 가져온 맥락 없음. 중복 재읽기 제거(9개 파일 → 없음)는 메모리가 직접 작동한 결과입니다. OMO는 stochastic하므로 토큰/이벤트 감소 일부는 run-to-run variance이지만, ABB가 고정한 레버는 정확히 사라진 낭비입니다.
+
+<table>
+<tr>
+<td width="50%"><img src="./docs/screenshots/optimize-before.jpeg" alt="전: 80점, 중복 재읽기 9개 파일(calculator.js·parser.js·formatter.js ×3) 플래그, 939k 토큰." width="100%"></td>
+<td width="50%"><img src="./docs/screenshots/optimize-after.jpeg" alt="후: 99점, '낭비 없음', 521k 토큰." width="100%"></td>
+</tr>
+</table>
+
+> ⚠️ 이 `--check` 2회 실행 cycle은 **메커니즘 검증용 벤치마크**입니다 — production workflow가 아닙니다. 같은 태스크를 다시 돌려 측정하면 토큰을 두 배 씁니다. 실제로는 한 번 적용하고, 그 메모리가 해당 레포의 *이후 다른* 태스크에서(재사용할 명령, 한 번만 읽을 파일) **추가 실행 없이** 회수됩니다.
+
+### 인-런 최적화기 — 재실행 없이 실시간으로 낭비 줄이기 *(선택형)*
+
+위의 cross-run 메모리는 *미래* 태스크에서 회수됩니다. 인-런 최적화기는 **현재 런 안에서** 낭비를 줄입니다 — 레코더가 순수 관측자에서 한 걸음 나아가 OpenCode tool hook을 통해 재읽기를 싸게 제공합니다. `AGENT_BLACKBOX_OPTIMIZE=1`(또는 설치 시 `--optimize`)로 켜며, 기본값은 off입니다.
+
+- **재읽기를 no-op 또는 diff로 제공.** 에이전트가 이번 런에서 이미 읽은 파일을 다시 읽으면 `tool.execute.after` hook이 결과를 다시 씁니다: *변경 없음* → "앞서 읽은 사본을 재사용하라"는 한 줄 note, *수정됨* → 변경된 line range만. 120줄 파일 기준 측정: **변경 없는 재읽기 token 96% 감소, 수정된 파일 재읽기 94% 감소** — 같은 런 안에서, 재실행 없이.
+- **구조적으로 안전.** 재읽기는 절대 막지 않습니다(정말 필요할 수 있으므로). no-op/diff는 마지막 제공 이후 **compaction이 없었을 때만** 작동합니다 — 내용이 아직 컨텍스트 안에 있음을 증명할 수 있을 때입니다. compaction 이후에는 에이전트가 잃어버렸을 수 있으므로 전체 파일을 다시 제공합니다.
+- **Working-set memory를 실시간 주입.** `experimental.chat.system.transform`을 통해 아주 작은 최신 블록(hot files + verified commands, 관측 이벤트에서 파생)을 system prompt에 덧붙여 에이전트가 재읽기보다 기억을 우선하게 합니다.
+
+#### 다음 단계
+
+- **Longitudinal trend** — Agent-Blackbox는 모든 런을 기록합니다. 실제 작업의 효율 점수를 시간축으로 그려 memory + optimizer 적용 뒤 올라가는지 보여줄 수 있습니다 — 벤치마크가 아니라 실제 업무에서 측정.
+- **Compaction 이후 diff-serving** — 작은 로컬 content cache를 유지해 compaction 이후 재읽기도 diff로 제공할 수 있게 하기(현재는 전체 파일로 fallback).
+
 ---
 
 ## oh-my-openagent과 함께 — 무거운 다중 에이전트 실행을 프로파일링하고 줄이기
@@ -241,7 +315,7 @@ npx @taewooopark/agent-blackbox up --suggest opencode --suggest-model opencode/d
 
 - **팀 전체를 본다.** SDK로 생성된 각 서브에이전트(Sisyphus, explore, librarian, plan, oracle…)가 자기 레인을 갖고, 위임이 트렁크에서 갈라지며, 파일이 곡선으로 연결됩니다. 이 정도 복잡한 실행을 위해 만든 맵입니다.
 - **비용을 보고 — 줄인다.** "tokenmaxxer" 실행이야말로 컨텍스트 경제가 가장 중요한 곳입니다. Agent-Blackbox가 점수화하고(컨텍스트 압력, 중복 재읽기, 읽기 증폭, 도구 오버헤드) 정확한 원인을 짚습니다 — 하네스 내부에선 보이지 않는 비용을.
-- **루프를 닫는다.** 발견을 `CLAUDE.md`/`AGENTS.md`에 박아 다음 실행에 반영하고, 인-런 최적화기(`AGENT_BLACKBOX_OPTIMIZE=1`)를 켜 재읽기를 노옵/diff로 제공 — *같은 실행 안에서* 절감, 재실행 없이.
+- **루프를 닫는다.** 발견을 `AGENTS.md`에 박아 다음 실행에 반영하고, 인-런 최적화기(`AGENT_BLACKBOX_OPTIMIZE=1`)를 켜 재읽기를 노옵/diff로 제공 — *같은 실행 안에서* 절감, 재실행 없이.
 
 실제 OMO `ultrawork` 실행을 Agent-Blackbox가 실시간 기록한 모습 — 좌측엔 명명된 전문 에이전트 레인, 우측엔 회수 가능 토큰과 맞춤 수정안이 붙은 컨텍스트 효율 점수:
 
@@ -254,30 +328,6 @@ npx @taewooopark/agent-blackbox up --suggest opencode --suggest-model opencode/d
 npx @taewooopark/agent-blackbox up --suggest free
 opencode "ultrawork: refactor the auth module and add tests"   # OMO + 레코더 동시 작동
 ```
-
-발견을 손으로 옮길 필요 없이 **대시보드에서 바로** — 우측 패널의 **Optimize future runs** 버튼을 누르면 `CLAUDE.md`/`AGENTS.md`에 쓰일 블록을 *그대로 미리보기*(재확보 가능 토큰·대상 경로 포함)하고, 한 번의 클릭으로 적용·갱신·되돌리기까지 합니다. 조언이 아니라 실제로 되돌릴 수 있는 파일 변경입니다:
-
-<p align="center">
-  <img src="./docs/screenshots/optimize-modal.jpeg" alt="Agent-Blackbox 대시보드의 'Optimize future runs' 팝업: CLAUDE.md(호스트 메모리 파일)에 cache-safe·되돌릴 수 있는 노트를 작성. 'Not applied' 배지, 런당 ~15k 토큰 목표, 대상 CLAUDE.md 경로, 그리고 실제로 쓰일 메모리 블록 미리보기 — '최근 런들에 걸쳐 누적, 자주 나온 항목(×N)이 먼저' + 구체 레버(검증된 'npm test' 재사용, ledger.ts는 한 번·범위로 읽기, 편집 전 접근법 확정) — 와 'Apply to CLAUDE.md'·'Cancel' 버튼." width="380">
-</p>
-
-**실측 — 같은 OMO `ultrawork` 작업의 공정한 전후 비교** (Claude Sonnet, 동일 작업·콜드 세션, `AGENTS.md`만 추가): Run A에서 explore 서브에이전트가 9개 파일을 재읽기 → ABB가 *"이 파일들은 한 번만 읽어라"*를 `AGENTS.md`에 고정 → 같은 작업을 콜드로 다시 돌린 Run B에서 재읽기가 사라짐. 두 실행 모두 동일한 깨끗한 레포(중간에 git reset)와 새 세션에서 시작 — 가져온 맥락 없음.
-
-| | 전 (run A) | 후 (run B) |
-|---|---|---|
-| 컨텍스트 효율 점수 | 80 | **99** |
-| 중복 재읽기 | 9개 파일 (~1.8k 재확보 가능) | **없음** |
-| 총 토큰 | 939k | **521k** (−44%) |
-| 도구 호출/이벤트 | 619 | **253** |
-
-<table>
-<tr>
-<td width="50%"><img src="./docs/screenshots/optimize-before.jpeg" alt="전: 80점, 중복 재읽기 9개 파일(calculator.js·parser.js·formatter.js ×3) 플래그, 939k 토큰." width="100%"></td>
-<td width="50%"><img src="./docs/screenshots/optimize-after.jpeg" alt="후: 99점, '낭비 없음', 521k 토큰." width="100%"></td>
-</tr>
-</table>
-
-> ⚠️ 이 2회 실행 비교는 **메커니즘 검증용 벤치마크**다(같은 작업을 다시 돌리면 토큰을 2배 쓰는 것). 실제로는 한 번 적용하면 그 레포의 *이후 다른* 작업에서 재실행 없이 효과를 본다.
 
 ---
 
@@ -326,11 +376,31 @@ opencode "ultrawork: refactor the auth module and add tests"   # OMO + 레코더
 | `POST /events` | 정규 `TraceEvent` 적재 |
 | `GET /events` | 영속 이벤트 로그 |
 | `GET /graph?seq=<n>` | 시퀀스까지 그래프 리플레이 |
-| `GET /snapshot?seq=<n>` | 이벤트·그래프·audit·효율 리포트·핸드오프 |
-| `GET /efficiency?seq=<n>` | 컨텍스트 효율 리포트(점수+지표) |
-| `POST /suggest` | 게시된 리포트에 대한 최적화 제안(결정론 또는 로컬 모델) |
+| `GET /snapshot?seq=<n>` | 이벤트·그래프·audit 체크·효율 + **effectiveness** 리포트·**baselines**·**rule packs**·핸드오프 Markdown |
+| `GET /audit` | promise / claim 체크 |
+| `GET /efficiency?seq=<n>` | 컨텍스트 효율 리포트(점수 + 지표 + archetype) |
+| `POST /suggest` | 게시된 리포트 + 선택적 causal timeline에 대한 최적화 제안(결정론 또는 로컬 모델) |
+| `GET·POST /optimize[/apply\|/revert]?runId=<id>` | 런의 메모리 블록 미리보기 / 적용 / 되돌리기(되돌릴 수 있는 파일 write) |
 | `GET /handoff` | 생성된 핸드오프 Markdown |
 | `WS /stream` | 적재마다 실시간 스냅샷 푸시 |
+
+---
+
+## 프로젝트 구조
+
+```text
+apps/
+  daemon/             로컬 적재, 리플레이, 효율, 제안 라우팅, 정적 대시보드, websocket
+  dashboard/          오퍼레이터 콘솔(세션 맵, 리플레이, 인스펙터, 효율, 핸드오프)
+packages/
+  core/               정규 이벤트, 그래프, redaction, 리플레이, audit, 핸드오프, 효율,
+                      아키타입, effectiveness, baselines, 누적 메모리, timeline, rule packs
+  storage/            NDJSON 영속화
+  claude-code-adapter/ Claude Code transcript tailer + 인-런 actuator hooks
+  opencode-adapter/   OpenCode plugin / SDK bridge
+```
+
+데몬이 쓰는 프로젝트별 상태(전부 로컬, best-effort, 되돌릴 수 있음)는 `<project>/.agent-blackbox/` 아래에 있습니다: `optimization.json` + `efficiency-profile.json`(누적 메모리), 그리고 직접 추가할 수 있는 `rules.json`(커스텀 체크). Cross-run baseline은 데몬 event store 옆 `baselines.json`에 저장됩니다. **[docs/analysis.md](docs/analysis.md)** 참고.
 
 ---
 
@@ -341,6 +411,15 @@ npm install
 npm run check   # 타입체크 + 테스트
 npm run build
 ```
+
+---
+
+## 로드맵
+
+- 같은 정규 코어 위에 더 많은 host adapter 추가(Codex, PI, 기타 harness) — **Claude Code와 OpenCode**는 지금 제공됩니다.
+- **최근 shipped:** 두 번째 **outcome** 축, **task-archetype** scoring, **프로젝트별 baseline**("평소 런 대비"), **누적형** optimize memory, **custom rule packs** — 자세한 내용은 **[docs/analysis.md](docs/analysis.md)**.
+- 여러 런에 걸친 **fleet-wide** efficiency trend chart(런별 baseline 데이터는 이미 로컬에 저장되고, longitudinal view가 다음 단계).
+- 더 깊은 audit: claim-vs-evidence 검증과 risky command surfacing 강화.
 
 ---
 
