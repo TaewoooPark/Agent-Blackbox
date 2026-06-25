@@ -2,6 +2,7 @@
   "name": "@agent-blackbox/gjc-adapter",
   "version": "0.1.0",
   "description": "Gajae-Code adapter for Agent-Blackbox (session transcript tailer).",
+  "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

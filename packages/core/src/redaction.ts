@@ -43,7 +43,7 @@ export const defaultRedactionRules: RedactionRule[] = [
   },
   {
     name: "secret-assignment",
-    pattern: /\b(api[_-]?key|access[_-]?token|auth[_-]?token|password|secret)\s*[:=]\s*[^\s'\"]{8,}/gi,
+    pattern: /\b(api[_-]?key|access[_-]?token|auth[_-]?token|password|secret)["']?\s*[:=]\s*["']?[^\s'\"]{8,}/gi,
     replacement: "$1=[REDACTED_SECRET]"
   },
   {

@@ -21,12 +21,16 @@ describe("redaction", () => {
   it("redacts generic bearer tokens and secret assignments", () => {
     const result = redactJsonObject({
       command: "curl -H 'Authorization: Bearer abcdefghijklmnopqrstuvwxyz123456' https://example.test",
-      env: "api_key=plainsecretvalue password:anothersecretvalue"
+      env: "api_key=plainsecretvalue password:anothersecretvalue",
+      json: '{"password": "supersecretvalue", "note": "ok"}'
     });
 
     expect(result.value.command).toContain("Bearer [REDACTED_TOKEN]");
     expect(result.value.env).toContain("api_key=[REDACTED_SECRET]");
     expect(result.value.env).toContain("password=[REDACTED_SECRET]");
+    // Quoted JSON values (the common transcript shape) are caught too.
+    expect(result.value.json).toContain("password=[REDACTED_SECRET]");
+    expect(result.value.json).not.toContain("supersecretvalue");
     expect(result.rulesApplied).toEqual(["bearer-token", "secret-assignment"]);
   });
 

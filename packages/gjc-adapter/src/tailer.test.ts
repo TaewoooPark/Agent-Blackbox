@@ -69,6 +69,16 @@ describe("gjc tailer", () => {
     expect(events[0]).toMatchObject({ runId: "019efd8a-f6b8-7000-be44-30cc188e7dc5", agentRole: "subagent", agentId: "0-Worker" });
   });
 
+  it("treats an underscored subagent name as a subagent, not a main session", async () => {
+    const { file, events, start } = await harness();
+    await mkdir(join(file("2026-06-25T00-00-00-000Z_019efd8a-f6b8-7000-be44-30cc188e7dc5")), { recursive: true });
+    // An underscore in the agent name must NOT be mistaken for the main "<ts>_<uuid>" file.
+    await writeFile(join(file("2026-06-25T00-00-00-000Z_019efd8a-f6b8-7000-be44-30cc188e7dc5"), "1-code_reviewer.jsonl"), `${session()}\n`, "utf8");
+    await start({ backfillDays: 9999 });
+    await waitFor(() => events.length === 1);
+    expect(events[0]).toMatchObject({ runId: "019efd8a-f6b8-7000-be44-30cc188e7dc5", agentRole: "subagent", agentId: "1-code_reviewer" });
+  });
+
   it("handles absent session directories as a graceful no-op", async () => {
     const events: TraceEvent[] = [];
     const tailer = await startGjcTailer({ write: async (e) => { events.push(e); } }, { sessionsDir: join(tmpdir(), "missing-gjc-sessions"), pollMs: 20 });

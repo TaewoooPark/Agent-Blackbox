@@ -173,7 +173,12 @@ function extractSessionIdFromPath(filePath: string): string {
 }
 
 function isSubagentFile(filePath: string): boolean {
-  return !basename(filePath).includes("_");
+  // Main sessions are "<timestamp>_<uuid>.jsonl" (basename ends in a session UUID); a
+  // subagent transcript ("0-Worker.jsonl", "1-code_reviewer.jsonl") has no trailing
+  // UUID. Key off that — NOT the presence of "_", which an underscored agent/skill name
+  // would trip, misfiling the subagent as a main run.
+  const base = basename(filePath).replace(/\.jsonl$/, "");
+  return extractSessionId(base) === base;
 }
 
 async function emit(sink: TraceSink, input: TraceEventInput, nextSeq: (runId: string) => number): Promise<void> {

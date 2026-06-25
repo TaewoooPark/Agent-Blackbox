@@ -177,7 +177,9 @@ function deriveObserved(name: string, input: JsonObject, result: UnknownRecord, 
     const label = readString(input, ["agent", "subagent_type", "description"]) ?? "subagent";
     const agentId = readString(output, ["agentId", "id"]);
     const ev = mkInput(line, ctx, { kind: "subagent_spawned", summary: `Delegated to ${label}`, payload: { agent: label, ...(agentId ? { agentId } : {}) } });
-    ev.agentId = agentId ? safeLaneField(agentId, ctx) : "subagent";
+    // Fall back to the subagent's TYPE (label) when there's no explicit id, so distinct
+    // delegations get distinct lanes instead of all collapsing onto one "subagent" lane.
+    ev.agentId = safeLaneField(agentId ?? label, ctx);
     ev.agentRole = "subagent";
     ev.agentLabel = safeLaneField(label, ctx);
     return ev;

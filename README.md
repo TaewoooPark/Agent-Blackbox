@@ -22,7 +22,6 @@
   &nbsp;
   <img src="https://img.shields.io/badge/Claude%20Code-000000?style=flat-square&labelColor=000000&color=000000" alt="Claude Code">
   <img src="https://img.shields.io/badge/OpenCode-000000?style=flat-square&labelColor=000000&color=000000" alt="OpenCode">
-  <img src="https://img.shields.io/badge/Gajae--Code-000000?style=flat-square&labelColor=000000&color=000000" alt="Gajae-Code">
   <img src="https://img.shields.io/badge/Local--first-000000?style=flat-square&labelColor=000000&color=000000" alt="Local-first">
   <img src="https://img.shields.io/badge/No%20API%20key-000000?style=flat-square&labelColor=000000&color=000000" alt="No API key">
   <img src="https://img.shields.io/badge/Live%20stream-000000?style=flat-square&labelColor=000000&color=000000" alt="Live">
@@ -30,7 +29,7 @@
 
 Agent-Blackbox is a **local-first flight recorder and context-efficiency profiler for coding agents.** It turns every agent run into a **live, replayable operational graph** — what the agent read, changed, ran, decided, delegated, blocked on, and verified — reconstructed from observed events, not from the agent's own summary. Then it scores the run on **two axes** — how economically it used its context window, *and* whether the task actually landed — judged on a yardstick that **fits the task type** (research / debug / ops…) and **your own past runs**, and tells you, concretely, how to make the next one cheaper and faster.
 
-**Works with [Claude Code](https://www.claude.com/product/claude-code), [OpenCode](https://opencode.ai), and Gajae-Code (`gjc`)** — same recorder, same map, same efficiency score. Record one host, or several at once.
+**Works with [Claude Code](https://www.claude.com/product/claude-code) and [OpenCode](https://opencode.ai)** — same recorder, same map, same efficiency score. Record either, or both at once.
 
 > *"The transcript is what the agent said. The black box is what it did — and what it cost."*
 
@@ -58,20 +57,17 @@ You can't just **ask** the agent what a task cost. A 2026 study of eight frontie
 
 ## Quickstart
 
-**One command. Works with Claude Code, OpenCode, and Gajae-Code** (needs Node 20+):
+**One command. Works with Claude Code and OpenCode** (needs Node 20+):
 
 ```bash
 # Record Claude Code — nothing to install; the daemon tails the session
 # transcripts it already writes (~/.claude/projects/)
 npx @taewooopark/agent-blackbox up --host claude-code
 
-# …or record Gajae-Code — nothing to install; the daemon tails ~/.gjc/agent/sessions/
-npx @taewooopark/agent-blackbox up --host gjc
-
 # …or record OpenCode (installs the recorder into OpenCode's global plugin dir)
 npx @taewooopark/agent-blackbox up
 
-# …or record every supported host at once, into one dashboard
+# …or record both hosts at once, into one dashboard
 npx @taewooopark/agent-blackbox up --host all
 ```
 
@@ -80,12 +76,11 @@ Either way it starts the daemon and **opens the dashboard** (`http://127.0.0.1:5
 ```bash
 claude            # Claude Code, in any folder — zero setup, just run it
 opencode          # …or OpenCode (terminal or the desktop app)
-gjc               # …or Gajae-Code
 ```
 
 - **Claude Code needs no install at all** — the daemon tails the JSONL transcripts the CLI already writes, so any folder, any session is recorded the moment you run `claude`. (Add `--optimize` to also install the opt-in in-run actuator hooks.)
 - **OpenCode** records via a recorder dropped into its **global** plugin directory (`~/.config/opencode/plugins/`) — any session, any folder, the desktop app included.
-- **Gajae-Code (`gjc`)** needs no install — the daemon tails local session JSONL files under `~/.gjc/agent/sessions/` (or `GJC_CODING_AGENT_DIR/sessions`) and normalizes only redacted metadata/sizes into Agent-Blackbox events. Fixtures and tests are synthetic; do not import private transcripts.
+- **Gajae-Code** *(experimental)* — `--host gjc` tails [Gajae-Code](https://github.com/Yeachan-Heo/gajae-code) sessions (`~/.gjc/agent/sessions/`), no install; also covered by `--host all`.
 
 Stop recording any time with `npx @taewooopark/agent-blackbox uninstall`.
 
@@ -355,7 +350,6 @@ When you need to continue the run elsewhere — a teammate, the next agent, or t
 
 ```
  Claude Code transcripts (tailed) ─┐
- Gajae-Code sessions (tailed)  ────┤
  OpenCode hooks → recorder plugin ─┴─▶ host adapter ─▶ daemon ─▶ dashboard
                                        redact+normalize  NDJSON    live session map
                                                          + graph   + efficiency
@@ -364,7 +358,6 @@ When you need to continue the run elsewhere — a teammate, the next agent, or t
 - **`packages/core`** — canonical `TraceEvent`s, the workflow graph model, redaction, replay, audit, handoff generation, and the context-efficiency engine.
 - **`packages/claude-code-adapter`** — tails the JSONL transcripts Claude Code writes (`~/.claude/projects/`) and normalizes them into canonical, redacted events — no plugin, no install. Optional hooks add the in-run actuator.
 - **`packages/opencode-adapter`** — a thin OpenCode plugin that turns host events and tool calls into canonical, redacted events (with content *sizes*, never content) and ships them to the daemon, best-effort with retries.
-- **`packages/gjc-adapter`** — tails Gajae-Code session JSONL files (`~/.gjc/agent/sessions/`) and normalizes durable transcript/tool records into canonical, redacted events; it gracefully no-ops when no local sessions exist.
 - **`apps/daemon`** — ingests events to a local NDJSON log, materializes the graph, replays it to any point, computes the efficiency report, routes suggestions, and pushes live snapshots over WebSocket.
 - **`apps/dashboard`** — the operator console: live session map, replay, inspector, efficiency co-pilot, and handoff.
 
@@ -377,7 +370,7 @@ When you need to continue the run elsewhere — a teammate, the next agent, or t
 - **Behavior, not narration.** Every node is an event the agent actually emitted — a read, an edit, a command and its exit code, a delegation — not a sentence it wrote about itself.
 - **Cost is evidence too.** The efficiency score and every suggestion come from observed sizes and token snapshots, not from the model's account of its own thrift.
 - **Local-first, no key.** Traces stay on your machine. Raw prompts, secrets, and file contents are redacted by default; even the optional model suggestions run locally and receive only a redacted digest.
-- **Host-agnostic core.** A canonical event + graph core with thin host adapters, so the same black box can sit behind any agent harness — **Claude Code, OpenCode, and Gajae-Code** are the first three.
+- **Host-agnostic core.** A canonical event + graph core with thin host adapters, so the same black box can sit behind any agent harness — **Claude Code and OpenCode** are the first two.
 
 ---
 
@@ -410,7 +403,6 @@ packages/
   storage/              NDJSON persistence
   claude-code-adapter/  Claude Code transcript tailer + in-run actuator hooks
   opencode-adapter/     OpenCode plugin / SDK bridge
-  gjc-adapter/          Gajae-Code session transcript tailer
 ```
 
 Per-project state the daemon writes (all local, best-effort, reversible) lives under `<project>/.agent-blackbox/`: `optimization.json` + `efficiency-profile.json` (the accumulated memory), and you can add `rules.json` (custom checks). Cross-run baselines live next to the daemon's event store as `baselines.json`. See **[docs/analysis.md](docs/analysis.md)**.
@@ -427,7 +419,7 @@ npm run build
 
 ## Roadmap
 
-- More host adapters (Codex, PI, and other harnesses) on the same canonical core — **Claude Code, OpenCode, and Gajae-Code** ship today.
+- More host adapters (Codex, PI, and other harnesses) on the same canonical core — **Claude Code and OpenCode** ship today.
 - **Shipped recently:** a second **outcome** axis, **task-archetype** scoring, **per-project baselines** ("vs your usual run"), **accumulative** optimize memory, and **custom rule packs** — see **[docs/analysis.md](docs/analysis.md)**.
 - **Fleet-wide** efficiency-trend charts across many runs (the per-run baseline data already lands locally; the longitudinal view is next).
 - Deeper audit: richer claim-vs-evidence verification and risky-command surfacing.
