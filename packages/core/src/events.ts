@@ -5,6 +5,7 @@ export const traceHosts = [
   "pi",
   "codex",
   "claude-code",
+  "gjc",
   "hermes",
   "custom"
 ] as const;

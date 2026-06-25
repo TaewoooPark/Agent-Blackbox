@@ -1,5 +1,6 @@
 # Local planning and private research artifacts.
 # Keep these out of any future Agent-Blackbox repository history.
+.gjc/
 local-planning/
 .agent-blackbox-local/
 *.local.md

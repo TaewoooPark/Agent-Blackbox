@@ -80,6 +80,7 @@ opencode          # …or OpenCode (terminal or the desktop app)
 
 - **Claude Code needs no install at all** — the daemon tails the JSONL transcripts the CLI already writes, so any folder, any session is recorded the moment you run `claude`. (Add `--optimize` to also install the opt-in in-run actuator hooks.)
 - **OpenCode** records via a recorder dropped into its **global** plugin directory (`~/.config/opencode/plugins/`) — any session, any folder, the desktop app included.
+- **Gajae-Code** *(experimental)* — `--host gjc` tails [Gajae-Code](https://github.com/Yeachan-Heo/gajae-code) sessions (`~/.gjc/agent/sessions/`), no install; also covered by `--host all`.
 
 Stop recording any time with `npx @taewooopark/agent-blackbox uninstall`.
 

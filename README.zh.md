@@ -76,6 +76,7 @@ opencode          # …或 OpenCode（终端或桌面应用）
 
 - **Claude Code 完全无需安装** —— 守护进程会跟读 CLI 本就写出的 JSONL 会话记录，所以任意文件夹、任意会话，在你运行 `claude` 的那一刻就被记录。（加 `--optimize` 可一并安装可选的运行内执行器钩子。）
 - **OpenCode** 通过装入其**全局**插件目录（`~/.config/opencode/plugins/`）的记录器进行记录 —— 任意会话、任意文件夹，连桌面应用也算。
+- **Gajae-Code** *(实验性)* —— `--host gjc` 跟读 [Gajae-Code](https://github.com/Yeachan-Heo/gajae-code) 会话（`~/.gjc/agent/sessions/`，无需安装）；`--host all` 亦包含。
 
 随时用 `npx @taewooopark/agent-blackbox uninstall` 停止记录。
 

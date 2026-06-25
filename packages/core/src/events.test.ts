@@ -25,6 +25,17 @@ describe("trace events", () => {
     expect(validateTraceEvent(event).ok).toBe(true);
   });
 
+  it("accepts Gajae-Code as a canonical host", () => {
+    const event = createTraceEvent(1, {
+      host: "gjc",
+      runId: "run-gjc",
+      sessionId: "session-gjc",
+      kind: "session_created"
+    });
+
+    expect(validateTraceEvent(event).ok).toBe(true);
+  });
+
   it("marks model messages as claims by default", () => {
     const event = createTraceEvent(1, {
       host: "opencode",

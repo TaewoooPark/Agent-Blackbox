@@ -76,6 +76,7 @@ opencode          # …또는 OpenCode (터미널이든 데스크톱 앱이든)
 
 - **Claude Code는 설치가 전혀 필요 없습니다** — 데몬이 CLI가 이미 쓰는 JSONL 트랜스크립트를 따라 읽으므로, `claude`를 실행하는 순간 어느 폴더·어느 세션이든 기록됩니다. (`--optimize`를 붙이면 선택형 인-런 액추에이터 훅까지 설치됩니다.)
 - **OpenCode**는 레코더를 **글로벌** 플러그인 폴더(`~/.config/opencode/plugins/`)에 떨궈 기록합니다 — 어느 세션·어느 폴더든, 데스크톱 앱까지.
+- **Gajae-Code** *(실험적)* — `--host gjc`로 [Gajae-Code](https://github.com/Yeachan-Heo/gajae-code) 세션을 따라 읽습니다(`~/.gjc/agent/sessions/`, 설치 불필요). `--host all`에도 포함됩니다.
 
 기록은 언제든 `npx @taewooopark/agent-blackbox uninstall`로 멈출 수 있습니다.
 

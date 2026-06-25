@@ -76,6 +76,7 @@ opencode          # …または OpenCode（ターミナルでもデスクトッ
 
 - **Claude Code はインストールが一切不要** — デーモンが CLI のすでに書き出す JSONL トランスクリプトを追尾するので、`claude` を実行した瞬間に、どのフォルダ・どのセッションでも記録されます。（`--optimize` を付けると、オプトインの実行内アクチュエータフックも導入されます。）
 - **OpenCode** は**グローバル**プラグインディレクトリ（`~/.config/opencode/plugins/`）に置かれたレコーダーで記録します — どのセッション・どのフォルダでも、デスクトップアプリも含めて。
+- **Gajae-Code** *(実験的)* — `--host gjc` で [Gajae-Code](https://github.com/Yeachan-Heo/gajae-code) のセッションを追尾します（`~/.gjc/agent/sessions/`、インストール不要）。`--host all` にも含まれます。
 
 記録を止めるには `npx @taewooopark/agent-blackbox uninstall`。
 

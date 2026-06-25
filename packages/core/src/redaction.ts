@@ -37,6 +37,16 @@ export const defaultRedactionRules: RedactionRule[] = [
     replacement: "[REDACTED_OPENAI_KEY]"
   },
   {
+    name: "bearer-token",
+    pattern: /\bBearer\s+[A-Za-z0-9._~+/=-]{16,}\b/g,
+    replacement: "Bearer [REDACTED_TOKEN]"
+  },
+  {
+    name: "secret-assignment",
+    pattern: /\b(api[_-]?key|access[_-]?token|auth[_-]?token|password|secret)["']?\s*[:=]\s*["']?[^\s'\"]{8,}/gi,
+    replacement: "$1=[REDACTED_SECRET]"
+  },
+  {
     name: "private-key",
     // Tempered quantifier: the body cannot cross another BEGIN marker. Without it, a
     // lone BEGIN with no END forces a scan to end-of-string from every BEGIN — O(n²)
