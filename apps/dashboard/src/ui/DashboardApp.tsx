@@ -651,7 +651,9 @@ export function DashboardApp() {
       ) : null}
 
       <section className="workspace" ref={workspaceRef}>
-        <svg className={`fileEdgeLayer ${filesHasFocus ? "hasFocus" : ""}`} aria-hidden="true">
+        {/* Keyed by run for the same reason as the map's ConnectionLayer: a fresh
+            <svg> per session switch can't retain the previous run's composited arcs. */}
+        <svg key={activeRunId ?? "none"} className={`fileEdgeLayer ${filesHasFocus ? "hasFocus" : ""}`} aria-hidden="true">
           <defs>
             <clipPath id="fileEdgeClip">
               <rect x={edgeClip.left} y={edgeClip.top} width={edgeClip.width} height={edgeClip.height} />
@@ -886,6 +888,17 @@ function SessionMap({
   }, [selectedBranch, agentNodes, events]);
   const [measuredEdges, setMeasuredEdges] = useState<MeasuredEdge[]>([]);
   const [measuredTreeEdges, setMeasuredTreeEdges] = useState<MeasuredTreeEdge[]>([]);
+  // A run switch invalidates every measured edge: their path coordinates were read
+  // from the *previous* run's DOM nodes. Clear both edge sets the instant the run
+  // changes — before paint — so the old tree lines and file arcs never linger over
+  // the new run until the next measure rebuilds them. (The workspace-level fileEdges
+  // get the same treatment in App; these two were the missed half of that fix, which
+  // is why stale edges kept reappearing on session switch.) Host-agnostic: every
+  // adapter feeds the same event stream, so this clears for all of them.
+  useLayoutEffect(() => {
+    setMeasuredEdges([]);
+    setMeasuredTreeEdges([]);
+  }, [runSignature]);
   const treeItemIds = useMemo(() => new Set(treeLayout.items.map((item) => item.id)), [treeLayout.items]);
   const selectionBox = selectionDrag ? rectFromPoints(selectionDrag.start, selectionDrag.current) : null;
   const selectedFileStepIds = useMemo(() => {
@@ -1487,7 +1500,12 @@ function SessionMap({
           } as CSSProperties
         }
       >
+        {/* Key by run: remount a fresh <svg> on every session switch so a stale
+            GPU-composited edge layer (Chrome on Windows can skip repainting a
+            transformed SVG when only child `d` attributes change) can't carry the
+            previous run's lines into the new one. */}
         <ConnectionLayer
+          key={runSignature}
           edges={measuredEdges}
           focusedFilePath={selectedFilePath}
           focusedStepId={focusedStepId}
