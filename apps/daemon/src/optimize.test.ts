@@ -214,7 +214,7 @@ describe("optimize (AGENTS.md efficiency memory)", () => {
     }
   });
 
-  // --- host-aware target file (Claude Code reads CLAUDE.md, OpenCode AGENTS.md) ---
+  // --- host-aware target file (Claude Code reads CLAUDE.md, Codex/OpenCode AGENTS.md) ---
   const wastefulCC = (runId: string, ts: string) =>
     wasteful(runId, ts).map((e) => ({ ...e, host: "claude-code" as const }));
 
@@ -229,6 +229,16 @@ describe("optimize (AGENTS.md efficiency memory)", () => {
 
     await runOptimize({ projectDir: dir, mode: "revert" });
     await expect(readFile(claudeMd, "utf8")).rejects.toThrow();
+  });
+
+  it("targets AGENTS.md for a Codex run", async () => {
+    const codex = wasteful("codex-run", "2026-06-01T00:00:00.000Z").map((e) => ({ ...e, host: "codex" as const }));
+    await seed(codex);
+
+    const applied = await runOptimize({ projectDir: dir, mode: "apply" });
+    expect(applied.agentsMdPath).toBe(join(dir, "AGENTS.md"));
+    expect(await readFile(join(dir, "AGENTS.md"), "utf8")).toContain("agent-blackbox:efficiency:start");
+    await expect(readFile(join(dir, "CLAUDE.md"), "utf8")).rejects.toThrow();
   });
 
   it("reverts the file written at apply even when the latest run's host flips", async () => {

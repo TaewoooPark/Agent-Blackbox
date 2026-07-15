@@ -45,7 +45,7 @@ type OptimizeState = {
 };
 
 // Which memory file the run's host actually reads back. Claude Code reads
-// CLAUDE.md; OpenCode (and the generic default) read AGENTS.md.
+// CLAUDE.md; Codex, OpenCode, and the generic default read AGENTS.md.
 function memoryFileFor(host: string | undefined): string {
   return host === "claude-code" ? "CLAUDE.md" : "AGENTS.md";
 }

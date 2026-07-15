@@ -5,7 +5,9 @@ import { fileURLToPath } from "node:url";
 
 // Bundle the monorepo into a single self-contained, npx-runnable package:
 //   dist/cli.js                  — the daemon CLI with core/storage/etc. inlined
-//   dist/agent-blackbox.plugin.mjs — the recorder, inlined (init writes it into a project)
+//   dist/agent-blackbox.plugin.mjs — the OpenCode recorder, inlined
+//   dist/agent-blackbox-hook.mjs — the Claude Code optimizer hook, inlined
+//   dist/agent-blackbox-codex-hook.mjs — the Codex optimizer hook, inlined
 //   dist/dashboard/              — the prebuilt operator console
 // Run AFTER `npm run build` (needs the tsc output in apps/*/dist and packages/*/dist).
 const here = dirname(fileURLToPath(import.meta.url));
@@ -14,8 +16,10 @@ const out = resolve(here, "dist");
 
 const cliEntry = resolve(repo, "apps/daemon/dist/cli.js");
 const pluginEntry = resolve(repo, "packages/opencode-adapter/dist/plugin-entry.js");
+const claudeHookEntry = resolve(repo, "packages/claude-code-adapter/dist/hook-entry.js");
+const codexHookEntry = resolve(repo, "packages/codex-adapter/dist/hook-entry.js");
 const dashboard = resolve(repo, "apps/dashboard/dist");
-for (const [label, p] of [["daemon", cliEntry], ["adapter", pluginEntry], ["dashboard", dashboard]]) {
+for (const [label, p] of [["daemon", cliEntry], ["adapter", pluginEntry], ["Claude hook", claudeHookEntry], ["Codex hook", codexHookEntry], ["dashboard", dashboard]]) {
   if (!existsSync(p)) throw new Error(`missing ${label} build (${p}) — run \`npm run build\` at the repo root first`);
 }
 
@@ -51,4 +55,22 @@ await build({
 // 3. The dashboard static bundle.
 cpSync(dashboard, resolve(out, "dashboard"), { recursive: true });
 
-console.log("✓ built @taewooopark/agent-blackbox → dist/ (cli.js, agent-blackbox.plugin.mjs, dashboard/)");
+// 4. Optimizer hook executables. They are spawned by Claude Code / Codex and
+// must be self-contained in the published package.
+for (const [entry, outfile] of [
+  [claudeHookEntry, "agent-blackbox-hook.mjs"],
+  [codexHookEntry, "agent-blackbox-codex-hook.mjs"]
+]) {
+  await build({
+    entryPoints: [entry],
+    bundle: true,
+    platform: "node",
+    format: "esm",
+    target: "node20",
+    outfile: resolve(out, outfile),
+    logLevel: "warning"
+  });
+  chmodSync(resolve(out, outfile), 0o755);
+}
+
+console.log("✓ built @taewooopark/agent-blackbox → dist/ (CLI, recorders/hooks, dashboard/)");
