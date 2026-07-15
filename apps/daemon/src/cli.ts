@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { startClaudeCodeTailer } from "@agent-blackbox/claude-code-adapter";
+import { startCodexTailer } from "@agent-blackbox/codex-adapter";
 import { startGjcTailer } from "@agent-blackbox/gjc-adapter";
 import { evaluatePromiseChecks, generateHandoffMarkdown, materializeWorkflowGraph } from "@agent-blackbox/core";
 import { spawn } from "node:child_process";
@@ -10,6 +11,7 @@ import { dirname, join, resolve } from "node:path";
 import { startDashboardServer } from "./dashboardServer.js";
 import { AGENT_BLACKBOX_DAEMON_VERSION, describeDaemon } from "./index.js";
 import { installClaudeCodeHooks, uninstallClaudeCodeHooks } from "./initClaudeHooks.js";
+import { installCodexHooks, uninstallCodexHooks } from "./initCodexHooks.js";
 import { initOpenCodeProject, installGlobalRecorder, uninstallGlobalRecorder } from "./initOpenCode.js";
 import { runOptimize, type OptimizeMode } from "./optimize.js";
 import { buildReplaySummary, loadTraceEvents, startTraceDaemon } from "./server.js";
@@ -33,6 +35,10 @@ const pluginBundlePath = firstExisting([resolve(cliDir, "agent-blackbox.plugin.m
 const hookEntryPath = firstExisting([
   resolve(cliDir, "agent-blackbox-hook.mjs"),
   resolve(repoRoot, "packages/claude-code-adapter/dist/hook-entry.js")
+]);
+const codexHookEntryPath = firstExisting([
+  resolve(cliDir, "agent-blackbox-codex-hook.mjs"),
+  resolve(repoRoot, "packages/codex-adapter/dist/hook-entry.js")
 ]);
 
 // Where global-mode recordings live — one store for every project's OpenCode
@@ -125,8 +131,17 @@ async function main(argv: string[]): Promise<void> {
         const tailer = await startGjcTailer({ write: (event) => daemon.ingest(event) });
         recorders.push(`Gajae-Code sessions tailed ← ${tailer.sessionsDir} (no install)`);
       }
-      if (host === "codex") {
-        recorders.push("Codex recorder isn't built yet (see local-planning/). Use --host opencode|claude-code|gjc|all.");
+      if (host === "codex" || host === "all") {
+        const tailer = await startCodexTailer({ write: (event) => daemon.ingest(event) });
+        recorders.push(`Codex sessions tailed ← ${tailer.sessionsDir} (no install)`);
+        if (argv.includes("--optimize")) {
+          if (codexHookEntryPath) {
+            const { hooksPath } = await installCodexHooks({ hookEntryPath: codexHookEntryPath });
+            recorders.push(`Codex in-run actuator installed → ${hooksPath} (read-dedup + working-set)`);
+          } else {
+            recorders.push("Codex actuator needs the built hook — run `npm run build` first (recording only for now).");
+          }
+        }
       }
 
       const ui = await startDashboardServer({ distDir: dashboardDistDir, port: uiPort, daemonUrl });
@@ -143,6 +158,10 @@ async function main(argv: string[]): Promise<void> {
       }
       if (host === "gjc" || host === "all") {
         console.log("Now use Gajae-Code however you already do — the map fills in live as it writes sessions.");
+      }
+      if (host === "codex" || host === "all") {
+        console.log("Now use Codex however you already do (CLI or desktop app) — the map fills in live as it writes sessions.");
+        if (argv.includes("--optimize")) console.log("For the Codex actuator, review/trust the installed commands once with /hooks.");
       }
       if (host === "opencode" || host === "all") {
         console.log("Now use OpenCode however you already do (terminal or the desktop app) — the map fills in live.");
@@ -210,6 +229,8 @@ async function main(argv: string[]): Promise<void> {
     console.log(removed ? `✓ Removed global OpenCode recorder: ${pluginPath}` : `Nothing to remove — ${pluginPath} is not present.`);
     const hooks = await uninstallClaudeCodeHooks();
     if (hooks.removed) console.log(`✓ Removed Claude Code actuator hooks: ${hooks.settingsPath}`);
+    const codexHooks = await uninstallCodexHooks();
+    if (codexHooks.removed) console.log(`✓ Removed Codex actuator hooks: ${codexHooks.hooksPath}`);
     return;
   }
 
@@ -227,6 +248,22 @@ async function main(argv: string[]): Promise<void> {
   if (command === "uninstall-hooks") {
     const { settingsPath, removed } = await uninstallClaudeCodeHooks();
     console.log(removed ? `✓ Removed Claude Code actuator hooks: ${settingsPath}` : `Nothing to remove — no Agent-Blackbox hooks in ${settingsPath}.`);
+    return;
+  }
+
+  if (command === "install-codex-hooks") {
+    if (!codexHookEntryPath) {
+      throw new Error("Built Codex hook not found. Run `npm run build` first, or use the published npx package.");
+    }
+    const { hooksPath } = await installCodexHooks({ hookEntryPath: codexHookEntryPath });
+    console.log(`✓ Codex in-run actuator installed: ${hooksPath}`);
+    console.log("  Review/trust the hook once with /hooks in Codex. Remove with: agent-blackbox uninstall-codex-hooks");
+    return;
+  }
+
+  if (command === "uninstall-codex-hooks") {
+    const { hooksPath, removed } = await uninstallCodexHooks();
+    console.log(removed ? `✓ Removed Codex actuator hooks: ${hooksPath}` : `Nothing to remove — no Agent-Blackbox hooks in ${hooksPath}.`);
     return;
   }
 
@@ -296,14 +333,16 @@ function printHelp(): void {
   console.log("");
   console.log("Usage:");
   console.log("  agent-blackbox up                       # GLOBAL: record every OpenCode session (any folder / the app) + daemon + dashboard");
-  console.log("  agent-blackbox up --host claude-code     # record Claude Code instead — no install, tails transcripts (also: opencode | gjc | all)");
+  console.log("  agent-blackbox up --host claude-code     # record Claude Code instead — no install, tails transcripts (also: codex | opencode | gjc | all)");
   console.log("  agent-blackbox up --project <dir>        # scope the recorder to one project instead");
   console.log("       [--port <port>] [--ui-port <port>] [--suggest auto|free|off|ollama|opencode|openai-compat] [--suggest-model <id>] [--optimize] [--no-open]");
-  console.log("       [--optimize]  with --host claude-code: also install the in-run actuator (read-dedup + working-set hooks)");
+  console.log("       [--optimize]  with --host claude-code or codex: also install the in-run actuator (read-dedup + working-set hooks)");
   console.log("  agent-blackbox install [--port <port>]   # install the global recorder only (no daemon)");
   console.log("  agent-blackbox install-hooks             # install the Claude Code in-run actuator hooks (opt-in)");
   console.log("  agent-blackbox uninstall-hooks           # remove the Claude Code actuator hooks");
-  console.log("  agent-blackbox uninstall                 # remove the global recorder (+ Claude Code hooks)");
+  console.log("  agent-blackbox install-codex-hooks       # install the Codex in-run actuator hooks (opt-in; trust once with /hooks)");
+  console.log("  agent-blackbox uninstall-codex-hooks     # remove the Codex actuator hooks");
+  console.log("  agent-blackbox uninstall                 # remove the global recorder (+ Claude Code/Codex hooks)");
   console.log("  agent-blackbox daemon [--project <dir>] [--port <port>]");
   console.log("  agent-blackbox init-opencode [--project <dir>] [--daemon-url <url>] [--adapter-package <specifier>] [--force] [--optimize]");
   console.log("  agent-blackbox optimize [--project <dir>] [--apply | --check | --revert]   # write/measure/rollback AGENTS.md efficiency memory");

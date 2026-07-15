@@ -5,9 +5,9 @@
     { "path": "./packages/storage" },
     { "path": "./packages/opencode-adapter" },
     { "path": "./packages/claude-code-adapter" },
+    { "path": "./packages/codex-adapter" },
     { "path": "./packages/gjc-adapter" },
     { "path": "./apps/daemon" },
     { "path": "./apps/dashboard" }
   ]
 }
-

@@ -1,0 +1,22 @@
+{
+  "name": "@agent-blackbox/codex-adapter",
+  "version": "0.1.0",
+  "description": "Codex adapter for Agent-Blackbox (session transcript tailer + optimizer hooks).",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b --pretty false"
+  },
+  "dependencies": {
+    "@agent-blackbox/core": "file:../core"
+  }
+}
