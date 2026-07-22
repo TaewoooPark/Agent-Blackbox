@@ -20,7 +20,8 @@ import {
 import { appendTraceEvent, parseTraceEvents, readTraceEvents } from "@agent-blackbox/storage";
 import { updateBaselines } from "./baselineStore.js";
 import { loadRulePacks } from "./ruleStore.js";
-import { open, readFile, stat } from "node:fs/promises";
+import { open, stat } from "node:fs/promises";
+import { StringDecoder } from "node:string_decoder";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
@@ -169,6 +170,14 @@ export async function loadTraceEvents(eventsFile: string): Promise<TraceEvent[]>
 // file and via GET /events.
 export const SNAPSHOT_EVENT_CAP = 30_000;
 
+// On a cold read we keep only the last SNAPSHOT_EVENT_CAP events, so read just the
+// tail of a large store rather than the whole file: reading it all at once would
+// allocate hundreds of MB and, past ~512 MB, THROW — a single decoded string can't
+// exceed Node's max string length, which a large backfilled store hits. Seek to the
+// last COLD_READ_TAIL_BYTES and stream from there in bounded chunks.
+const COLD_READ_TAIL_BYTES = 128 * 1024 * 1024; // 128 MiB
+const READ_CHUNK_BYTES = 8 * 1024 * 1024; // 8 MiB
+
 // Incremental, capped, in-memory cache of recent events per file. The snapshot is
 // rebuilt on every broadcast/poll; re-reading + re-splitting the whole (tens-of-MB)
 // events file each time dominated daemon CPU on long sessions. Instead we read only
@@ -207,15 +216,36 @@ export async function loadRecentTraceEvents(eventsFile: string, cap = SNAPSHOT_E
       cache.events = [];
     }
     if (size > cache.offset) {
+      // On a cold read of a large pre-existing store, seek near the end: only the last
+      // SNAPSHOT_EVENT_CAP events survive the trim below, and reading the whole delta as
+      // one string throws once it would exceed Node's max string length.
+      let readFrom = cache.offset;
+      let dropLeadingPartialLine = false;
+      if (cache.events.length === 0 && size - cache.offset > COLD_READ_TAIL_BYTES) {
+        readFrom = size - COLD_READ_TAIL_BYTES;
+        dropLeadingPartialLine = true;
+      }
       const handle = await open(eventsFile, "r");
       try {
-        const length = size - cache.offset;
-        const buf = Buffer.alloc(length);
-        await handle.read(buf, 0, length, cache.offset);
+        const chunk = Buffer.alloc(READ_CHUNK_BYTES);
+        const decoder = new StringDecoder("utf8");
+        let pos = readFrom;
+        // Stream in bounded chunks so peak memory is the read window, not the whole file.
+        while (pos < size) {
+          const toRead = Math.min(READ_CHUNK_BYTES, size - pos);
+          const { bytesRead } = await handle.read(chunk, 0, toRead, pos);
+          if (bytesRead <= 0) break;
+          pos += bytesRead;
+          cache.buffer += decoder.write(chunk.subarray(0, bytesRead));
+        }
         cache.offset = size;
-        cache.buffer += buf.toString("utf8");
       } finally {
         await handle.close();
+      }
+      if (dropLeadingPartialLine) {
+        // The seek landed mid-line; discard the leading fragment.
+        const nl = cache.buffer.indexOf("\n");
+        cache.buffer = nl >= 0 ? cache.buffer.slice(nl + 1) : "";
       }
       const lines = cache.buffer.split("\n");
       cache.buffer = lines.pop() ?? ""; // a torn final line stays buffered until completed
@@ -561,12 +591,17 @@ function isLoopbackOrigin(origin: string): boolean {
 }
 
 function sendJson(response: ServerResponse, statusCode: number, payload: JsonResponse): void {
+  // Serialize BEFORE writing headers. A payload too large to stringify (a single
+  // string can't exceed Node's max string length ~512 MB) must throw here — while the
+  // outer handler can still send a clean 500 — not after the headers are committed,
+  // which would crash the daemon with ERR_HTTP_HEADERS_SENT.
+  const body = JSON.stringify(payload);
   response.writeHead(statusCode, {
     "access-control-allow-headers": "content-type",
     "access-control-allow-methods": "GET,POST,OPTIONS",
     "content-type": "application/json; charset=utf-8"
   });
-  response.end(JSON.stringify(payload));
+  response.end(body);
 }
 
 function sendEmpty(response: ServerResponse, statusCode: number): void {
