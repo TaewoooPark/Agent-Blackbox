@@ -184,7 +184,7 @@ const READ_CHUNK_BYTES = 8 * 1024 * 1024; // 8 MiB
 // the bytes appended since the last read, parse only the new lines, and keep the most
 // recent SNAPSHOT_EVENT_CAP events in memory. Serialized per file so a broadcast build
 // and a REST poll can't race the same cache.
-type EventCache = { offset: number; buffer: string; events: TraceEvent[] };
+type EventCache = { offset: number; buffer: string; events: TraceEvent[]; decoder: StringDecoder };
 const eventCaches = new Map<string, EventCache>();
 const cacheLocks = new Map<string, Promise<unknown>>();
 
@@ -199,7 +199,7 @@ export async function loadRecentTraceEvents(eventsFile: string, cap = SNAPSHOT_E
   return withCacheLock(eventsFile, async () => {
     let cache = eventCaches.get(eventsFile);
     if (!cache) {
-      cache = { offset: 0, buffer: "", events: [] };
+      cache = { offset: 0, buffer: "", events: [], decoder: new StringDecoder("utf8") };
       eventCaches.set(eventsFile, cache);
     }
     let size: number;
@@ -214,6 +214,7 @@ export async function loadRecentTraceEvents(eventsFile: string, cap = SNAPSHOT_E
       cache.offset = 0;
       cache.buffer = "";
       cache.events = [];
+      cache.decoder = new StringDecoder("utf8");
     }
     if (size > cache.offset) {
       // On a cold read of a large pre-existing store, seek near the end: only the last
@@ -228,7 +229,10 @@ export async function loadRecentTraceEvents(eventsFile: string, cap = SNAPSHOT_E
       const handle = await open(eventsFile, "r");
       try {
         const chunk = Buffer.alloc(READ_CHUNK_BYTES);
-        const decoder = new StringDecoder("utf8");
+        // Keep decoder state in the cache: a concurrent append can leave the current
+        // size in the middle of a multibyte character, whose remaining bytes arrive
+        // on the next poll.
+        if (dropLeadingPartialLine) cache.decoder = new StringDecoder("utf8");
         let pos = readFrom;
         // Stream in bounded chunks so peak memory is the read window, not the whole file.
         while (pos < size) {
@@ -236,7 +240,7 @@ export async function loadRecentTraceEvents(eventsFile: string, cap = SNAPSHOT_E
           const { bytesRead } = await handle.read(chunk, 0, toRead, pos);
           if (bytesRead <= 0) break;
           pos += bytesRead;
-          cache.buffer += decoder.write(chunk.subarray(0, bytesRead));
+          cache.buffer += cache.decoder.write(chunk.subarray(0, bytesRead));
         }
         cache.offset = size;
       } finally {

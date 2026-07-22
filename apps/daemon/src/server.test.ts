@@ -55,6 +55,28 @@ describe("snapshot scale cap", () => {
     expect((await loadRecentTraceEvents(eventsFile)).map((e) => e.seq)).toEqual([1, 2, 3]);
   });
 
+  it("preserves a multibyte character split across incremental reads", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "abb-incr-utf8-"));
+    const eventsFile = join(tempDir, "events.ndjson");
+    const event = createTraceEvent(1, {
+      host: "codex",
+      runId: "utf8-run",
+      sessionId: "utf8-run",
+      kind: "message",
+      payload: { role: "user", text: "before🙂after" }
+    });
+    const line = Buffer.from(`${JSON.stringify(event)}\n`, "utf8");
+    const marker = Buffer.from("🙂", "utf8");
+    const markerOffset = line.indexOf(marker);
+    expect(markerOffset).toBeGreaterThan(0);
+
+    // Leave the first poll halfway through the four-byte emoji, then append the rest.
+    await writeFile(eventsFile, line.subarray(0, markerOffset + 2));
+    expect(await loadRecentTraceEvents(eventsFile)).toEqual([]);
+    await appendFile(eventsFile, line.subarray(markerOffset + 2));
+    expect(await loadRecentTraceEvents(eventsFile)).toEqual([event]);
+  });
+
   it("resets the cache when the file is truncated/rotated", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "abb-trunc-"));
     const eventsFile = join(tempDir, "events.ndjson");
