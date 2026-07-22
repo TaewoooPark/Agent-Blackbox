@@ -86,4 +86,38 @@ describe("gjc tailer", () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(events).toHaveLength(0);
   });
+
+  it("stops an active background drain before it emits the rest of the file", async () => {
+    const root = await mkdtemp(join(tmpdir(), "abb-gjc-stop-"));
+    const sessionsDir = join(root, "sessions", "-Workspace-project");
+    await mkdir(sessionsDir, { recursive: true });
+    const file = join(sessionsDir, "2026-06-25T00-00-00-000Z_019efd8a-f6b8-7000-be44-30cc188e7dc5.jsonl");
+    await writeFile(file, `${Array.from({ length: 20 }, (_, i) => session(`sess-${i}`)).join("\n")}\n`, "utf8");
+    const events: TraceEvent[] = [];
+    let releaseWrite!: () => void;
+    let markStarted!: () => void;
+    const writeGate = new Promise<void>((resolve) => { releaseWrite = resolve; });
+    const writeStarted = new Promise<void>((resolve) => { markStarted = resolve; });
+    const tailer = await startGjcTailer(
+      { write: async (event) => {
+        events.push(event);
+        if (events.length === 1) {
+          markStarted();
+          await writeGate;
+        }
+      } },
+      { sessionsDir: join(root, "sessions"), pollMs: 20, backfillDays: 9999 }
+    );
+    cleanups.push(async () => {
+      tailer.stop();
+      releaseWrite();
+      await rm(root, { recursive: true, force: true });
+    });
+
+    await writeStarted;
+    tailer.stop();
+    releaseWrite();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(events).toHaveLength(1);
+  });
 });

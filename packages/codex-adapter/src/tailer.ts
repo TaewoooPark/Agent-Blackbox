@@ -1,5 +1,6 @@
 import { createTraceEvent, type TraceEventInput } from "@agent-blackbox/core";
 import { open, readdir, stat } from "node:fs/promises";
+import { StringDecoder } from "node:string_decoder";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { createCodexNormalizer } from "./normalize.js";
@@ -10,10 +11,17 @@ export function defaultCodexSessionsDir(homeDir = homedir()): string {
   return override && override.length > 0 ? join(override, "sessions") : join(homeDir, ".codex", "sessions");
 }
 
+// Drain appended bytes in bounded chunks so a large backfilled rollout never
+// allocates its whole delta (raw buffer + decoded string + split array) at once.
+const DRAIN_CHUNK_BYTES = 1 << 20; // 1 MiB
+
 type FileState = {
   offset: number;
   buffer: string;
   normalizer: ReturnType<typeof createCodexNormalizer>;
+  // Carries an incomplete trailing UTF-8 sequence across chunk/poll boundaries so a
+  // multibyte char split by a chunk edge is never decoded to a replacement char.
+  decoder: StringDecoder;
 };
 
 /** Tail active Codex rollout JSONL files without installing anything into Codex. */
@@ -27,6 +35,20 @@ export async function startCodexTailer(
   const backfillCutoff = Date.now() - (options.backfillDays ?? 0) * 24 * 60 * 60 * 1000;
   const files = new Map<string, FileState>();
   const seqByRun = new Map<string, number>();
+  // Serialize drains per file so the background backfill and the live poll never
+  // read/parse the same rollout concurrently (which would corrupt its offset).
+  const drainLocks = new Map<string, Promise<unknown>>();
+  const withFileLock = async <T>(key: string, run: () => Promise<T>): Promise<T> => {
+    const prev = drainLocks.get(key) ?? Promise.resolve();
+    const next = prev.then(run, run);
+    const tail = next.then(() => undefined, () => undefined);
+    drainLocks.set(key, tail);
+    try {
+      return await next;
+    } finally {
+      if (drainLocks.get(key) === tail) drainLocks.delete(key);
+    }
+  };
 
   const nextSeq = (runId: string): number => {
     const next = (seqByRun.get(runId) ?? 0) + 1;
@@ -43,7 +65,7 @@ export async function startCodexTailer(
   const ensureFile = (filePath: string): FileState => {
     let state = files.get(filePath);
     if (!state) {
-      state = { offset: 0, buffer: "", normalizer: createCodexNormalizer(contextForFile(filePath)) };
+      state = { offset: 0, buffer: "", normalizer: createCodexNormalizer(contextForFile(filePath)), decoder: new StringDecoder("utf8") };
       files.set(filePath, state);
     }
     return state;
@@ -62,46 +84,53 @@ export async function startCodexTailer(
     }
   };
 
-  const drainFile = async (filePath: string): Promise<void> => {
-    let size: number;
-    try {
-      size = (await stat(filePath)).size;
-    } catch {
-      return;
-    }
-    const state = ensureFile(filePath);
-    if (size < state.offset) {
-      state.offset = 0;
-      state.buffer = "";
-    }
-    if (size <= state.offset) return;
-
-    const file = await open(filePath, "r");
-    try {
-      const length = size - state.offset;
-      const buffer = Buffer.alloc(length);
-      await file.read(buffer, 0, length, state.offset);
-      state.offset = size;
-      state.buffer += buffer.toString("utf8");
-    } finally {
-      await file.close();
-    }
-
-    const lines = state.buffer.split(/\r?\n/);
-    state.buffer = lines.pop() ?? "";
-    for (const raw of lines) {
-      if (!raw.trim()) continue;
-      let parsed: unknown;
+  const drainFile = (filePath: string, restart = false): Promise<void> =>
+    withFileLock(filePath, async () => {
+      if (!running) return;
+      let size: number;
       try {
-        parsed = JSON.parse(raw);
+        size = (await stat(filePath)).size;
       } catch {
-        continue;
+        return;
       }
-      for (const input of state.normalizer.consume(parsed as Record<string, unknown>)) {
-        await emit(sink, input, nextSeq);
+      const state = ensureFile(filePath);
+      if (restart || size < state.offset) {
+        // Backfill (restart) or a truncated/rotated file — re-read from the top.
+        state.offset = 0;
+        state.buffer = "";
+        state.decoder = new StringDecoder("utf8");
       }
-    }
-  };
+      if (size <= state.offset) return;
+
+      const file = await open(filePath, "r");
+      try {
+        const chunk = Buffer.alloc(DRAIN_CHUNK_BYTES);
+        while (running && state.offset < size) {
+          const toRead = Math.min(DRAIN_CHUNK_BYTES, size - state.offset);
+          const { bytesRead } = await file.read(chunk, 0, toRead, state.offset);
+          if (bytesRead <= 0) break;
+          state.offset += bytesRead;
+          state.buffer += state.decoder.write(chunk.subarray(0, bytesRead));
+          const lines = state.buffer.split(/\r?\n/);
+          state.buffer = lines.pop() ?? ""; // trailing partial line stays buffered (may span chunks)
+          for (const raw of lines) {
+            if (!running) return;
+            if (!raw.trim()) continue;
+            let parsed: unknown;
+            try {
+              parsed = JSON.parse(raw);
+            } catch {
+              continue;
+            }
+            for (const input of state.normalizer.consume(parsed as Record<string, unknown>)) {
+              await emit(sink, input, nextSeq);
+            }
+          }
+        }
+      } finally {
+        await file.close();
+      }
+    });
 
   const listTranscripts = async (): Promise<string[]> => {
     let entries: string[];
@@ -114,42 +143,64 @@ export async function startCodexTailer(
   };
 
   const initial = await listTranscripts();
+  const recent: string[] = [];
   for (const filePath of initial) {
     try {
       await primeFile(filePath);
-      ensureFile(filePath).offset = (await stat(filePath)).size;
+      const info = await stat(filePath);
+      ensureFile(filePath).offset = info.size;
+      if ((options.backfillDays ?? 0) > 0 && info.mtimeMs >= backfillCutoff) recent.push(filePath);
     } catch {
       /* file may rotate while starting */
     }
   }
+  // Reserve every initial file selected for backfill before the live timer starts.
+  // Otherwise a poll can consume a new append first and the later restart-from-zero
+  // backfill will emit that same append a second time.
+  const backfillPending = new Set(recent);
 
-  if ((options.backfillDays ?? 0) > 0) {
-    for (const filePath of initial) {
+  // Opt-in backfill (backfillDays > 0) runs in the BACKGROUND so `up` returns and the
+  // dashboard comes up immediately; historical runs then stream in as they're parsed
+  // instead of blocking startup until the whole backlog drains. The per-file lock
+  // keeps it from racing the live poll below.
+  const backfill = async (): Promise<void> => {
+    if ((options.backfillDays ?? 0) <= 0) return;
+    for (const filePath of recent) {
+      if (!running) return;
       try {
-        if ((await stat(filePath)).mtimeMs < backfillCutoff) continue;
-        const state = ensureFile(filePath);
-        state.offset = 0;
-        state.buffer = "";
-        await drainFile(filePath);
+        await drainFile(filePath, true);
       } catch {
         /* best-effort backfill */
+      } finally {
+        backfillPending.delete(filePath);
       }
     }
-  }
+  };
 
   let running = true;
+  let tickRunning = false;
   const tick = async (): Promise<void> => {
-    if (!running) return;
-    for (const filePath of await listTranscripts()) {
-      try {
-        await drainFile(filePath);
-      } catch {
-        /* one malformed/rotating rollout must not stop the recorder */
+    if (!running || tickRunning) return;
+    tickRunning = true;
+    try {
+      for (const filePath of await listTranscripts()) {
+        if (!running) return;
+        if (backfillPending.has(filePath)) continue;
+        try {
+          await drainFile(filePath);
+        } catch {
+          /* one malformed/rotating rollout must not stop the recorder */
+        }
       }
+    } finally {
+      tickRunning = false;
     }
   };
   const timer = setInterval(() => void tick(), pollMs);
   if (typeof timer.unref === "function") timer.unref();
+
+  // Not awaited: the tailer returns now and history fills in behind the live stream.
+  void backfill();
 
   return {
     sessionsDir,

@@ -19,7 +19,7 @@ async function harness() {
   await mkdir(join(projectsDir, "p"), { recursive: true });
   const events: TraceEvent[] = [];
   const file = (name: string) => join(projectsDir, "p", name);
-  const start = async (opts: { backfillDays?: number } = {}) => {
+  const start = async (opts: { backfillDays?: number; pollMs?: number } = {}) => {
     const tailer = await startClaudeCodeTailer({ write: async (e) => { events.push(e); } }, { projectsDir, pollMs: 20, ...opts });
     cleanups.push(async () => {
       tailer.stop();
@@ -103,5 +103,58 @@ describe("claude code tailer", () => {
     await appendFile(file("sess1.jsonl"), `${assistant(2)}\n`, "utf8");
     await waitFor(() => events.length === 1);
     expect(events[0]?.host).toBe("claude-code");
+  });
+
+  it("does not replay a live append when background backfill starts", async () => {
+    const { file, events, start } = await harness();
+    await writeFile(file("000-target.jsonl"), `${assistant(1, "target")}\n`, "utf8");
+    await Promise.all(
+      Array.from({ length: 500 }, (_, i) =>
+        writeFile(file(`${String(i + 1).padStart(4, "0")}-filler.jsonl`), `${assistant(1, `filler-${i}`)}\n`, "utf8")
+      )
+    );
+
+    await start({ backfillDays: 9999, pollMs: 1 });
+    await appendFile(file("000-target.jsonl"), `${assistant(2, "target")}\n`);
+    await waitFor(() => events.length >= 502, 10_000);
+
+    expect(events.filter((event) => event.runId === "target")).toHaveLength(2);
+  });
+
+  it("stops an active background drain before it emits the rest of the file", async () => {
+    const root = await mkdtemp(join(tmpdir(), "abb-tail-stop-"));
+    const projectsDir = join(root, "projects", "p");
+    await mkdir(projectsDir, { recursive: true });
+    await writeFile(
+      join(projectsDir, "sess1.jsonl"),
+      `${Array.from({ length: 20 }, (_, i) => assistant((i % 9) + 1)).join("\n")}\n`,
+      "utf8"
+    );
+    const events: TraceEvent[] = [];
+    let releaseWrite!: () => void;
+    let markStarted!: () => void;
+    const writeGate = new Promise<void>((resolve) => { releaseWrite = resolve; });
+    const writeStarted = new Promise<void>((resolve) => { markStarted = resolve; });
+    const tailer = await startClaudeCodeTailer(
+      { write: async (event) => {
+        events.push(event);
+        if (events.length === 1) {
+          markStarted();
+          await writeGate;
+        }
+      } },
+      { projectsDir: join(root, "projects"), pollMs: 20, backfillDays: 9999 }
+    );
+    cleanups.push(async () => {
+      tailer.stop();
+      releaseWrite();
+      await rm(root, { recursive: true, force: true });
+    });
+
+    await writeStarted;
+    tailer.stop();
+    releaseWrite();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(events).toHaveLength(1);
   });
 });
