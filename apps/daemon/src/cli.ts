@@ -80,6 +80,9 @@ async function main(argv: string[]): Promise<void> {
     const uiPort = portArg(readFlag(argv, "--ui-port"), 5173);
     const daemonUrl = `http://127.0.0.1:${port}`;
     const suggest = readSuggestConfig(argv);
+    // Opt-in backfill: re-read sessions written in the last N days from the top
+    // so `up` isn't blind to history. 0 (default) keeps the from-now behavior.
+    const backfillDays = readBackfillDays(argv);
 
     let daemon: Awaited<ReturnType<typeof startTraceDaemon>>;
     if (global) {
@@ -115,7 +118,7 @@ async function main(argv: string[]): Promise<void> {
       if (host === "claude-code" || host === "all") {
         // No install needed to RECORD — the daemon tails the JSONL transcripts the
         // CLI already writes, streaming events in-process via daemon.ingest.
-        const tailer = await startClaudeCodeTailer({ write: (event) => daemon.ingest(event) });
+        const tailer = await startClaudeCodeTailer({ write: (event) => daemon.ingest(event) }, { backfillDays });
         recorders.push(`Claude Code transcripts tailed ← ${tailer.projectsDir} (no install)`);
         // --optimize additionally installs the opt-in in-run actuator (hooks).
         if (argv.includes("--optimize")) {
@@ -128,11 +131,11 @@ async function main(argv: string[]): Promise<void> {
         }
       }
       if (host === "gjc" || host === "all") {
-        const tailer = await startGjcTailer({ write: (event) => daemon.ingest(event) });
+        const tailer = await startGjcTailer({ write: (event) => daemon.ingest(event) }, { backfillDays });
         recorders.push(`Gajae-Code sessions tailed ← ${tailer.sessionsDir} (no install)`);
       }
       if (host === "codex" || host === "all") {
-        const tailer = await startCodexTailer({ write: (event) => daemon.ingest(event) });
+        const tailer = await startCodexTailer({ write: (event) => daemon.ingest(event) }, { backfillDays });
         recorders.push(`Codex sessions tailed ← ${tailer.sessionsDir} (no install)`);
         if (argv.includes("--optimize")) {
           if (codexHookEntryPath) {
@@ -337,6 +340,7 @@ function printHelp(): void {
   console.log("  agent-blackbox up --project <dir>        # scope the recorder to one project instead");
   console.log("       [--port <port>] [--ui-port <port>] [--suggest auto|free|off|ollama|opencode|openai-compat] [--suggest-model <id>] [--optimize] [--no-open]");
   console.log("       [--optimize]  with --host claude-code or codex: also install the in-run actuator (read-dedup + working-set hooks)");
+  console.log("       [--backfill-days <n>]  re-read sessions written in the last <n> days from the top (default 0 = from now on)");
   console.log("  agent-blackbox install [--port <port>]   # install the global recorder only (no daemon)");
   console.log("  agent-blackbox install-hooks             # install the Claude Code in-run actuator hooks (opt-in)");
   console.log("  agent-blackbox uninstall-hooks           # remove the Claude Code actuator hooks");
@@ -398,4 +402,14 @@ function readSuggestConfig(argv: string[]): SuggestionConfig {
   const model = readFlag(argv, "--suggest-model") ?? process.env.AGENT_BLACKBOX_SUGGEST_MODEL;
   const baseUrl = readFlag(argv, "--suggest-base-url") ?? process.env.AGENT_BLACKBOX_SUGGEST_BASE_URL;
   return { mode, ...(model ? { model } : {}), ...(baseUrl ? { baseUrl } : {}) };
+}
+
+// How many days of already-written sessions to re-read from the top on `up`.
+// The tailers all support backfill but default to 0 (record from now on), which
+// leaves the dashboard empty until a fresh session is written. This exposes it
+// as `--backfill-days N` / AGENT_BLACKBOX_BACKFILL_DAYS. Malformed/negative → 0.
+function readBackfillDays(argv: string[]): number {
+  const raw = readFlag(argv, "--backfill-days") ?? process.env.AGENT_BLACKBOX_BACKFILL_DAYS;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : 0;
 }
