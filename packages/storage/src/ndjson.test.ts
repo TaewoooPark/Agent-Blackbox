@@ -76,5 +76,36 @@ describe("trace NDJSON", () => {
     expect(parsed).toHaveLength(40);
     expect(new Set(parsed.map((e) => e.id)).size).toBe(40);
   });
+
+  it("reads a store larger than one read chunk, intact across boundaries", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "agent-blackbox-"));
+    const filePath = join(tempDir, ".agent-blackbox", "events.ndjson");
+    // Exceed the 8 MiB streaming read chunk so the reader loops and lines (and a
+    // multibyte char) straddle chunk boundaries — the case that a single-string
+    // read handled implicitly but that also crashes once a store passes ~512 MB.
+    const pad = "x".repeat(1_000);
+    const count = 10_000; // ~10 MB serialized
+    const events = Array.from({ length: count }, (_unused, i) =>
+      createTraceEvent(i + 1, {
+        host: "opencode",
+        runId: "run-big",
+        sessionId: "s",
+        kind: "message",
+        // A multibyte marker mid-store lands near a chunk edge for at least one event.
+        payload: { role: "assistant", text: `${i}:日本語🎉:${pad}` }
+      })
+    );
+    const { writeFile, mkdir } = await import("node:fs/promises");
+    const { dirname } = await import("node:path");
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, events.map(serializeTraceEvent).join(""), "utf8");
+
+    const parsed = await readTraceEvents(filePath);
+    expect(parsed).toHaveLength(count);
+    expect(parsed[0]).toEqual(events[0]);
+    expect(parsed[count - 1]).toEqual(events[count - 1]);
+    // Multibyte content survives the chunked decode.
+    expect(parsed.every((e, i) => (e.payload as { text: string }).text === `${i}:日本語🎉:${pad}`)).toBe(true);
+  });
 });
 

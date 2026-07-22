@@ -1,6 +1,7 @@
 import { assertTraceEvent, type TraceEvent } from "@agent-blackbox/core";
-import { appendFile, mkdir, readFile } from "node:fs/promises";
+import { appendFile, mkdir, open } from "node:fs/promises";
 import { dirname } from "node:path";
+import { StringDecoder } from "node:string_decoder";
 
 export function serializeTraceEvent(event: TraceEvent): string {
   assertTraceEvent(event);
@@ -67,7 +68,36 @@ export async function appendTraceEvent(filePath: string, event: TraceEvent): Pro
 }
 
 export async function readTraceEvents(filePath: string): Promise<TraceEvent[]> {
-  const input = await readFile(filePath, "utf8");
-  return parseTraceEvents(input);
+  // Stream the file in bounded chunks and parse newline-terminated slices as we go.
+  // Reading it as a single string (readFile "utf8") throws once the file exceeds
+  // Node's max string length (~512 MB) — which a large backfilled store does.
+  const handle = await open(filePath, "r");
+  try {
+    const { size } = await handle.stat();
+    const events: TraceEvent[] = [];
+    const chunk = Buffer.alloc(8 * 1024 * 1024);
+    const decoder = new StringDecoder("utf8");
+    let buffer = "";
+    let pos = 0;
+    while (pos < size) {
+      const toRead = Math.min(chunk.length, size - pos);
+      const { bytesRead } = await handle.read(chunk, 0, toRead, pos);
+      if (bytesRead <= 0) break;
+      pos += bytesRead;
+      buffer += decoder.write(chunk.subarray(0, bytesRead));
+      const nl = buffer.lastIndexOf("\n");
+      if (nl >= 0) {
+        // Complete lines are newline-terminated, so parseTraceEvents parses them all
+        // strictly; the trailing partial line carries to the next chunk.
+        for (const event of parseTraceEvents(buffer.slice(0, nl + 1))) events.push(event);
+        buffer = buffer.slice(nl + 1);
+      }
+    }
+    // Flush a final line with no trailing newline (a torn last record is tolerated).
+    if (buffer.trim().length > 0) for (const event of parseTraceEvents(buffer)) events.push(event);
+    return events;
+  } finally {
+    await handle.close();
+  }
 }
 
