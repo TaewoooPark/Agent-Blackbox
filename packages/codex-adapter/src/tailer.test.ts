@@ -61,4 +61,73 @@ describe("Codex transcript tailer", () => {
     await waitFor(() => events.length === 1);
     expect(events[0]).toMatchObject({ host: "codex", kind: "session_created" });
   });
+
+  it("preserves UTF-8 split across a backfill chunk boundary", async () => {
+    const root = await mkdtemp(join(tmpdir(), "abb-codex-utf8-"));
+    const sessionsDir = join(root, "sessions");
+    await mkdir(sessionsDir, { recursive: true });
+    const marker = "🙂";
+    const render = (padding: number) => `${JSON.stringify({
+      padding: "x".repeat(padding),
+      timestamp: "2026-07-15T08:46:01.000Z",
+      type: "session_meta",
+      payload: { id: `target-${marker}`, cwd: "/project" }
+    })}\n`;
+    const probe = render(0);
+    const markerOffset = Buffer.byteLength(probe.slice(0, probe.indexOf(marker)));
+    const line = render((1 << 20) - 1 - markerOffset);
+    expect(Buffer.byteLength(line.slice(0, line.indexOf(marker)))).toBe((1 << 20) - 1);
+    await writeFile(join(sessionsDir, "rollout-target.jsonl"), line, "utf8");
+
+    const events: TraceEvent[] = [];
+    const tailer = await startCodexTailer(
+      { write: async (event) => { events.push(event); } },
+      { sessionsDir, pollMs: 20, backfillDays: 9999 }
+    );
+    cleanups.push(async () => { tailer.stop(); await rm(root, { recursive: true, force: true }); });
+    await waitFor(() => events.length === 1);
+    expect(events[0]?.runId).toBe(`target-${marker}`);
+  });
+
+  it("stops an active background drain before it emits the rest of the file", async () => {
+    const root = await mkdtemp(join(tmpdir(), "abb-codex-stop-"));
+    const sessionsDir = join(root, "sessions");
+    await mkdir(sessionsDir, { recursive: true });
+    const id = "019f64f4-4b7c-75e2-bb37-c285d74b2ddd";
+    const records = [
+      { timestamp: "2026-07-15T08:46:01.000Z", type: "session_meta", payload: { id, cwd: "/project" } },
+      ...Array.from({ length: 20 }, (_, i) => ({
+        timestamp: `2026-07-15T08:46:${String(i + 2).padStart(2, "0")}.000Z`,
+        type: "event_msg",
+        payload: { type: "user_message", message: `message ${i}` }
+      }))
+    ];
+    await writeFile(join(sessionsDir, `rollout-${id}.jsonl`), `${records.map((record) => JSON.stringify(record)).join("\n")}\n`, "utf8");
+    const events: TraceEvent[] = [];
+    let releaseWrite!: () => void;
+    let markStarted!: () => void;
+    const writeGate = new Promise<void>((resolve) => { releaseWrite = resolve; });
+    const writeStarted = new Promise<void>((resolve) => { markStarted = resolve; });
+    const tailer = await startCodexTailer(
+      { write: async (event) => {
+        events.push(event);
+        if (events.length === 1) {
+          markStarted();
+          await writeGate;
+        }
+      } },
+      { sessionsDir, pollMs: 20, backfillDays: 9999 }
+    );
+    cleanups.push(async () => {
+      tailer.stop();
+      releaseWrite();
+      await rm(root, { recursive: true, force: true });
+    });
+
+    await writeStarted;
+    tailer.stop();
+    releaseWrite();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(events).toHaveLength(1);
+  });
 });

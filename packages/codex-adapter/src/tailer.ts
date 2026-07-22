@@ -38,11 +38,16 @@ export async function startCodexTailer(
   // Serialize drains per file so the background backfill and the live poll never
   // read/parse the same rollout concurrently (which would corrupt its offset).
   const drainLocks = new Map<string, Promise<unknown>>();
-  const withFileLock = <T>(key: string, run: () => Promise<T>): Promise<T> => {
+  const withFileLock = async <T>(key: string, run: () => Promise<T>): Promise<T> => {
     const prev = drainLocks.get(key) ?? Promise.resolve();
     const next = prev.then(run, run);
-    drainLocks.set(key, next.then(() => undefined, () => undefined));
-    return next;
+    const tail = next.then(() => undefined, () => undefined);
+    drainLocks.set(key, tail);
+    try {
+      return await next;
+    } finally {
+      if (drainLocks.get(key) === tail) drainLocks.delete(key);
+    }
   };
 
   const nextSeq = (runId: string): number => {
@@ -81,6 +86,7 @@ export async function startCodexTailer(
 
   const drainFile = (filePath: string, restart = false): Promise<void> =>
     withFileLock(filePath, async () => {
+      if (!running) return;
       let size: number;
       try {
         size = (await stat(filePath)).size;
@@ -99,7 +105,7 @@ export async function startCodexTailer(
       const file = await open(filePath, "r");
       try {
         const chunk = Buffer.alloc(DRAIN_CHUNK_BYTES);
-        while (state.offset < size) {
+        while (running && state.offset < size) {
           const toRead = Math.min(DRAIN_CHUNK_BYTES, size - state.offset);
           const { bytesRead } = await file.read(chunk, 0, toRead, state.offset);
           if (bytesRead <= 0) break;
@@ -108,6 +114,7 @@ export async function startCodexTailer(
           const lines = state.buffer.split(/\r?\n/);
           state.buffer = lines.pop() ?? ""; // trailing partial line stays buffered (may span chunks)
           for (const raw of lines) {
+            if (!running) return;
             if (!raw.trim()) continue;
             let parsed: unknown;
             try {
@@ -136,14 +143,21 @@ export async function startCodexTailer(
   };
 
   const initial = await listTranscripts();
+  const recent: string[] = [];
   for (const filePath of initial) {
     try {
       await primeFile(filePath);
-      ensureFile(filePath).offset = (await stat(filePath)).size;
+      const info = await stat(filePath);
+      ensureFile(filePath).offset = info.size;
+      if ((options.backfillDays ?? 0) > 0 && info.mtimeMs >= backfillCutoff) recent.push(filePath);
     } catch {
       /* file may rotate while starting */
     }
   }
+  // Reserve every initial file selected for backfill before the live timer starts.
+  // Otherwise a poll can consume a new append first and the later restart-from-zero
+  // backfill will emit that same append a second time.
+  const backfillPending = new Set(recent);
 
   // Opt-in backfill (backfillDays > 0) runs in the BACKGROUND so `up` returns and the
   // dashboard comes up immediately; historical runs then stream in as they're parsed
@@ -151,26 +165,35 @@ export async function startCodexTailer(
   // keeps it from racing the live poll below.
   const backfill = async (): Promise<void> => {
     if ((options.backfillDays ?? 0) <= 0) return;
-    for (const filePath of initial) {
+    for (const filePath of recent) {
       if (!running) return;
       try {
-        if ((await stat(filePath)).mtimeMs < backfillCutoff) continue;
         await drainFile(filePath, true);
       } catch {
         /* best-effort backfill */
+      } finally {
+        backfillPending.delete(filePath);
       }
     }
   };
 
   let running = true;
+  let tickRunning = false;
   const tick = async (): Promise<void> => {
-    if (!running) return;
-    for (const filePath of await listTranscripts()) {
-      try {
-        await drainFile(filePath);
-      } catch {
-        /* one malformed/rotating rollout must not stop the recorder */
+    if (!running || tickRunning) return;
+    tickRunning = true;
+    try {
+      for (const filePath of await listTranscripts()) {
+        if (!running) return;
+        if (backfillPending.has(filePath)) continue;
+        try {
+          await drainFile(filePath);
+        } catch {
+          /* one malformed/rotating rollout must not stop the recorder */
+        }
       }
+    } finally {
+      tickRunning = false;
     }
   };
   const timer = setInterval(() => void tick(), pollMs);

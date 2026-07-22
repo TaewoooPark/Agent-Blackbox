@@ -45,11 +45,16 @@ export async function startClaudeCodeTailer(sink: TraceSink, options: ClaudeReco
   // Serialize drains per file so the background backfill and the live poll never
   // read/parse the same transcript concurrently (which would corrupt its offset).
   const drainLocks = new Map<string, Promise<unknown>>();
-  const withFileLock = <T>(key: string, run: () => Promise<T>): Promise<T> => {
+  const withFileLock = async <T>(key: string, run: () => Promise<T>): Promise<T> => {
     const prev = drainLocks.get(key) ?? Promise.resolve();
     const next = prev.then(run, run);
-    drainLocks.set(key, next.then(() => undefined, () => undefined));
-    return next;
+    const tail = next.then(() => undefined, () => undefined);
+    drainLocks.set(key, tail);
+    try {
+      return await next;
+    } finally {
+      if (drainLocks.get(key) === tail) drainLocks.delete(key);
+    }
   };
   const nextSeq = (runId: string): number => {
     const n = (seqByRun.get(runId) ?? 0) + 1;
@@ -81,6 +86,7 @@ export async function startClaudeCodeTailer(sink: TraceSink, options: ClaudeReco
 
   const drainFile = (filePath: string, restart = false): Promise<void> =>
     withFileLock(filePath, async () => {
+      if (!running) return;
       let size: number;
       try {
         size = (await stat(filePath)).size;
@@ -99,7 +105,7 @@ export async function startClaudeCodeTailer(sink: TraceSink, options: ClaudeReco
       const fh = await open(filePath, "r");
       try {
         const chunk = Buffer.alloc(DRAIN_CHUNK_BYTES);
-        while (state.offset < size) {
+        while (running && state.offset < size) {
           const toRead = Math.min(DRAIN_CHUNK_BYTES, size - state.offset);
           const { bytesRead } = await fh.read(chunk, 0, toRead, state.offset);
           if (bytesRead <= 0) break;
@@ -108,6 +114,7 @@ export async function startClaudeCodeTailer(sink: TraceSink, options: ClaudeReco
           const lines = state.buffer.split(/\r?\n/); // CRLF-safe: a Windows transcript ends lines with \r\n
           state.buffer = lines.pop() ?? ""; // trailing partial line stays buffered (may span chunks)
           for (const raw of lines) {
+            if (!running) return;
             const line = raw.trim();
             if (!line) continue;
             let parsed: unknown;
@@ -140,13 +147,21 @@ export async function startClaudeCodeTailer(sink: TraceSink, options: ClaudeReco
   // then the first poll) would re-ingest the entire backlog under ~/.claude/projects —
   // for a heavy user that's hundreds of MB across every project in one burst.
   const initial = await listTranscripts();
+  const recent: string[] = [];
   for (const f of initial) {
     try {
-      ensureFile(f).offset = (await stat(f)).size;
+      const info = await stat(f);
+      ensureFile(f).offset = info.size;
+      if ((options.backfillDays ?? 0) > 0 && info.mtimeMs >= backfillCutoff) recent.push(f);
     } catch {
       /* ignore */
     }
   }
+  recent.sort((a, b) => Number(basename(a).startsWith("agent-")) - Number(basename(b).startsWith("agent-")));
+  // Reserve every initial file selected for backfill before the live timer starts.
+  // Otherwise a poll can consume a new append first and the later restart-from-zero
+  // backfill will emit that same append a second time.
+  const backfillPending = new Set(recent);
 
   // Opt-in backfill (backfillDays > 0) runs in the BACKGROUND so `up` returns and the
   // dashboard comes up immediately; historical runs then stream in as they're parsed
@@ -155,36 +170,37 @@ export async function startClaudeCodeTailer(sink: TraceSink, options: ClaudeReco
   // parent, and the per-file lock keeps it from racing the live poll below.
   const backfill = async (): Promise<void> => {
     if ((options.backfillDays ?? 0) <= 0) return;
-    const recent: string[] = [];
-    for (const f of initial) {
-      try {
-        if ((await stat(f)).mtimeMs >= backfillCutoff) recent.push(f);
-      } catch {
-        /* ignore */
-      }
-    }
-    recent.sort((a, b) => Number(basename(a).startsWith("agent-")) - Number(basename(b).startsWith("agent-")));
     for (const f of recent) {
       if (!running) return;
       try {
         await drainFile(f, true);
       } catch {
         /* best-effort */
+      } finally {
+        backfillPending.delete(f);
       }
     }
   };
 
   let running = true;
+  let tickRunning = false;
   const tick = async (): Promise<void> => {
-    if (!running) return;
-    const all = await listTranscripts();
-    all.sort((a, b) => Number(basename(a).startsWith("agent-")) - Number(basename(b).startsWith("agent-")));
-    for (const f of all) {
-      try {
-        await drainFile(f);
-      } catch {
-        /* best-effort: one bad file must not stop the tailer */
+    if (!running || tickRunning) return;
+    tickRunning = true;
+    try {
+      const all = await listTranscripts();
+      all.sort((a, b) => Number(basename(a).startsWith("agent-")) - Number(basename(b).startsWith("agent-")));
+      for (const f of all) {
+        if (!running) return;
+        if (backfillPending.has(f)) continue;
+        try {
+          await drainFile(f);
+        } catch {
+          /* best-effort: one bad file must not stop the tailer */
+        }
       }
+    } finally {
+      tickRunning = false;
     }
   };
   const timer = setInterval(() => void tick(), pollMs);
