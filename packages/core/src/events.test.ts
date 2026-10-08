@@ -3,6 +3,7 @@ import {
   assertTraceEvent,
   createEventSequencer,
   createTraceEvent,
+  eventSucceeded,
   makeTraceEventId,
   validateTraceEvent
 } from "./events.js";
@@ -10,6 +11,16 @@ import {
 describe("trace events", () => {
   it("creates deterministic ids from run id and sequence", () => {
     expect(makeTraceEventId("run:alpha", 7)).toBe("evt_run_alpha_000007");
+  });
+
+  it("keeps boolean outcome evidence distinct from an unknown process exit code", () => {
+    expect(eventSucceeded({ payload: { success: false } })).toBe(false);
+    expect(eventSucceeded({ payload: { success: true } })).toBe(true);
+    expect(eventSucceeded({ payload: {} })).toBeUndefined();
+    expect(eventSucceeded({ payload: { exitCode: Number.NaN } })).toBeUndefined();
+    // Conflicting evidence must not turn an observed failure into success.
+    expect(eventSucceeded({ payload: { success: false, exitCode: 0 } })).toBe(false);
+    expect(eventSucceeded({ payload: { success: true, exitCode: 2 } })).toBe(false);
   });
 
   it("marks tool events as observed evidence", () => {
@@ -25,11 +36,11 @@ describe("trace events", () => {
     expect(validateTraceEvent(event).ok).toBe(true);
   });
 
-  it("accepts Gajae-Code as a canonical host", () => {
+  it.each(["gjc", "motifcode"] as const)("accepts %s as a canonical host", (host) => {
     const event = createTraceEvent(1, {
-      host: "gjc",
-      runId: "run-gjc",
-      sessionId: "session-gjc",
+      host,
+      runId: `run-${host}`,
+      sessionId: `session-${host}`,
       kind: "session_created"
     });
 
@@ -89,4 +100,3 @@ describe("trace events", () => {
     expect(validateTraceEvent(base).ok).toBe(true);
   });
 });
-

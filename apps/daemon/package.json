@@ -26,6 +26,7 @@
     "@agent-blackbox/claude-code-adapter": "file:../../packages/claude-code-adapter",
     "@agent-blackbox/codex-adapter": "file:../../packages/codex-adapter",
     "@agent-blackbox/gjc-adapter": "file:../../packages/gjc-adapter",
+    "@agent-blackbox/motifcode-adapter": "file:../../packages/motifcode-adapter",
     "@agent-blackbox/core": "file:../../packages/core",
     "@agent-blackbox/storage": "file:../../packages/storage",
     "ws": "^8.21.0"

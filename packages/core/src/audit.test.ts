@@ -56,9 +56,28 @@ describe("promise checks", () => {
       }
     ]);
   });
+
+  it("does not verify a commit claim from an explicitly failed commit event", () => {
+    const checks = evaluatePromiseChecks([
+      ev("git_commit", { command: "git commit", success: false }),
+      ev("message", { role: "assistant", text: "I committed the implementation." })
+    ]);
+    expect(checks).toHaveLength(1);
+    expect(checks[0]?.status).toBe("unverified");
+    expect(checks[0]?.evidenceEventIds).toEqual([]);
+  });
 });
 
 describe("handoff markdown", () => {
+  it("keeps boolean-only command failures out of successful verification guidance", () => {
+    const events = [ev("bash", { command: "npm test", success: false })];
+    const markdown = generateHandoffMarkdown(materializeWorkflowGraph(events), [], events);
+    expect(markdown).toContain("## Failed Attempts");
+    expect(markdown).toContain("npm test [FAILED]");
+    expect(markdown).not.toContain("## Commands / Verification");
+    expect(markdown).not.toContain("Continue from the last verified command");
+  });
+
   it("summarizes graph state and promise checks", () => {
     const events = [
       createTraceEvent(1, {

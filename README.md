@@ -30,7 +30,7 @@
 
 Agent-Blackbox is a **local-first flight recorder and context-efficiency profiler for coding agents.** It turns every agent run into a **live, replayable operational graph** — what the agent read, changed, ran, decided, delegated, blocked on, and verified — reconstructed from observed events, not from the agent's own summary. Then it scores the run on **two axes** — how economically it used its context window, *and* whether the task actually landed — judged on a yardstick that **fits the task type** (research / debug / ops…) and **your own past runs**, and tells you, concretely, how to make the next one cheaper and faster.
 
-**Works with [Claude Code](https://www.claude.com/product/claude-code), [Codex](https://developers.openai.com/codex/), and [OpenCode](https://opencode.ai)** — same recorder, same map, same efficiency score. Record one host or all of them at once.
+**Works with [Claude Code](https://www.claude.com/product/claude-code), [Codex](https://developers.openai.com/codex/), [OpenCode](https://opencode.ai), and [Motifcode](https://github.com/TaewoooPark/Motifcode)** — same recorder, same map, same efficiency score. Record one host or all of them at once.
 
 > *"The transcript is what the agent said. The black box is what it did — and what it cost."*
 
@@ -58,7 +58,7 @@ You can't just **ask** the agent what a task cost. A 2026 study of eight frontie
 
 ## Quickstart
 
-**One command. Works with Claude Code, Codex, and OpenCode** (needs Node 20+):
+**One command. Works with Claude Code, Codex, OpenCode, and Motifcode** (needs Node 20+):
 
 ```bash
 # Record Claude Code — nothing to install; the daemon tails the session
@@ -67,6 +67,9 @@ npx @taewooopark/agent-blackbox up --host claude-code
 
 # …or record Codex — CLI and desktop app, also with no recorder install
 npx @taewooopark/agent-blackbox up --host codex
+
+# …or record Motifcode sessions in the current project (no recorder install)
+npx @taewooopark/agent-blackbox up --host motifcode
 
 # …or record OpenCode (installs the recorder into OpenCode's global plugin dir)
 npx @taewooopark/agent-blackbox up
@@ -87,8 +90,9 @@ opencode          # …or OpenCode (terminal or the desktop app)
 - **Codex needs no recorder install either** — `--host codex` tails `$CODEX_HOME/sessions` (default `~/.codex/sessions`) across the CLI and desktop app. Add `--optimize` to install the optional Codex actuator, then trust it once with `/hooks`.
 - **OpenCode** records via a recorder dropped into its **global** plugin directory (`~/.config/opencode/plugins/`) — any session, any folder, the desktop app included.
 - **Gajae-Code** *(experimental)* — `--host gjc` tails [Gajae-Code](https://github.com/Yeachan-Heo/gajae-code) sessions (`~/.gjc/agent/sessions/`), no install; also covered by `--host all`.
+- **Motifcode** — `--host motifcode` tails Motifcode 0.4.1 v2 session journals in `<cwd>/.motif/sessions/`, without a plugin or model/API calls. `--host all` includes that same directory; it does not discover other projects automatically. Use `--project /path/to/project` or `--motifcode-sessions-dir /path/to/.motif/sessions` to select another source. Startup works while the model is disconnected or the directory is absent, and new sessions are picked up when writing resumes. Interactive v2 journals are supported; `motif --print` does not write a journal. Validated against source-compatible fixtures; a live model run remains unverified.
 
-Stop recording any time with `npx @taewooopark/agent-blackbox uninstall`.
+Press Ctrl+C to stop the daemon and session tailers. Use `npx @taewooopark/agent-blackbox uninstall` to remove the global OpenCode recorder and optional hooks.
 
 <details>
 <summary><b>Scope OpenCode to one project, or run from source</b></summary>
@@ -113,7 +117,7 @@ The map assembles itself live. That's it.
 npx @taewooopark/agent-blackbox up --host claude-code
 claude   # in any folder; the dashboard fills in live
 
-# Record both hosts together, with tailored fixes from a free/local model
+# Record all hosts together, with tailored fixes from a free/local model
 npx @taewooopark/agent-blackbox up --host all --suggest ollama --suggest-model qwen2.5-coder
 
 # Multi-agent: just delegate in your normal session — each subagent forks into its own lane
@@ -356,7 +360,8 @@ When you need to continue the run elsewhere — a teammate, the next agent, or t
 
 ```
  Claude Code transcripts (tailed) ─┐
- Codex rollout sessions (tailed) ──┼─▶ host adapter ─▶ daemon ─▶ dashboard
+ Codex rollout sessions (tailed) ──┤
+ Motifcode session journals ───────┼─▶ host adapter ─▶ daemon ─▶ dashboard
  OpenCode hooks → recorder plugin ─┘
                                        redact+normalize  NDJSON    live session map
                                                          + graph   + efficiency
@@ -365,6 +370,7 @@ When you need to continue the run elsewhere — a teammate, the next agent, or t
 - **`packages/core`** — canonical `TraceEvent`s, the workflow graph model, redaction, replay, audit, handoff generation, and the context-efficiency engine.
 - **`packages/claude-code-adapter`** — tails the JSONL transcripts Claude Code writes (`~/.claude/projects/`) and normalizes them into canonical, redacted events — no plugin, no install. Optional hooks add the in-run actuator.
 - **`packages/codex-adapter`** — tails Codex rollout sessions (`$CODEX_HOME/sessions`) from the CLI and desktop app, including token, patch, search, MCP, compaction, and subagent signals. Optional trusted hooks add safe read-dedup + working-set context.
+- **`packages/motifcode-adapter`** — tails project-local Motifcode v2 JSONL journals (`.motif/sessions/`), normalizing messages, tool calls/results, subagents, and recorded usage without connecting to a model.
 - **`packages/opencode-adapter`** — a thin OpenCode plugin that turns host events and tool calls into canonical, redacted events (with content *sizes*, never content) and ships them to the daemon, best-effort with retries.
 - **`apps/daemon`** — ingests events to a local NDJSON log, materializes the graph, replays it to any point, computes the efficiency report, routes suggestions, and pushes live snapshots over WebSocket.
 - **`apps/dashboard`** — the operator console: live session map, replay, inspector, efficiency co-pilot, and handoff.
@@ -378,7 +384,7 @@ When you need to continue the run elsewhere — a teammate, the next agent, or t
 - **Behavior, not narration.** Every node is an event the agent actually emitted — a read, an edit, a command and its exit code, a delegation — not a sentence it wrote about itself.
 - **Cost is evidence too.** The efficiency score and every suggestion come from observed sizes and token snapshots, not from the model's account of its own thrift.
 - **Local-first, no key.** Traces stay on your machine. Raw prompts, secrets, and file contents are redacted by default; even the optional model suggestions run locally and receive only a redacted digest.
-- **Host-agnostic core.** A canonical event + graph core with thin host adapters, so the same black box can sit behind any agent harness — **Claude Code, Codex, and OpenCode** ship today.
+- **Host-agnostic core.** A canonical event + graph core with thin host adapters, so the same black box can sit behind any agent harness — **Claude Code, Codex, OpenCode, and Motifcode** ship today.
 
 ---
 
@@ -411,6 +417,7 @@ packages/
   storage/              NDJSON persistence
   claude-code-adapter/  Claude Code transcript tailer + in-run actuator hooks
   codex-adapter/        Codex CLI/app rollout tailer + in-run actuator hooks
+  motifcode-adapter/    Motifcode project-local session journal tailer
   opencode-adapter/     OpenCode plugin / SDK bridge
 ```
 
@@ -428,7 +435,7 @@ npm run build
 
 ## Roadmap
 
-- More host adapters (PI and other harnesses) on the same canonical core — **Claude Code, Codex, and OpenCode** ship today.
+- More host adapters (PI and other harnesses) on the same canonical core — **Claude Code, Codex, OpenCode, and Motifcode** ship today.
 - **Shipped recently:** a second **outcome** axis, **task-archetype** scoring, **per-project baselines** ("vs your usual run"), **accumulative** optimize memory, and **custom rule packs** — see **[docs/analysis.md](docs/analysis.md)**.
 - **Fleet-wide** efficiency-trend charts across many runs (the per-run baseline data already lands locally; the longitudinal view is next).
 - Deeper audit: richer claim-vs-evidence verification and risky-command surfacing.

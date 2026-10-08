@@ -1,4 +1,4 @@
-import type { TraceEvent } from "./events.js";
+import { eventSucceeded, type TraceEvent } from "./events.js";
 
 // Task conditioning — infer what KIND of task a run was so the efficiency score
 // is judged on a yardstick that fits it. A research/read task SHOULD read widely;
@@ -92,8 +92,7 @@ export function classifyRun(events: TraceEvent[]): RunClassification {
       case "bash": {
         bash += 1;
         const c = (str(e, "command") ?? "").trim();
-        const code = num(e, "exitCode");
-        if (code !== undefined && code !== 0) failBash += 1;
+        if (eventSucceeded(e) === false) failBash += 1;
         if (TEST_BUILD.test(c)) testBash += 1;
         break;
       }

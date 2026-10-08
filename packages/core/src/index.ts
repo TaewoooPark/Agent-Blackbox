@@ -23,6 +23,7 @@ export {
   createEventSequencer,
   createTraceEvent,
   dataSensitivities,
+  eventSucceeded,
   makeTraceEventId,
   traceEventKinds,
   traceHosts,

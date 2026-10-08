@@ -6,11 +6,22 @@ export const traceHosts = [
   "codex",
   "claude-code",
   "gjc",
+  "motifcode",
   "hermes",
   "custom"
 ] as const;
 
 export type TraceHost = (typeof traceHosts)[number];
+
+// Some journals observe success/failure without preserving the process exit
+// code. Keep that evidence distinct from an unknown outcome; never invent a code.
+export function eventSucceeded(event: Pick<TraceEvent, "payload">): boolean | undefined {
+  const code = event.payload.exitCode;
+  const hasCode = typeof code === "number" && Number.isFinite(code);
+  if (event.payload.success === false || (hasCode && code !== 0)) return false;
+  if (event.payload.success === true || (hasCode && code === 0)) return true;
+  return undefined;
+}
 
 export const agentRoles = ["primary", "subagent", "system", "unknown"] as const;
 export type AgentRole = (typeof agentRoles)[number];
@@ -289,4 +300,3 @@ function optionalEnum<T extends readonly string[]>(
     errors.push(`${key} must be one of ${allowed.join(", ")} when present`);
   }
 }
-

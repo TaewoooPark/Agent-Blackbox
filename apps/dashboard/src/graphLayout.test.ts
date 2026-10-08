@@ -156,6 +156,18 @@ describe("dashboard graph helpers", () => {
     });
   });
 
+  it("shows Motifcode test failures when the journal reports no exact exit code", () => {
+    const event = createTraceEvent(1, {
+      host: "motifcode", runId: "motif-ui", sessionId: "motif-ui", kind: "bash",
+      payload: { command: "npm test", success: false }
+    });
+    expect(createTimelineMarks([event])[0]).toMatchObject({ label: "Tests failed", tone: "risk" });
+    expect(createWorkflowSteps([event])[0]).toMatchObject({
+      title: "Tests failed", tone: "risk", kind: "risk",
+      branches: [expect.objectContaining({ label: "Failed", tone: "risk" })]
+    });
+  });
+
   it("renders compaction and slash-command events as their own clear nodes", () => {
     const events = [
       createTraceEvent(1, {

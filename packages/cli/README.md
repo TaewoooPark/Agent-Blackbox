@@ -2,7 +2,7 @@
 
 **Open your coding agent's black box.**
 
-A **local-first flight recorder and context-efficiency profiler** for **[Claude Code](https://www.claude.com/product/claude-code)**, **[Codex](https://developers.openai.com/codex/)**, and **[OpenCode](https://opencode.ai)**. It turns every agent run into a **live, replayable map** of what the agent actually *did* — what it read, changed, ran, decided, delegated, blocked on, and verified — reconstructed from observed events, not from the agent's own summary. Then it **scores how economically the run used its context window** and tells you, concretely, how to make the next one cheaper and faster.
+A **local-first flight recorder and context-efficiency profiler** for **[Claude Code](https://www.claude.com/product/claude-code)**, **[Codex](https://developers.openai.com/codex/)**, **[OpenCode](https://opencode.ai)**, and **[Motifcode](https://github.com/TaewoooPark/Motifcode)**. It turns every agent run into a **live, replayable map** of what the agent actually *did* — what it read, changed, ran, decided, delegated, blocked on, and verified — reconstructed from observed events, not from the agent's own summary. Then it **scores how economically the run used its context window** and tells you, concretely, how to make the next one cheaper and faster.
 
 Everything runs on your machine. **No API key. Nothing leaves your computer.**
 
@@ -24,6 +24,9 @@ npx @taewooopark/agent-blackbox up --host claude-code
 # …or record Codex (CLI and desktop app, no recorder install)
 npx @taewooopark/agent-blackbox up --host codex
 
+# …or record Motifcode in the current project (no recorder install)
+npx @taewooopark/agent-blackbox up --host motifcode
+
 # …or record OpenCode (installs the recorder into OpenCode's global plugin dir)
 npx @taewooopark/agent-blackbox up
 
@@ -39,7 +42,7 @@ codex              # Codex CLI (desktop-app tasks are captured too)
 opencode          # …or OpenCode (terminal or the desktop app)
 ```
 
-Stop recording any time with `npx @taewooopark/agent-blackbox uninstall`.
+Press Ctrl+C to stop the daemon and session tailers. Use `npx @taewooopark/agent-blackbox uninstall` to remove the global OpenCode recorder and optional hooks.
 
 ## Why
 
@@ -68,11 +71,17 @@ You can't just **ask** an agent what a task cost. A 2026 study of eight frontier
 - **Claude Code** — **no install at all.** The daemon tails the JSONL transcripts the CLI already writes, so any folder, any session is recorded the moment you run `claude`. Add `--optimize` to also install the opt-in in-run actuator hooks.
 - **Codex** — also **no recorder install.** The daemon tails `$CODEX_HOME/sessions` (default `~/.codex/sessions`) for CLI and desktop-app tasks. Add `--optimize` for the opt-in actuator, then review/trust it once with `/hooks`.
 - **OpenCode** — records via a recorder dropped into OpenCode's **global** plugin directory (`~/.config/opencode/plugins/`), so any session is captured, the desktop app included. Scope to one project with `up --project <dir>`.
+- **Motifcode** — `--host motifcode` tails Motifcode 0.4.1 v2 session journals in `<cwd>/.motif/sessions/`, without a plugin or model/API calls. `--host all` includes that same directory; it does not discover other projects automatically. Use `--project /path/to/project` or `--motifcode-sessions-dir /path/to/.motif/sessions` to select another source. Startup works while the model is disconnected or the directory is absent, and new sessions are picked up when writing resumes. Interactive v2 journals are supported; `motif --print` does not write a journal. Validated against source-compatible fixtures; a live model run remains unverified.
+
+`--project` also stores the trace in `<project>/.agent-blackbox/events.ndjson` and scopes the OpenCode plugin when selected. The other transcript hosts keep their global source directories.
 
 ## Common flags
 
 ```bash
-up --host claude-code|codex|opencode|gjc|all  # which agent(s) to record (default: opencode)
+up --host claude-code|codex|opencode|gjc|motifcode|all  # which agent(s) to record (default: opencode)
+up --host motifcode --project /path/to/project  # select the Motifcode workspace
+up --host all --motifcode-sessions-dir /path/to/.motif/sessions  # override its source
+up --backfill-days 7                 # also import sessions written in the last week
 up --suggest free                    # tailored fixes from a rotating pool of free models
 up --port 48000 --ui-port 4000       # custom daemon / dashboard ports
 up --no-open                         # don't auto-open the browser

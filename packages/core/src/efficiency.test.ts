@@ -84,6 +84,18 @@ describe("context efficiency report", () => {
     expect(m.evidenceEventIds).toHaveLength(0);
   });
 
+  it("counts explicitly failed retries when their exact exit codes were not recorded", () => {
+    const report = computeEfficiencyReport([
+      ev(1, "bash", { command: "npm test", success: false, outputChars: 4000 }),
+      ev(2, "bash", { command: "npm test", success: false, outputChars: 4000 }),
+      ev(3, "bash", { command: "npm test", success: true, outputChars: 400 })
+    ]);
+    const m = metric(report, "retry-waste");
+    expect(m.value).toBe(2);
+    expect(m.reclaimableTokens).toBe(2000);
+    expect(m.evidenceEventIds).toHaveLength(2);
+  });
+
   it("counts edit/created tokens as input when estimating (no real token telemetry)", () => {
     // Estimated mode: peak input == total input pulled in. An edited file occupies the
     // context just like a read, so its tokens must be included (previously omitted).

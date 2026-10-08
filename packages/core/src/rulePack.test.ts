@@ -112,4 +112,17 @@ describe("evaluateRulePack", () => {
   it("produces no findings for an empty pack", () => {
     expect(evaluateRulePack([ev(1, "file_read", { path: "x", chars: 1 })], { rules: [] })).toEqual([]);
   });
+
+  it("requires observed success and invalidates an earlier pass when the latest check failed", () => {
+    const pack = parseRulePack({ rules: [{ id: "test-first", type: "require-before-commit", pattern: "npm test" }] });
+    const commit = ev(3, "git_commit", { command: "git commit", success: true });
+    for (const payload of [{ success: false }, {}]) {
+      expect(evaluateRulePack([ev(1, "bash", { command: "npm test", ...payload }), commit], pack)).toHaveLength(1);
+    }
+    const passed = ev(1, "bash", { command: "npm test", success: true });
+    expect(evaluateRulePack([passed, commit], pack)).toHaveLength(0);
+    expect(evaluateRulePack([
+      passed, ev(2, "bash", { command: "npm test", success: false }), commit
+    ], pack)).toHaveLength(1);
+  });
 });

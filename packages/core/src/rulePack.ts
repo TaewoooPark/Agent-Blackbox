@@ -1,4 +1,4 @@
-import type { TraceEvent } from "./events.js";
+import { eventSucceeded, type TraceEvent } from "./events.js";
 
 // Pluggable rule packs — let a project encode its own "diverse cases" on top of the
 // built-in 8 metrics, declaratively (no arbitrary code, so a pack is safe to load
@@ -130,8 +130,7 @@ export function evaluateRulePack(events: TraceEvent[], pack: RulePack): RuleFind
       let satisfiedSince = false;
       for (const e of ordered) {
         if (e.kind === "bash" && str(e, "command") && re.test(capInput(str(e, "command")!))) {
-          const code = e.payload.exitCode;
-          if (typeof code !== "number" || code === 0) satisfiedSince = true;
+          satisfiedSince = eventSucceeded(e) === true;
         }
         if (e.kind === "git_commit") {
           if (!satisfiedSince) offenders.push("commit");

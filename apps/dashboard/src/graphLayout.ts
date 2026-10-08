@@ -1,5 +1,5 @@
 import type { TraceEvent, WorkflowGraph, WorkflowNode } from "@agent-blackbox/core";
-import { promptTextForEvent } from "@agent-blackbox/core";
+import { eventSucceeded, promptTextForEvent } from "@agent-blackbox/core";
 
 export type PositionedNode = WorkflowNode & {
   x: number;
@@ -645,7 +645,7 @@ function trunkStepForEvent(event: TraceEvent): WorkflowStep | undefined {
       stringPayload(event, "command"),
       stringPayload(event, "description")
     );
-    const outcome = describeCommandOutcome(numberPayload(event, "exitCode"));
+    const outcome = describeCommandOutcome(eventSucceeded(event));
     return makeStep(event, {
       kind: outcome.tone === "risk" ? "risk" : "verification",
       title: outcome.titleFor(purpose.shortName),
@@ -1073,7 +1073,7 @@ function visibleTextForEvent(event: TraceEvent): string | undefined {
       stringPayload(event, "command"),
       stringPayload(event, "description")
     );
-    const outcome = describeCommandOutcome(numberPayload(event, "exitCode"));
+    const outcome = describeCommandOutcome(eventSucceeded(event));
     return outcome.titleFor(purpose.shortName);
   }
   const statement = stringPayload(event, "statement");
@@ -1168,13 +1168,13 @@ function describeCommandPurpose(command: string | undefined, description: string
   };
 }
 
-function describeCommandOutcome(exitCode: number | undefined): {
+function describeCommandOutcome(success: boolean | undefined): {
   branchLabel: string;
   sentence: string;
   tone: TimelineTone;
   titleFor: (purpose: string) => string;
 } {
-  if (exitCode === undefined) {
+  if (success === undefined) {
     return {
       branchLabel: "Observed",
       sentence: "The result was recorded for the workflow.",
@@ -1182,7 +1182,7 @@ function describeCommandOutcome(exitCode: number | undefined): {
       titleFor: (purpose) => `Ran ${purpose}`
     };
   }
-  if (exitCode === 0) {
+  if (success) {
     return {
       branchLabel: "Passed",
       sentence: "It completed successfully.",
@@ -1236,11 +1236,11 @@ function toneForEvent(event: TraceEvent): TimelineTone {
     event.kind === "session_error" ||
     event.kind === "blocker_detected" ||
     event.kind === "permission_asked" ||
-    (event.kind === "bash" && numberPayload(event, "exitCode") !== undefined && numberPayload(event, "exitCode") !== 0)
+    eventSucceeded(event) === false
   ) {
     return "risk";
   }
-  if (event.kind === "bash" && numberPayload(event, "exitCode") === 0) {
+  if (event.kind === "bash" && eventSucceeded(event) === true) {
     return "success";
   }
   if (
@@ -1295,6 +1295,8 @@ export function hostDisplayName(host: TraceEvent["host"] | undefined): string {
       return "OpenCode";
     case "codex":
       return "Codex";
+    case "motifcode":
+      return "Motifcode";
     case "pi":
       return "PI";
     case "hermes":

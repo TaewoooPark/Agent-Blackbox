@@ -7,6 +7,23 @@ import {
   replayWorkflowGraphAtTime
 } from "./graph.js";
 
+it("keeps a failed Motifcode child and its turn failed without ending the parent", () => {
+  const sequencer = createEventSequencer({ host: "motifcode", runId: "motif-run", sessionId: "motif-run" });
+  const child = { agentId: "review-1", agentRole: "subagent" as const, turnId: "review-turn-1" };
+  const graph = materializeWorkflowGraph([
+    sequencer.next({ kind: "session_created" }),
+    sequencer.next({ ...child, kind: "agent_start" }),
+    sequencer.next({ ...child, kind: "turn_start" }),
+    sequencer.next({ ...child, kind: "bash", payload: { command: "npm test", success: false } }),
+    sequencer.next({ ...child, kind: "turn_end", payload: { success: false, reason: "transport_error" } }),
+    sequencer.next({ ...child, kind: "agent_end", payload: { success: false, reason: "transport_error" } })
+  ]);
+  expect(graph.nodes.find((node) => node.type === "SESSION")?.status).toBe("ACTIVE");
+  expect(graph.nodes.find((node) => node.type === "AGENT")?.status).toBe("FAILED");
+  expect(graph.nodes.find((node) => node.type === "TURN")?.status).toBe("FAILED");
+  expect(graph.nodes.find((node) => node.type === "COMMAND")?.status).toBe("FAILED");
+});
+
 function fixtureEvents() {
   const sequencer = createEventSequencer({
     host: "opencode",

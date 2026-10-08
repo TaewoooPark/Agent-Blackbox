@@ -26,7 +26,7 @@
 
 Agent-Blackbox 是一个**面向编码智能体、本地优先（local-first）的飞行记录仪与上下文效率分析器**。它把每一次智能体运行重建为一张**实时、可回放的操作图** —— 读了什么、改了什么、跑了什么、做了什么决定、委派了什么、卡在哪里、验证了什么 —— 全部来自**观测到的事件**，而不是智能体自己的总结。然后它从**两个轴**给运行打分：上下文窗口用得有多经济，*以及*任务是否真的落地；评分会套用**适合任务类型**（research / debug / ops…）和**你自己的历史运行**的尺子，并具体告诉你怎样让下一次更便宜、更快。
 
-**支持 [Claude Code](https://www.claude.com/product/claude-code)、[Codex](https://developers.openai.com/codex/) 与 [OpenCode](https://opencode.ai)** —— 同一个记录器、同一张地图、同一套效率评分。可记录其中一个，也可同时记录全部。
+**支持 [Claude Code](https://www.claude.com/product/claude-code)、[Codex](https://developers.openai.com/codex/)、[OpenCode](https://opencode.ai) 与 [Motifcode](https://github.com/TaewoooPark/Motifcode)** —— 同一个记录器、同一张地图、同一套效率评分。可记录其中一个，也可同时记录全部。
 
 > *"对话记录是智能体所*说*的，黑匣子是它所*做*的 —— 以及它的*代价*。"*
 
@@ -54,7 +54,7 @@ Agent-Blackbox 是一个**面向编码智能体、本地优先（local-first）�
 
 ## 快速开始
 
-**一条命令 —— 支持 Claude Code、Codex 与 OpenCode**（需要 Node 20+）：
+**一条命令 —— 支持 Claude Code、Codex、OpenCode 与 Motifcode**（需要 Node 20+）：
 
 ```bash
 # 记录 Claude Code —— 无需安装任何东西；守护进程会跟读它本就写出的
@@ -64,10 +64,13 @@ npx @taewooopark/agent-blackbox up --host claude-code
 # …或记录 Codex（CLI 与桌面应用；无需安装记录器）
 npx @taewooopark/agent-blackbox up --host codex
 
+# …或记录当前项目的 Motifcode 会话（无需安装记录器）
+npx @taewooopark/agent-blackbox up --host motifcode
+
 # …或记录 OpenCode（把记录器装进 OpenCode 的全局插件目录）
 npx @taewooopark/agent-blackbox up
 
-# …或同时记录两个宿主，汇入同一个仪表盘
+# …或同时记录所有支持的宿主，汇入同一个仪表盘
 npx @taewooopark/agent-blackbox up --host all
 ```
 
@@ -82,8 +85,9 @@ opencode          # …或 OpenCode（终端或桌面应用）
 - **Codex 同样无需安装记录器** —— `--host codex` 会跟读 CLI 与桌面应用的 `$CODEX_HOME/sessions`（默认 `~/.codex/sessions`）。加 `--optimize` 可安装可选执行器，并在 `/hooks` 中信任一次。
 - **OpenCode** 通过装入其**全局**插件目录（`~/.config/opencode/plugins/`）的记录器进行记录 —— 任意会话、任意文件夹，连桌面应用也算。
 - **Gajae-Code** *(实验性)* —— `--host gjc` 跟读 [Gajae-Code](https://github.com/Yeachan-Heo/gajae-code) 会话（`~/.gjc/agent/sessions/`，无需安装）；`--host all` 亦包含。
+- **Motifcode** —— `--host motifcode` 跟读 Motifcode 0.4.1 v2 会话日志（`<cwd>/.motif/sessions/`），无需插件或模型/API 调用。`--host all` 也包含该目录，不会自动查找其他项目。可通过 `--project /path/to/project` 或 `--motifcode-sessions-dir /path/to/.motif/sessions` 指定其他位置。模型未连接或目录不存在时仍可启动，恢复写入后自动采集。支持交互式 v2 日志；`motif --print` 不写日志。已用符合源码格式的测试数据验证，尚未验证真实模型运行。
 
-随时用 `npx @taewooopark/agent-blackbox uninstall` 停止记录。
+按 Ctrl+C 停止守护进程和会话采集。使用 `npx @taewooopark/agent-blackbox uninstall` 移除全局 OpenCode 记录器及可选钩子。
 
 <details>
 <summary><b>把 OpenCode 限定到单个项目，或从源码运行</b></summary>
@@ -108,7 +112,7 @@ node packages/cli/dist/cli.js up --host claude-code   # 或：up | up --host all
 npx @taewooopark/agent-blackbox up --host claude-code
 claude   # 在任意文件夹；仪表盘实时填充
 
-# 同时记录两个宿主，并由免费/本地模型给出定制修复
+# 同时记录所有支持的宿主，并由免费/本地模型给出定制修复
 npx @taewooopark/agent-blackbox up --host all --suggest ollama --suggest-model qwen2.5-coder
 
 # 多智能体 —— 在平常的会话里委派即可，每个子智能体分叉到自己的泳道
@@ -346,7 +350,8 @@ opencode "ultrawork: refactor the auth module and add tests"   # OMO 与记录�
 
 ```
  Claude Code transcripts (tailed) ─┐
- Codex rollout sessions (tailed) ──┼─▶ host adapter ─▶ daemon ─▶ dashboard
+ Codex rollout sessions (tailed) ──┤
+ Motifcode session journals ───────┼─▶ host adapter ─▶ daemon ─▶ dashboard
  OpenCode hooks → recorder plugin ─┘
                                        redact+normalize  NDJSON    live session map
                                                          + graph   + efficiency
@@ -355,6 +360,7 @@ opencode "ultrawork: refactor the auth module and add tests"   # OMO 与记录�
 - **`packages/core`** —— 规范 `TraceEvent`、工作流图模型、脱敏、回放、审计、交接生成、上下文效率引擎。
 - **`packages/claude-code-adapter`** —— 跟读 Claude Code 写出的 JSONL 会话记录（`~/.claude/projects/`），并将其规范化为规范、脱敏的事件 —— 无需插件、无需安装。可选的钩子可加入运行内执行器。
 - **`packages/codex-adapter`** —— 跟读 Codex CLI/桌面应用的 rollout 会话（`$CODEX_HOME/sessions`），规范化 token、补丁、搜索、MCP、压缩与子智能体信号；可选可信钩子提供安全去重读取与 working-set 上下文。
+- **`packages/motifcode-adapter`** —— 跟读项目内的 Motifcode v2 JSONL 日志（`.motif/sessions/`），无需连接模型即可规范化消息、工具调用/结果、子智能体与已记录的用量。
 - **`packages/opencode-adapter`** —— 把宿主事件与工具调用转为规范、脱敏事件（只含内容*尺寸*而非内容）并尽力（带重试）发给守护进程的轻量 OpenCode 插件。
 - **`apps/daemon`** —— 把事件落入本地 NDJSON 日志、构建图、回放到任意点、计算效率报告、路由建议、通过 WebSocket 推送实时快照。
 - **`apps/dashboard`** —— 运维控制台：实时会话图、回放、检查器、效率副驾、交接。
@@ -401,6 +407,7 @@ packages/
   storage/            NDJSON 持久化
   claude-code-adapter/ Claude Code transcript tailer + 运行内 actuator hooks
   codex-adapter/      Codex CLI/app rollout tailer + 运行内 actuator hooks
+  motifcode-adapter/    Motifcode project-local session journal tailer
   opencode-adapter/   OpenCode plugin / SDK bridge
 ```
 
@@ -420,7 +427,7 @@ npm run build
 
 ## 路线图
 
-- 在同一规范内核上支持更多 host adapters（PI 与其他 harness）—— **Claude Code、Codex 和 OpenCode** 今天已经可用。
+- 在同一规范内核上支持更多 host adapters（PI 与其他 harness）—— **Claude Code、Codex、OpenCode 和 Motifcode** 今天已经可用。
 - **最近已发布：**第二个 **outcome** 轴、**task-archetype** scoring、**每项目 baselines**（"对比你平时的运行"）、**累积式** optimize memory 与 **custom rule packs** —— 见 **[docs/analysis.md](docs/analysis.md)**。
 - 跨多次运行的 **fleet-wide** 效率趋势图（每次运行的 baseline 数据已经落在本地；longitudinal view 是下一步）。
 - 更深的审计：更丰富的 claim-vs-evidence 验证与 risky-command 暴露。

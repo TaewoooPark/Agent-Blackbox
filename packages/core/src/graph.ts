@@ -1,4 +1,5 @@
 import type { TraceEvent } from "./events.js";
+import { eventSucceeded } from "./events.js";
 import type { JsonObject } from "./json.js";
 
 export const workflowNodeTypes = [
@@ -190,7 +191,7 @@ function applyTraceEvent(graph: MutableGraph, event: TraceEvent): void {
       break;
     case "agent_end":
       if (event.agentId) {
-        updateNodeStatus(graph, agentNodeId(event.agentId), "SUCCEEDED", event);
+        updateNodeStatus(graph, agentNodeId(event.agentId), resultStatus(event), event);
       }
       break;
     case "turn_start":
@@ -200,7 +201,7 @@ function applyTraceEvent(graph: MutableGraph, event: TraceEvent): void {
       break;
     case "turn_end":
       if (event.turnId) {
-        updateNodeStatus(graph, turnNodeId(event.turnId), "SUCCEEDED", event);
+        updateNodeStatus(graph, turnNodeId(event.turnId), resultStatus(event), event);
       }
       break;
     case "message":
@@ -534,11 +535,7 @@ function sortEvents(events: TraceEvent[]): TraceEvent[] {
 }
 
 function resultStatus(event: TraceEvent): WorkflowStatus {
-  const exitCode = numberPayload(event, "exitCode");
-  if (exitCode !== undefined) {
-    return exitCode === 0 ? "SUCCEEDED" : "FAILED";
-  }
-  if (event.payload.error === true || typeof event.payload.error === "string") {
+  if (eventSucceeded(event) === false || event.payload.error === true || typeof event.payload.error === "string") {
     return "FAILED";
   }
   return "SUCCEEDED";

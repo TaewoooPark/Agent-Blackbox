@@ -1,4 +1,4 @@
-import type { TraceEvent } from "./events.js";
+import { eventSucceeded, type TraceEvent } from "./events.js";
 import { firstUserPrompt } from "./prompt.js";
 import type { WorkflowGraph, WorkflowNode } from "./graph.js";
 
@@ -40,7 +40,7 @@ const claimRules: ClaimRule[] = [
   {
     name: "committed",
     pattern: /\b(?:committed|created a commit|made a commit)\b/i,
-    verifier: (events) => events.filter((event) => event.kind === "git_commit").map((event) => event.id),
+    verifier: (events) => events.filter((event) => event.kind === "git_commit" && eventSucceeded(event) !== false).map((event) => event.id),
     severity: "risk"
   }
 ];
@@ -175,4 +175,3 @@ function shorten(value: string): string {
   const normalized = value.replace(/\s+/g, " ").trim();
   return normalized.length > 120 ? `${normalized.slice(0, 117)}...` : normalized;
 }
-

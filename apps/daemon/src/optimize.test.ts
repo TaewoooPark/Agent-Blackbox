@@ -263,6 +263,21 @@ describe("optimize (AGENTS.md efficiency memory)", () => {
 // optimize preview offered all four as "verified commands worth reusing". Each one
 // is a one-off: pinning it would add noise to the context of every future run.
 describe("verified commands (what earns a place in the memory block)", () => {
+  it("pins boolean-only successful commands and excludes failed or unknown results", async () => {
+    const ts = "2026-06-01T00:00:00.000Z";
+    await seed([
+      ...wasteful("run-a", ts),
+      ev(10, "run-a", ts, "bash", { command: "npm test", success: true, outputChars: 100 }),
+      ev(11, "run-a", ts, "bash", { command: "npm run build", success: false, outputChars: 100 }),
+      ev(12, "run-a", ts, "bash", { command: "npm run lint", outputChars: 100 })
+    ]);
+    await runOptimize({ projectDir: dir, mode: "apply" });
+    const block = await readFile(join(dir, "AGENTS.md"), "utf8");
+    expect(block).toContain("npm test");
+    expect(block).not.toContain("npm run build");
+    expect(block).not.toContain("npm run lint");
+  });
+
   const REAL_ONE_OFFS = [
     'uv --version 2>&1; echo "---"; gh auth status 2>&1 | head -8',
     "mkdir -p ~/demo && cd ~/demo && git init -b main && git clone --depth 1 ~/src vendor",
