@@ -31,6 +31,7 @@ import {
   createWorkflowSteps,
   filterWorkflowStepsBySeq,
   hostDisplayName,
+  latestTokenUsage,
   summarizeAgentActivity,
   type AgentTreeConnection,
   type AgentTreeItem,
@@ -258,9 +259,15 @@ export function DashboardApp() {
     if (selectedRunId && runs.some((run) => run.runId === selectedRunId)) return selectedRunId;
     return latestRun;
   }, [selectedRunId, runs, latestRun]);
-  const visibleEvents = useMemo(
+  const runEvents = useMemo(
     () => filterEventsForRun(snapshot?.events ?? [], activeRunId),
     [snapshot, activeRunId]
+  );
+  // Keep the full run for replay navigation, but derive every displayed graph,
+  // score, token count and handoff from only the selected moment's evidence.
+  const visibleEvents = useMemo(
+    () => filterEventsForRun(runEvents, activeRunId, selectedSeq),
+    [runEvents, activeRunId, selectedSeq]
   );
   const runOptions = useMemo(
     () =>
@@ -286,7 +293,7 @@ export function DashboardApp() {
     ) {
       return snapshot.graph;
     }
-    return visibleEvents.length > 0 ? materializeWorkflowGraph(visibleEvents) : snapshot?.graph ?? null;
+    return snapshot ? materializeWorkflowGraph(visibleEvents) : null;
   }, [snapshot, visibleEvents, activeRunId, selectedSeq]);
   const agentNodes = graph?.nodes.filter(isRuntimeAgentNode) ?? [];
   const selectedAgent = agentNodes.find((agent) => agent.id === selectedAgentId) ?? null;
@@ -389,10 +396,10 @@ export function DashboardApp() {
   const runStatus = useMemo(() => deriveRunStatus(visibleEvents), [visibleEvents]);
   const riskMomentCount = useMemo(() => workflowSteps.filter((step) => step.tone === "risk").length, [workflowSteps]);
   const handoffMarkdown = useMemo(
-    () => (graph ? generateHandoffMarkdown(graph, promiseChecks) : ""),
-    [graph, promiseChecks]
+    () => (graph ? generateHandoffMarkdown(graph, promiseChecks, visibleEvents) : ""),
+    [graph, promiseChecks, visibleEvents]
   );
-  const orderedEvents = useMemo(() => [...visibleEvents].sort((a, b) => a.seq - b.seq), [visibleEvents]);
+  const orderedEvents = useMemo(() => [...runEvents].sort((a, b) => a.seq - b.seq), [runEvents]);
   const marks = useMemo(() => createTimelineMarks(orderedEvents), [orderedEvents]);
   const maxSeq = orderedEvents.at(-1)?.seq ?? 0;
   const replaySeq = selectedSeq ?? maxSeq;
@@ -1746,7 +1753,7 @@ function TreeItemCard({
     const selected = !selectedFilePath && item.branch.eventId === selectedEventId;
     return (
       <button
-        aria-label={`${item.branch.title}. ${item.branch.label}.`}
+        aria-label={`${item.branch.title}. ${item.branch.agentName ?? item.branch.label}.`}
         className={`treeNode agentStartCard tone-${item.branch.tone} ${selected ? "selected" : ""} ${
           manuallySelected ? "manualSelected" : ""
         } ${agentFocused ? "agentFocused" : ""} ${fileFocused ? "fileFocused" : ""}`}
@@ -1759,7 +1766,7 @@ function TreeItemCard({
         <span className="agentStemDot" />
         <span className="agentStartText">
           <span>{item.branch.detail ?? "agent"}</span>
-          <strong>{shortTitle(item.branch.label)}</strong>
+          <strong>{shortTitle(item.branch.agentName ?? item.branch.label)}</strong>
         </span>
       </button>
     );
@@ -2755,7 +2762,7 @@ function ContextPanel({
         onClick={() => setTokensOpen((open) => !open)}
         aria-expanded={tokensOpen}
       >
-        <span>tokens</span>
+        <span>latest tokens</span>
         <span className="contextTokensTotal">{formatTokenNumber(usage.total)} {tokensOpen ? "▾" : "▸"}</span>
       </button>
       {tokensOpen ? (
@@ -2913,17 +2920,6 @@ function OptimizeModal({ onClose, runId }: { onClose: () => void; runId: string 
   );
 }
 
-function latestTokenUsage(events: TraceEvent[]): TokenUsage {
-  let usage = emptyTokenUsage();
-  for (const event of events) {
-    const next = tokenUsageFromEvent(event);
-    if (next) {
-      usage = next;
-    }
-  }
-  return usage;
-}
-
 function deriveRunStatus(events: TraceEvent[]): "active" | "idle" | "error" {
   if (events.length === 0) return "idle";
   let latest = events[0]!;
@@ -2941,39 +2937,6 @@ function deriveRunStatus(events: TraceEvent[]): "active" | "idle" | "error" {
 
 function isRuntimeAgentNode(node: WorkflowNode): boolean {
   return node.type === "AGENT" && typeof node.data.agentId === "string";
-}
-
-function tokenUsageFromEvent(event: TraceEvent): TokenUsage | undefined {
-  const hasTokens =
-    eventPayloadPath(event, "properties.info.tokens") !== undefined ||
-    eventPayloadPath(event, "properties.tokens") !== undefined ||
-    eventPayloadPath(event, "tokens") !== undefined;
-  if (!hasTokens) return undefined;
-  return normalizeTokenUsage({
-    input: numberAtEventPath(event, ["properties.info.tokens.input", "properties.tokens.input", "tokens.input"]) ?? 0,
-    output: numberAtEventPath(event, ["properties.info.tokens.output", "properties.tokens.output", "tokens.output"]) ?? 0,
-    reasoning:
-      numberAtEventPath(event, ["properties.info.tokens.reasoning", "properties.tokens.reasoning", "tokens.reasoning"]) ?? 0,
-    cacheRead:
-      numberAtEventPath(event, [
-        "properties.info.tokens.cache.read",
-        "properties.tokens.cache.read",
-        "tokens.cache.read",
-        "properties.info.tokens.cacheRead",
-        "properties.tokens.cacheRead",
-        "tokens.cacheRead"
-      ]) ?? 0,
-    cacheWrite:
-      numberAtEventPath(event, [
-        "properties.info.tokens.cache.write",
-        "properties.tokens.cache.write",
-        "tokens.cache.write",
-        "properties.info.tokens.cacheWrite",
-        "properties.tokens.cacheWrite",
-        "tokens.cacheWrite"
-      ]) ?? 0,
-    total: 0
-  });
 }
 
 function sessionDisplayName(events: TraceEvent[], fallback: string | undefined): string {
@@ -3018,45 +2981,10 @@ function trimFixed(value: number, digits: number): string {
   return value.toFixed(digits).replace(/\.0$/, "");
 }
 
-function emptyTokenUsage(): TokenUsage {
-  return {
-    input: 0,
-    output: 0,
-    reasoning: 0,
-    cacheRead: 0,
-    cacheWrite: 0,
-    total: 0
-  };
-}
-
-function normalizeTokenUsage(usage: Omit<TokenUsage, "total"> & { total: number }): TokenUsage {
-  const input = Math.max(0, Math.round(usage.input));
-  const output = Math.max(0, Math.round(usage.output));
-  const reasoning = Math.max(0, Math.round(usage.reasoning));
-  const cacheRead = Math.max(0, Math.round(usage.cacheRead));
-  const cacheWrite = Math.max(0, Math.round(usage.cacheWrite));
-  return {
-    input,
-    output,
-    reasoning,
-    cacheRead,
-    cacheWrite,
-    total: input + output + reasoning + cacheRead + cacheWrite
-  };
-}
-
 function stringAtEventPath(event: TraceEvent, paths: string[]): string | undefined {
   for (const path of paths) {
     const value = eventPayloadPath(event, path);
     if (typeof value === "string" && value.trim().length > 0) return value;
-  }
-  return undefined;
-}
-
-function numberAtEventPath(event: TraceEvent, paths: string[]): number | undefined {
-  for (const path of paths) {
-    const value = eventPayloadPath(event, path);
-    if (typeof value === "number" && Number.isFinite(value)) return value;
   }
   return undefined;
 }

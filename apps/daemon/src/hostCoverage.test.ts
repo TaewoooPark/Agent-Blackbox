@@ -12,6 +12,7 @@ import {
   type TraceEventInput
 } from "@agent-blackbox/core";
 import { createGjcNormalizer } from "@agent-blackbox/gjc-adapter";
+import { createMotifcodeNormalizer } from "@agent-blackbox/motifcode-adapter";
 import { createOpenCodeRecorder } from "@agent-blackbox/opencode-adapter";
 import { describe, expect, it } from "vitest";
 
@@ -162,6 +163,38 @@ function gjcSession(): TraceEvent[] {
   ]);
 }
 
+// Motifcode 0.4.1 journal v2: scopes share one file, usage is reported separately
+// from assistant content, and cachedTokens is included in promptTokens.
+function motifcodeSession(): TraceEvent[] {
+  const n = createMotifcodeNormalizer({ defaultSessionId: "motif-cov" });
+  let seq = 0;
+  const record = (record: Record<string, unknown>, child = false) => n.consume({
+    v: 2, seq: ++seq, at: TS, runId: "motif-cov",
+    scopeId: child ? "review-1" : "root", scopeKind: child ? "subagent" : "root",
+    ...(child ? { parentScopeId: "root", agentName: "review" } : {}), record
+  });
+  const event = (event: Record<string, unknown>) => record({ t: "event", event });
+  const tool = (id: string, name: string, args: Record<string, unknown>, output: string, ok = true) => [
+    ...event({ type: "tool_start", call: { id, name, arguments: args, repaired: false, validated: true } }),
+    ...event({ type: "tool_end", id, ok, output, ms: 5 })
+  ];
+  return materialize([
+    ...n.consume({ t: "header", header: {
+      schemaVersion: 2, runId: "motif-cov", startedAt: TS,
+      repository: { cwd: "/proj" }, model: { id: "motif/motif-3" }, harness: { version: "0.4.1" }
+    } }),
+    ...record({ t: "scope_start", task: "Add a modulo operation", initialMessages: [{ role: "user", content: "Add a modulo operation" }] }),
+    ...event({ type: "session_start", model: "motif/motif-3", channel: "toolcall", tools: ["read", "write", "bash"] }),
+    ...event({ type: "usage", contextTokens: 32_000, kvBytes: 100,
+      promptTokens: CACHE_READ + CACHE_WRITE + FRESH, completionTokens: 40, cachedTokens: CACHE_READ, requestMs: 250 }),
+    ...tool("r1", "read", { path: "src/calc.ts" }, "x".repeat(4000)),
+    ...tool("e1", "write", { path: "src/calc.ts", content: "y".repeat(200) }, "replaced src/calc.ts (1 lines, 200 bytes)"),
+    ...tool("b1", "bash", { command: "npm test" }, "2 passed"),
+    ...tool("b2", "bash", { command: "npm run lint" }, "1 problem", false),
+    ...record({ t: "scope_start", task: "Review the patch", initialMessages: [{ role: "user", content: "Review the patch" }] }, true)
+  ]);
+}
+
 async function openCodeSession(): Promise<TraceEvent[]> {
   const events: TraceEvent[] = [];
   const recorder = await createOpenCodeRecorder(
@@ -213,7 +246,7 @@ function capabilities(events: TraceEvent[]): Record<Capability, boolean> {
     reusableCommand: commands.some((command) => isReusableCommand(command)),
     fileReadSizes: events.some((e) => e.kind === "file_read" && Number((e.payload as Record<string, unknown>).chars) > 0),
     fileEdits: events.some((e) => e.kind === "file_edit" || e.kind === "file_created"),
-    subagents: events.some((e) => e.kind === "subagent_spawned")
+    subagents: events.some((e) => e.kind === "subagent_spawned" || (e.kind === "agent_start" && e.agentRole === "subagent"))
   };
 }
 
@@ -233,6 +266,7 @@ describe("host coverage — what each adapter actually delivers to core", () => 
       "claude-code": capabilities(claudeCodeSession()),
       codex: capabilities(codexSession()),
       gjc: capabilities(gjcSession()),
+      motifcode: capabilities(motifcodeSession()),
       opencode: capabilities(await openCodeSession())
     };
 
@@ -269,6 +303,16 @@ describe("host coverage — what each adapter actually delivers to core", () => 
         fileEdits: true,
         subagents: false
       },
+      motifcode: {
+        objective: true,
+        tokenTelemetry: true,
+        cacheRatioTrue: true,
+        commandOutcome: true,
+        reusableCommand: true,
+        fileReadSizes: true,
+        fileEdits: true,
+        subagents: true
+      },
       opencode: {
         objective: true,
         tokenTelemetry: true,
@@ -290,6 +334,7 @@ describe("host coverage — what each adapter actually delivers to core", () => 
       "claude-code": claudeCodeSession(),
       codex: codexSession(),
       gjc: gjcSession(),
+      motifcode: motifcodeSession(),
       opencode: await openCodeSession()
     };
     for (const [host, events] of Object.entries(sessions)) {
@@ -316,7 +361,7 @@ describe("host coverage — what each adapter actually delivers to core", () => 
       "file_deleted",
       "handoff_generated"
     ];
-    const sessions = [claudeCodeSession(), codexSession(), gjcSession(), await openCodeSession()];
+    const sessions = [claudeCodeSession(), codexSession(), gjcSession(), await openCodeSession(), motifcodeSession()];
     const emitted = new Set(sessions.flat().map((event) => event.kind));
     for (const kind of unemitted) expect(emitted.has(kind), `${kind} is now emitted`).toBe(false);
 
@@ -324,7 +369,8 @@ describe("host coverage — what each adapter actually delivers to core", () => 
       "claude-code": sessions[0]!,
       codex: sessions[1]!,
       gjc: sessions[2]!,
-      opencode: sessions[3]!
+      opencode: sessions[3]!,
+      motifcode: sessions[4]!
     })) {
       const markdown = generateHandoffMarkdown(materializeWorkflowGraph(events), evaluatePromiseChecks(events), events);
       expect(markdown, host).not.toContain("None recorded");

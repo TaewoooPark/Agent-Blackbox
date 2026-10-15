@@ -1,4 +1,5 @@
-import type { TraceEvent } from "./events.js";
+import { eventSucceeded, type TraceEvent } from "./events.js";
+import { orderEventsForAnalysis } from "./analysisOrder.js";
 import { ARCHETYPE_PROFILES, classifyRun, type TaskArchetype } from "./taskProfile.js";
 
 // Context Efficiency — derive how economically a run used its context window from
@@ -131,6 +132,7 @@ type TokenSnapshot = {
 //   claude-code: input_tokens + cache_read + cache_creation      → whole prompt
 //   codex:       usage.input_tokens, cached_input_tokens ⊂ it    → whole prompt
 //   gjc:         input_tokens + cache_read + cache_creation      → whole prompt
+//   motifcode:   server promptTokens, cachedTokens ⊂ it          → whole prompt
 //   opencode:    AI-SDK inputTokens, cache read reported apart   → uncached only
 // Each entry is asserted against the adapter that produces it in the host coverage
 // table (apps/daemon/src/hostCoverage.test.ts) — guessing here is how this broke.
@@ -138,6 +140,7 @@ const INPUT_IS_WHOLE_PROMPT: Partial<Record<TraceEvent["host"], boolean>> = {
   "claude-code": true,
   codex: true,
   gjc: true,
+  motifcode: true,
   opencode: false
 };
 
@@ -161,6 +164,7 @@ export type EfficiencyOptions = {
 };
 
 export function computeEfficiencyReport(events: TraceEvent[], options: EfficiencyOptions = {}): EfficiencyReport {
+  events = orderEventsForAnalysis(events);
   // --- token snapshots -------------------------------------------------------
   let finalSnapshot: TokenSnapshot | undefined;
   let peakInput = 0;
@@ -177,7 +181,7 @@ export function computeEfficiencyReport(events: TraceEvent[], options: Efficienc
   const reads: { path: string; tokens: number; id: string }[] = [];
   const edits: { path: string; tokens: number; id: string }[] = [];
   const injections: { label: string; tokens: number; id: string }[] = [];
-  const bashRuns: { command: string; exitCode: number | undefined; tokens: number; id: string }[] = [];
+  const bashRuns: { command: string; success: boolean | undefined; tokens: number; id: string }[] = [];
 
   for (const event of events) {
     if (event.kind === "file_read") {
@@ -189,7 +193,7 @@ export function computeEfficiencyReport(events: TraceEvent[], options: Efficienc
     } else if (event.kind === "bash") {
       const chars = numberAt(event, "outputChars") ?? 0;
       const tokens = estimateTokens(chars);
-      bashRuns.push({ command: stringAt(event, "command") ?? "", exitCode: numberAt(event, "exitCode"), tokens, id: event.id });
+      bashRuns.push({ command: stringAt(event, "command") ?? "", success: eventSucceeded(event), tokens, id: event.id });
       if (tokens > 0) injections.push({ label: stringAt(event, "command") ?? "command", tokens, id: event.id });
     } else if (event.kind === "tool_result") {
       const chars = numberAt(event, "outputChars");
@@ -203,7 +207,7 @@ export function computeEfficiencyReport(events: TraceEvent[], options: Efficienc
   const totalReadTokens = reads.reduce((sum, r) => sum + r.tokens, 0);
   const totalEditTokens = edits.reduce((sum, e) => sum + e.tokens, 0);
   const editedPaths = new Set(edits.map((e) => e.path));
-  const okCommands = bashRuns.filter((b) => b.exitCode === 0).length;
+  const okCommands = bashRuns.filter((b) => b.success === true).length;
 
   // Estimated input = everything pulled into context: reads + edits/creates + tool/bash output.
   // Edits were previously omitted, understating edit-heavy runs' context use and so inflating
@@ -402,11 +406,11 @@ export function computeEfficiencyReport(events: TraceEvent[], options: Efficienc
 
   // --- 6. retry waste (identical command run more than once) ----------------
   {
-    const byCommand = new Map<string, { exitCode: number | undefined; tokens: number; id: string }[]>();
+    const byCommand = new Map<string, { success: boolean | undefined; tokens: number; id: string }[]>();
     for (const b of bashRuns) {
       if (!b.command) continue;
       const list = byCommand.get(b.command) ?? [];
-      list.push({ exitCode: b.exitCode, tokens: b.tokens, id: b.id });
+      list.push({ success: b.success, tokens: b.tokens, id: b.id });
       byCommand.set(b.command, list);
     }
     let wasted = 0;
@@ -417,10 +421,10 @@ export function computeEfficiencyReport(events: TraceEvent[], options: Efficienc
       if (list.length <= 1) continue;
       retries += list.length - 1;
       // Every failed attempt of a command that had to be repeated is wasted context.
-      // An unknown exit code (the adapter didn't capture one) is NOT a failure —
-      // `undefined !== 0` would otherwise charge every uncaptured re-run as waste.
+      // An unknown outcome is not a failure. Boolean failure evidence counts
+      // even when the host did not persist the exact process exit code.
       for (const attempt of list) {
-        if (attempt.exitCode !== undefined && attempt.exitCode !== 0) {
+        if (attempt.success === false) {
           wasted += attempt.tokens;
           evidence.push(attempt.id);
         }

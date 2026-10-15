@@ -6,6 +6,7 @@ export function describeStorage(): string {
 
 export {
   appendTraceEvent,
+  iterateTraceEvents,
   parseTraceEventLine,
   parseTraceEvents,
   readTraceEvents,

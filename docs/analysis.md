@@ -53,11 +53,17 @@ so advice can name what to fix.
 ### Token semantics differ per host
 
 Hosts disagree about what `tokens.input` means, and both readings are in the wild:
-Claude Code, Codex and Gajae-Code report the **whole prompt** (the cached part
+Claude Code, Codex, Gajae-Code and Motifcode report the **whole prompt** (the cached part
 included), while OpenCode reports only the **uncached remainder** with the cache
 counted alongside. Core canonicalises this once, keyed on the host stamped on every
 event, into `total` (the whole prompt) and `fresh` (the uncached part) — see
 `INPUT_IS_WHOLE_PROMPT` in `packages/core/src/efficiency.ts`.
+
+Motifcode's journal separates server-reported `promptTokens`, `completionTokens`
+and `cachedTokens` from its character-based `contextTokens` estimate. Only server
+counts become measured token telemetry; an estimate or textual prefix overlap does
+not become a measured cache hit. Sessions without server counts keep estimated
+scoring, including runs interrupted by a model connection failure.
 
 This matters for two metrics: `context-pressure` measures peak `total`, and
 `cache-hit` is `cacheRead / total`. Reading the raw field instead used to

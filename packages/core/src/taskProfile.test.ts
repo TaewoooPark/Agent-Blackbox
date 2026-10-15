@@ -37,6 +37,16 @@ describe("classifyRun", () => {
     expect(c.archetype).toBe("debug");
   });
 
+  it("recognizes a debug loop with boolean-only command results", () => {
+    const c = classifyRun([
+      ev(1, "file_edit", { path: "a.ts", chars: 4000 }),
+      ev(2, "bash", { command: "npm test", success: false }),
+      ev(3, "file_edit", { path: "a.ts", chars: 4000 }),
+      ev(4, "bash", { command: "npm test", success: true })
+    ]);
+    expect(c.archetype).toBe("debug");
+  });
+
   it("calls a bash-dominated run ops", () => {
     const c = classifyRun([
       ev(1, "bash", { command: "docker ps", exitCode: 0, outputChars: 500 }),

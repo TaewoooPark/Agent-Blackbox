@@ -1,6 +1,6 @@
 {
   "name": "@agent-blackbox/daemon",
-  "version": "0.51.0",
+  "version": "0.52.0",
   "description": "Agent-Blackbox local trace daemon.",
   "license": "MIT",
   "type": "module",
@@ -26,6 +26,7 @@
     "@agent-blackbox/claude-code-adapter": "file:../../packages/claude-code-adapter",
     "@agent-blackbox/codex-adapter": "file:../../packages/codex-adapter",
     "@agent-blackbox/gjc-adapter": "file:../../packages/gjc-adapter",
+    "@agent-blackbox/motifcode-adapter": "file:../../packages/motifcode-adapter",
     "@agent-blackbox/core": "file:../../packages/core",
     "@agent-blackbox/storage": "file:../../packages/storage",
     "ws": "^8.21.0"

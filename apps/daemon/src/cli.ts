@@ -2,6 +2,7 @@
 import { startClaudeCodeTailer } from "@agent-blackbox/claude-code-adapter";
 import { startCodexTailer } from "@agent-blackbox/codex-adapter";
 import { startGjcTailer } from "@agent-blackbox/gjc-adapter";
+import { startMotifcodeTailer } from "@agent-blackbox/motifcode-adapter";
 import { evaluatePromiseChecks, generateHandoffMarkdown, materializeWorkflowGraph } from "@agent-blackbox/core";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -223,41 +224,38 @@ async function unwind(started: Teardown[]): Promise<void> {
 
 async function runUp(argv: string[], started: Teardown[]): Promise<void> {
   const projectFlag = readFlag(argv, "--project");
-  // No --project → GLOBAL mode: record every OpenCode session (any folder, the
-  // terminal, or the app), the way people actually use OpenCode. --project keeps
-  // the old project-scoped behavior.
+  const projectDir = resolve(projectFlag ?? process.cwd());
+  // --project selects the trace store, OpenCode plugin location, and Motifcode
+  // workspace. Other transcript tailers keep their existing global locations.
   const global = projectFlag === undefined;
+  const host = readHost(argv);
   const port = portArg(readFlag(argv, "--port"), 47831);
   const uiPort = portArg(readFlag(argv, "--ui-port"), 5173);
   const daemonUrl = `http://127.0.0.1:${port}`;
   const suggest = readSuggestConfig(argv);
-  // Opt-in backfill: re-read sessions written in the last N days from the top
-  // so `up` isn't blind to history. 0 (default) keeps the from-now behavior.
   const backfillDays = readBackfillDays(argv);
 
-  let daemon: Awaited<ReturnType<typeof startTraceDaemon>>;
-  if (global) {
-    // Which agent host(s) to record. Daemon + dashboard are host-agnostic; only
-    // the recorder install differs. `all` co-records every host into one daemon.
-    const host = readHost(argv);
-    const dataDir = globalDataDir();
-    const eventsFile = join(dataDir, "events.ndjson");
-    // Scope what the daemon records to the chosen host (unless `all`). This is the
-    // root-cause guard for the "advice → score 100" bug: with `--host claude-code`,
-    // a leftover global OpenCode recorder (and the suggestion model's own
-    // `opencode run`) can no longer slip a trivial opencode run into the store and
-    // hijack "latest". `all` keeps recording every host.
-    daemon = await startTraceDaemon({
-      projectDir: dataDir,
-      port,
-      eventsFile,
-      suggest,
-      ...(host === "all" ? {} : { recordHosts: [host] })
-    });
-    started.push(() => daemon.close());
+  // Which agent host(s) to record. Daemon + dashboard are host-agnostic; only
+  // the recorder install differs. `all` co-records every host into one daemon.
+  const dataDir = global ? globalDataDir() : projectDir;
+  const eventsFile = global ? join(dataDir, "events.ndjson") : join(dataDir, ".agent-blackbox", "events.ndjson");
+  // Scope what the daemon records to the chosen host (unless `all`). This is the
+  // root-cause guard for the "advice → score 100" bug: with `--host claude-code`,
+  // a leftover global OpenCode recorder (and the suggestion model's own
+  // `opencode run`) can no longer slip a trivial opencode run into the store and
+  // hijack "latest". `all` keeps recording every host.
+  const daemon = await startTraceDaemon({
+    projectDir: dataDir,
+    port,
+    eventsFile,
+    suggest,
+    ...(host === "all" ? {} : { recordHosts: [host] })
+  });
+  started.push(() => daemon.close());
 
-    const recorders: string[] = [];
-    if (host === "opencode" || host === "all") {
+  const recorders: string[] = [];
+  if (host === "opencode" || host === "all") {
+    if (global) {
       if (!pluginBundlePath) {
         throw new Error(
           "The OpenCode recorder needs the self-contained bundle. Use the published npx package, or `npm run build:cli` then `node packages/cli/dist/cli.js up`.\n" +
@@ -266,72 +264,91 @@ async function runUp(argv: string[], started: Teardown[]): Promise<void> {
       }
       const { pluginPath } = await installGlobalRecorder({ daemonUrl, pluginBundlePath });
       recorders.push(`OpenCode recorder installed → ${pluginPath}`);
+    } else {
+      recorders.push(await installProjectRecorder(projectDir, daemonUrl, argv));
     }
-    if (host === "claude-code" || host === "all") {
-      // No install needed to RECORD — the daemon tails the JSONL transcripts the
-      // CLI already writes, streaming events in-process via daemon.ingest.
-      const tailer = await startClaudeCodeTailer({ write: (event) => daemon.ingest(event) }, { backfillDays });
-      started.push(tailer.stop);
-      recorders.push(`Claude Code transcripts tailed ← ${tailer.projectsDir} (no install)`);
-      // --optimize additionally installs the opt-in in-run actuator (hooks).
-      if (argv.includes("--optimize")) {
-        if (hookEntryPath) {
-          const { settingsPath } = await installClaudeCodeHooks({ hookEntryPath });
-          recorders.push(`Claude Code in-run actuator installed → ${settingsPath} (read-dedup + working-set)`);
-        } else {
-          recorders.push("Claude Code actuator needs the built hook — run `npm run build` first (recording only for now).");
-        }
+  }
+  if (host === "claude-code" || host === "all") {
+    // No install needed to RECORD — the daemon tails the JSONL transcripts the
+    // CLI already writes, streaming events in-process via daemon.ingest.
+    const tailer = await startClaudeCodeTailer({ write: (event) => daemon.ingest(event) }, { backfillDays });
+    started.push(tailer.stop);
+    recorders.push(`Claude Code transcripts tailed ← ${tailer.projectsDir} (no install)`);
+    // --optimize additionally installs the opt-in in-run actuator (hooks).
+    if (argv.includes("--optimize")) {
+      if (hookEntryPath) {
+        const { settingsPath } = await installClaudeCodeHooks({ hookEntryPath });
+        recorders.push(`Claude Code in-run actuator installed → ${settingsPath} (read-dedup + working-set)`);
+      } else {
+        recorders.push("Claude Code actuator needs the built hook — run `npm run build` first (recording only for now).");
       }
     }
-    if (host === "gjc" || host === "all") {
-      const tailer = await startGjcTailer({ write: (event) => daemon.ingest(event) }, { backfillDays });
-      started.push(tailer.stop);
-      recorders.push(`Gajae-Code sessions tailed ← ${tailer.sessionsDir} (no install)`);
-    }
-    if (host === "codex" || host === "all") {
-      const tailer = await startCodexTailer({ write: (event) => daemon.ingest(event) }, { backfillDays });
-      started.push(tailer.stop);
-      recorders.push(`Codex sessions tailed ← ${tailer.sessionsDir} (no install)`);
-      if (argv.includes("--optimize")) {
-        if (codexHookEntryPath) {
-          const { hooksPath } = await installCodexHooks({ hookEntryPath: codexHookEntryPath });
-          recorders.push(`Codex in-run actuator installed → ${hooksPath} (read-dedup + working-set)`);
-        } else {
-          recorders.push("Codex actuator needs the built hook — run `npm run build` first (recording only for now).");
-        }
+  }
+  if (host === "gjc" || host === "all") {
+    const tailer = await startGjcTailer({ write: (event) => daemon.ingest(event) }, { backfillDays });
+    started.push(tailer.stop);
+    recorders.push(`Gajae-Code sessions tailed ← ${tailer.sessionsDir} (no install)`);
+  }
+  if (host === "codex" || host === "all") {
+    const tailer = await startCodexTailer({ write: (event) => daemon.ingest(event) }, { backfillDays });
+    started.push(tailer.stop);
+    recorders.push(`Codex sessions tailed ← ${tailer.sessionsDir} (no install)`);
+    if (argv.includes("--optimize")) {
+      if (codexHookEntryPath) {
+        const { hooksPath } = await installCodexHooks({ hookEntryPath: codexHookEntryPath });
+        recorders.push(`Codex in-run actuator installed → ${hooksPath} (read-dedup + working-set)`);
+      } else {
+        recorders.push("Codex actuator needs the built hook — run `npm run build` first (recording only for now).");
       }
     }
-
-    const ui = await startDashboardServer({ distDir: dashboardDistDir, port: uiPort, daemonUrl });
-    started.push(() => ui.close());
-    const dashboardUrl = `http://127.0.0.1:${ui.port}`;
-    for (const line of recorders) console.log(`✓ ${line}`);
-    console.log(`✓ Agent-Blackbox is up (host: ${host})`);
-    console.log(`  Dashboard:  ${dashboardUrl}`);
-    console.log(`  Daemon API: ${daemonUrl}  (trace: ${daemon.eventsFile})`);
-    console.log(`  Suggestions: ${suggest.mode}${suggest.model ? ` (${suggest.model})` : ""}`);
-    console.log("");
-    if (!argv.includes("--no-open")) openInBrowser(dashboardUrl);
-    if (host === "claude-code" || host === "all") {
-      console.log("Now use Claude Code however you already do — the map fills in live as it writes transcripts.");
-    }
-    if (host === "gjc" || host === "all") {
-      console.log("Now use Gajae-Code however you already do — the map fills in live as it writes sessions.");
-    }
-    if (host === "codex" || host === "all") {
-      console.log("Now use Codex however you already do (CLI or desktop app) — the map fills in live as it writes sessions.");
-      if (argv.includes("--optimize")) console.log("For the Codex actuator, review/trust the installed commands once with /hooks.");
-    }
-    if (host === "opencode" || host === "all") {
-      console.log("Now use OpenCode however you already do (terminal or the desktop app) — the map fills in live.");
-    }
-    console.log("");
-    console.log("Stop recording any time with:  agent-blackbox uninstall");
-    console.log("Press Ctrl+C to stop the daemon + dashboard.");
-    return;
+  }
+  if (host === "motifcode" || host === "all") {
+    const sessionsDir = readFlag(argv, "--motifcode-sessions-dir");
+    const tailer = await startMotifcodeTailer({ write: (event) => daemon.ingest(event) }, {
+      backfillDays,
+      projectDir,
+      ...(sessionsDir ? { sessionsDir: resolve(sessionsDir) } : {})
+    });
+    started.push(tailer.stop);
+    recorders.push(`Motifcode sessions tailed ← ${tailer.sessionsDir} (no install)`);
   }
 
-  const projectDir = resolve(projectFlag);
+  const ui = await startDashboardServer({ distDir: dashboardDistDir, port: uiPort, daemonUrl });
+  started.push(() => ui.close());
+  const dashboardUrl = `http://127.0.0.1:${ui.port}`;
+  for (const line of recorders) console.log(`✓ ${line}`);
+  console.log(`✓ Agent-Blackbox is up (host: ${host})${global ? "" : ` for ${projectDir}`}`);
+  console.log(`  Dashboard:  ${dashboardUrl}`);
+  console.log(`  Daemon API: ${daemonUrl}  (trace: ${daemon.eventsFile})`);
+  console.log(`  Suggestions: ${suggest.mode}${suggest.model ? ` (${suggest.model})` : ""}`);
+  console.log("");
+  if (!argv.includes("--no-open")) openInBrowser(dashboardUrl);
+  if (host === "claude-code" || host === "all") {
+    console.log("Now use Claude Code however you already do — the map fills in live as it writes transcripts.");
+  }
+  if (host === "gjc" || host === "all") {
+    console.log("Now use Gajae-Code however you already do — the map fills in live as it writes sessions.");
+  }
+  if (host === "codex" || host === "all") {
+    console.log("Now use Codex however you already do (CLI or desktop app) — the map fills in live as it writes sessions.");
+    if (argv.includes("--optimize")) console.log("For the Codex actuator, review/trust the installed commands once with /hooks.");
+  }
+  if (host === "opencode" || host === "all") {
+    console.log(global
+      ? "Now use OpenCode however you already do (terminal or the desktop app) — the map fills in live."
+      : `Now run opencode in ${projectDir} — the project-local recorder streams here.`);
+  }
+  if (host === "motifcode" || host === "all") {
+    console.log("Now use Motifcode — the map fills in as it saves sessions; recording resumes when its model connection recovers.");
+  }
+  console.log("");
+  if (global && (host === "opencode" || host === "all")) {
+    console.log("Remove the global recorder any time with:  agent-blackbox uninstall");
+  }
+  console.log("Press Ctrl+C to stop the daemon + dashboard.");
+}
+
+async function installProjectRecorder(projectDir: string, daemonUrl: string, argv: string[]): Promise<string> {
   const adapterPackage = readFlag(argv, "--adapter-package") ?? `file:${resolve(repoRoot, "packages/opencode-adapter")}`;
   try {
     const result = await initOpenCodeProject({
@@ -342,33 +359,13 @@ async function runUp(argv: string[], started: Teardown[]): Promise<void> {
       optimize: argv.includes("--optimize"),
       ...(pluginBundlePath ? { pluginBundlePath } : {})
     });
-    console.log(`✓ OpenCode recorder plugin installed: ${result.pluginPath}`);
+    return `OpenCode recorder plugin installed: ${result.pluginPath}`;
   } catch (error) {
     if (error instanceof Error && error.message.includes("already exists")) {
-      console.log("✓ OpenCode recorder plugin already present");
-    } else {
-      throw error;
+      return "OpenCode recorder plugin already present";
     }
+    throw error;
   }
-
-  daemon = await startTraceDaemon({ projectDir, port, suggest });
-  started.push(() => daemon.close());
-  const ui = await startDashboardServer({ distDir: dashboardDistDir, port: uiPort, daemonUrl });
-  started.push(() => ui.close());
-
-  const dashboardUrl = `http://127.0.0.1:${ui.port}`;
-  console.log("");
-  console.log(`✓ Agent-Blackbox is up for ${projectDir}`);
-  console.log(`  Dashboard:  ${dashboardUrl}`);
-  console.log(`  Daemon API: ${daemonUrl}  (trace: ${daemon.eventsFile})`);
-  console.log(`  Suggestions: ${suggest.mode}${suggest.model ? ` (${suggest.model})` : ""}`);
-  console.log("");
-  if (!argv.includes("--no-open")) openInBrowser(dashboardUrl);
-  console.log("Now run your agent in that project, e.g.:");
-  console.log(`  opencode    # in ${projectDir} (the project-local recorder streams here)`);
-  console.log("");
-  console.log("Press Ctrl+C to stop.");
-  return;
 }
 
 function printHelp(): void {
@@ -376,8 +373,10 @@ function printHelp(): void {
   console.log("");
   console.log("Usage:");
   console.log("  agent-blackbox up                       # GLOBAL: record every OpenCode session (any folder / the app) + daemon + dashboard");
-  console.log("  agent-blackbox up --host claude-code     # record Claude Code instead — no install, tails transcripts (also: codex | opencode | gjc | all)");
-  console.log("  agent-blackbox up --project <dir>        # scope the recorder to one project instead");
+  console.log("  agent-blackbox up --host claude-code     # record Claude Code instead — no install, tails transcripts (also: codex | opencode | gjc | motifcode | all)");
+  console.log("  agent-blackbox up --project <dir>        # project trace store + OpenCode plugin / Motifcode source directory");
+  console.log("  agent-blackbox up --host motifcode      # tail <cwd>/.motif/sessions; no model connection needed to start");
+  console.log("       [--motifcode-sessions-dir <dir>]  override the Motifcode session directory (also with --host all)");
   console.log("       [--port <port>] [--ui-port <port>] [--suggest auto|free|off|ollama|opencode|openai-compat] [--suggest-model <id>] [--optimize] [--no-open]");
   console.log("       [--optimize]  with --host claude-code or codex: also install the in-run actuator (read-dedup + working-set hooks)");
   console.log("       [--backfill-days <n>]  re-read sessions written in the last <n> days from the top (default 0 = from now on)");
@@ -436,8 +435,8 @@ function portArg(raw: string | undefined, fallback: number): number {
   return Number.isInteger(n) && n >= 0 && n <= 65535 ? n : fallback;
 }
 
-function readHost(argv: string[]): "opencode" | "claude-code" | "gjc" | "codex" | "all" {
-  const allowed = ["opencode", "claude-code", "gjc", "codex", "all"] as const;
+function readHost(argv: string[]): "opencode" | "claude-code" | "gjc" | "codex" | "motifcode" | "all" {
+  const allowed = ["opencode", "claude-code", "gjc", "codex", "motifcode", "all"] as const;
   const raw = readFlag(argv, "--host") ?? process.env.AGENT_BLACKBOX_HOST ?? "opencode";
   return (allowed as readonly string[]).includes(raw) ? (raw as (typeof allowed)[number]) : "opencode";
 }

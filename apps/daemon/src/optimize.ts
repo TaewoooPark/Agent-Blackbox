@@ -4,6 +4,7 @@ import {
   computeEfficiencyReport,
   dominantCwd,
   emptyProfile,
+  eventSucceeded,
   hasManagedBlock,
   isEfficiencyProfile,
   redactJsonValue,
@@ -337,7 +338,7 @@ function verifiedCommands(events: TraceEvent[]): string[] {
   for (const e of events) {
     if (e.kind !== "bash") continue;
     const payload = e.payload as Record<string, unknown> | undefined;
-    if (!payload || payload.exitCode !== 0) continue;
+    if (!payload || eventSucceeded(e) !== true) continue;
     const command = typeof payload.command === "string" ? payload.command.trim() : "";
     if (!isReusableCommand(command)) continue;
     hits.set(command, (hits.get(command) ?? 0) + 1);

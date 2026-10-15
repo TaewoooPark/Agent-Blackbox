@@ -11,7 +11,7 @@ export const EFFICIENCY_MEMORY_END = "<!-- agent-blackbox:efficiency:end -->";
 export type EfficiencyMemoryOptions = {
   // Distinct commands observed to succeed, so the next run reuses them instead of
   // rediscovering (cuts exploration / read-amplification). The daemon extracts
-  // these from `bash` events with exitCode 0; written to the project's own
+  // these from `bash` events with observed success; written to the project's own
   // AGENTS.md (local), so full commands are fine here.
   verifiedCommands?: string[];
 };

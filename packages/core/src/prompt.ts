@@ -1,4 +1,5 @@
 import type { TraceEvent } from "./events.js";
+import { orderEventsForAnalysis } from "./analysisOrder.js";
 
 // What the user actually asked for. Every surface that needs to name a run — the run
 // picker, a node label, the handoff's objective — wants this same string, so it lives
@@ -67,7 +68,7 @@ export function promptTextForEvent(event: TraceEvent): string | undefined {
  * print an id and call it an objective.
  */
 export function firstUserPrompt(events: TraceEvent[], maxChars = 240): string | undefined {
-  for (const event of events) {
+  for (const event of orderEventsForAnalysis(events)) {
     const prompt = promptTextForEvent(event);
     if (!prompt) continue;
     return prompt.length > maxChars ? `${prompt.slice(0, maxChars - 1)}…` : prompt;

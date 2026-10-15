@@ -71,9 +71,9 @@ export function latestRunId(events: TraceEvent[]): string | null {
   return ranked[0]?.runId ?? null;
 }
 
-export function filterEventsForRun(events: TraceEvent[], runId: string | null): TraceEvent[] {
-  if (!runId) return events;
-  return events.filter((event) => event.runId === runId);
+export function filterEventsForRun(events: TraceEvent[], runId: string | null, replaySeq: number | null = null): TraceEvent[] {
+  if (!runId && replaySeq === null) return events;
+  return events.filter((event) => (!runId || event.runId === runId) && (replaySeq === null || event.seq <= replaySeq));
 }
 
 /**

@@ -39,6 +39,19 @@ describe("computeEffectiveness", () => {
     expect(r.score).toBeLessThan(85);
   });
 
+  it("uses boolean outcomes for verification and failure rate without crediting failed commits", () => {
+    const r = computeEffectiveness([
+      ev(1, "bash", { command: "npm test", success: true }),
+      ev(2, "bash", { command: "npm test", success: false }),
+      ev(3, "bash", { command: "npm test", success: false }),
+      ev(4, "git_commit", { command: "git commit", success: false })
+    ]);
+    expect(r.signals).toContainEqual({ id: "verify", label: "ended on a failing test/build", tone: "bad" });
+    expect(r.signals).toContainEqual({ id: "failrate", label: "2/3 commands failed", tone: "bad" });
+    expect(r.signals.some((signal) => signal.id === "commit")).toBe(false);
+    expect(r.status).toBe("bad");
+  });
+
   it("penalises a run whose claims the trace contradicts", () => {
     const checks: PromiseCheck[] = [
       { claim: "tests pass", status: "contradicted", severity: "risk", evidenceEventIds: [] }

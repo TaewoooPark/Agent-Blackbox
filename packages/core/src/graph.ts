@@ -1,4 +1,5 @@
 import type { TraceEvent } from "./events.js";
+import { eventSucceeded } from "./events.js";
 import type { JsonObject } from "./json.js";
 
 export const workflowNodeTypes = [
@@ -106,6 +107,7 @@ type MutableGraph = {
   nodes: Map<string, WorkflowNode>;
   edges: Map<string, WorkflowEdge>;
   appliedEventIds: string[];
+  pendingToolCalls: Map<string, string>;
 };
 
 export function materializeWorkflowGraph(events: TraceEvent[]): WorkflowGraph {
@@ -115,7 +117,8 @@ export function materializeWorkflowGraph(events: TraceEvent[]): WorkflowGraph {
     runId,
     nodes: new Map(),
     edges: new Map(),
-    appliedEventIds: []
+    appliedEventIds: [],
+    pendingToolCalls: new Map()
   };
 
   ensureNode(graph, {
@@ -169,6 +172,7 @@ function applyTraceEvent(graph: MutableGraph, event: TraceEvent): void {
   if (event.turnId) {
     ensureTurn(graph, event);
   }
+  finishToolCall(graph, event);
 
   switch (event.kind) {
     case "session_created":
@@ -190,7 +194,7 @@ function applyTraceEvent(graph: MutableGraph, event: TraceEvent): void {
       break;
     case "agent_end":
       if (event.agentId) {
-        updateNodeStatus(graph, agentNodeId(event.agentId), "SUCCEEDED", event);
+        updateNodeStatus(graph, agentNodeId(event.agentId), resultStatus(event), event);
       }
       break;
     case "turn_start":
@@ -200,7 +204,7 @@ function applyTraceEvent(graph: MutableGraph, event: TraceEvent): void {
       break;
     case "turn_end":
       if (event.turnId) {
-        updateNodeStatus(graph, turnNodeId(event.turnId), "SUCCEEDED", event);
+        updateNodeStatus(graph, turnNodeId(event.turnId), resultStatus(event), event);
       }
       break;
     case "message":
@@ -210,6 +214,10 @@ function applyTraceEvent(graph: MutableGraph, event: TraceEvent): void {
     case "tool_call":
       createEventNode(graph, event, "TOOL_CALL", event.summary ?? toolLabel(event), "ACTIVE");
       connectScope(graph, event, eventNodeId(event), "CALLS");
+      {
+        const key = toolCallKey(event);
+        if (key) graph.pendingToolCalls.set(key, eventNodeId(event));
+      }
       break;
     case "tool_result":
       createEventNode(graph, event, "TOOL_CALL", event.summary ?? "Tool result", resultStatus(event));
@@ -234,10 +242,16 @@ function applyTraceEvent(graph: MutableGraph, event: TraceEvent): void {
       connectScope(graph, event, eventNodeId(event), "UPDATES");
       break;
     case "permission_asked":
-    case "permission_replied":
       createEventNode(graph, event, "PERMISSION_GATE", event.summary ?? "Permission gate", "NEEDS_APPROVAL");
       connectScope(graph, event, eventNodeId(event), "BLOCKS");
       break;
+    case "permission_replied": {
+      const decision = stringPayloadPath(event, ["decision", "properties.decision"]);
+      const status = decision === "deny" ? "BLOCKED" : decision === "allow" ? "SUCCEEDED" : "UNKNOWN";
+      createEventNode(graph, event, "PERMISSION_GATE", event.summary ?? "Permission response", status);
+      connectScope(graph, event, eventNodeId(event), decision === "allow" ? "UNBLOCKS" : decision === "deny" ? "BLOCKS" : "CONTAINS");
+      break;
+    }
     case "decision_extracted":
       createDecision(graph, event);
       break;
@@ -263,6 +277,29 @@ function applyTraceEvent(graph: MutableGraph, event: TraceEvent): void {
       createEventNode(graph, event, "ARTIFACT", event.summary ?? event.kind, "UNKNOWN");
       connectScope(graph, event, eventNodeId(event), "CONTAINS");
   }
+}
+
+const completedToolKinds = new Set<TraceEvent["kind"]>([
+  "tool_result", "file_read", "file_edit", "file_created", "file_deleted",
+  "bash", "search", "command_run", "git_status", "git_commit", "git_push"
+]);
+
+function toolCallKey(event: TraceEvent): string | undefined {
+  const callID = stringPayloadPath(event, ["callID", "input.callID"]);
+  if (!callID) return undefined;
+  // Motifcode children share a session and may reuse the parent's call IDs.
+  // A matching ID in another lane or session must not complete this call.
+  return JSON.stringify([event.host, event.runId, event.sessionId, event.agentId ?? "", callID]);
+}
+
+function finishToolCall(graph: MutableGraph, event: TraceEvent): void {
+  if (!completedToolKinds.has(event.kind)) return;
+  const key = toolCallKey(event);
+  if (!key) return;
+  const nodeId = graph.pendingToolCalls.get(key);
+  if (!nodeId) return;
+  updateNodeStatus(graph, nodeId, resultStatus(event), event);
+  graph.pendingToolCalls.delete(key);
 }
 
 function ensureSession(graph: MutableGraph, event: TraceEvent): void {
@@ -534,11 +571,7 @@ function sortEvents(events: TraceEvent[]): TraceEvent[] {
 }
 
 function resultStatus(event: TraceEvent): WorkflowStatus {
-  const exitCode = numberPayload(event, "exitCode");
-  if (exitCode !== undefined) {
-    return exitCode === 0 ? "SUCCEEDED" : "FAILED";
-  }
-  if (event.payload.error === true || typeof event.payload.error === "string") {
+  if (eventSucceeded(event) === false || event.payload.error === true || typeof event.payload.error === "string") {
     return "FAILED";
   }
   return "SUCCEEDED";

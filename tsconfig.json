@@ -7,6 +7,7 @@
     { "path": "./packages/claude-code-adapter" },
     { "path": "./packages/codex-adapter" },
     { "path": "./packages/gjc-adapter" },
+    { "path": "./packages/motifcode-adapter" },
     { "path": "./apps/daemon" },
     { "path": "./apps/dashboard" }
   ]

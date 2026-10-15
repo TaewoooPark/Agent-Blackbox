@@ -17,7 +17,7 @@ import {
   type WorkflowGraph,
   validateTraceEvent
 } from "@agent-blackbox/core";
-import { appendTraceEvent, parseTraceEvents, readTraceEvents } from "@agent-blackbox/storage";
+import { appendTraceEvent, iterateTraceEvents, parseTraceEvents, readTraceEvents } from "@agent-blackbox/storage";
 import { updateBaselines } from "./baselineStore.js";
 import { loadRulePacks } from "./ruleStore.js";
 import { open, stat } from "node:fs/promises";
@@ -92,8 +92,41 @@ export async function startTraceDaemon(options: TraceDaemonOptions): Promise<Run
   const hostAllowed = (host: TraceHost): boolean => recordHosts === null || recordHosts.has(host);
   const clients = new Set<WebSocket>();
   const scheduleBroadcast = makeBroadcastScheduler(clients, eventsFile);
+  // Motifcode journal backfill and recorder restarts replay stable event IDs. Keep one copy
+  // in storage (and therefore in metrics), including across daemon restarts. Scan
+  // once, lazily, retaining only IDs rather than historical event payloads.
+  let recordedIds: Promise<Set<string>> | undefined;
+  const pending = new Map<string, Promise<void>>();
+  const ingest = async (event: TraceEvent): Promise<void> => {
+    if (!validateTraceEvent(event).ok || !hostAllowed(event.host)) return;
+    // Other tailers do not yet reconstruct their sequence on attach; their IDs
+    // can repeat for different observations after restart. Preserve their writes.
+    if (event.host !== "motifcode") {
+      await appendTraceEvent(eventsFile, event);
+      scheduleBroadcast();
+      return;
+    }
+    recordedIds ??= loadRecordedIds(eventsFile).catch((error: unknown) => {
+      recordedIds = undefined;
+      throw error;
+    });
+    const ids = await recordedIds;
+    if (ids.has(event.id)) return;
+    const inFlight = pending.get(event.id);
+    if (inFlight) return inFlight;
+    const write = appendTraceEvent(eventsFile, event).then(() => {
+      ids.add(event.id);
+      scheduleBroadcast();
+    });
+    pending.set(event.id, write);
+    try {
+      await write;
+    } finally {
+      pending.delete(event.id);
+    }
+  };
   const server = createServer((request, response) => {
-    void handleRequest(request, response, eventsFile, clients, suggestConfig, options.projectDir, scheduleBroadcast, hostAllowed);
+    void handleRequest(request, response, eventsFile, clients, suggestConfig, options.projectDir, ingest, hostAllowed);
   });
   const streamServer = new WebSocketServer({ noServer: true });
   server.on("upgrade", (request, socket, head) => {
@@ -132,12 +165,7 @@ export async function startTraceDaemon(options: TraceDaemonOptions): Promise<Run
     server,
     port: actualPort,
     eventsFile,
-    ingest: async (event: TraceEvent) => {
-      if (!validateTraceEvent(event).ok) return;
-      if (!hostAllowed(event.host)) return;
-      await appendTraceEvent(eventsFile, event);
-      scheduleBroadcast();
-    },
+    ingest,
     close: () =>
       new Promise<void>((resolve, reject) => {
         for (const client of clients) {
@@ -154,6 +182,18 @@ export async function startTraceDaemon(options: TraceDaemonOptions): Promise<Run
         });
       })
   };
+}
+
+async function loadRecordedIds(eventsFile: string): Promise<Set<string>> {
+  const ids = new Set<string>();
+  try {
+    for await (const event of iterateTraceEvents(eventsFile)) {
+      if (event.host === "motifcode") ids.add(event.id);
+    }
+  } catch (error) {
+    if (!isNodeError(error) || error.code !== "ENOENT") throw error;
+  }
+  return ids;
 }
 
 export async function loadTraceEvents(eventsFile: string): Promise<TraceEvent[]> {
@@ -337,7 +377,7 @@ export async function buildTraceSnapshot(
   const rulePacks = await loadRulePacks(events);
   // The dashboard regenerates this from the run it is viewing (its own `handoffMarkdown`
   // memo), so a live frame without a graph simply doesn't carry one.
-  const handoffMarkdown = graph ? generateHandoffMarkdown(graph, checks, events) : "";
+  const handoffMarkdown = graph ? generateHandoffMarkdown(graph, checks, visibleEvents) : "";
   return {
     events,
     graph,
@@ -362,7 +402,7 @@ async function handleRequest(
   clients: Set<WebSocket>,
   suggestConfig: SuggestionConfig,
   projectDir: string,
-  scheduleBroadcast: () => void,
+  ingest: (event: TraceEvent) => Promise<void>,
   hostAllowed: (host: TraceHost) => boolean
 ): Promise<void> {
   try {
@@ -488,8 +528,7 @@ async function handleRequest(
         });
         return;
       }
-      await appendTraceEvent(eventsFile, event);
-      scheduleBroadcast();
+      await ingest(event);
       sendJson(response, 202, { ok: true, data: { accepted: true, id: event.id } });
       return;
     }

@@ -20,13 +20,16 @@
   <img src="https://img.shields.io/badge/Claude%20Code-000000?style=flat-square&labelColor=000000&color=000000" alt="Claude Code">
   <img src="https://img.shields.io/badge/Codex-000000?style=flat-square&logo=openai&logoColor=white&labelColor=000000" alt="Codex">
   <img src="https://img.shields.io/badge/OpenCode-000000?style=flat-square&labelColor=000000&color=000000" alt="OpenCode">
+  <img src="https://img.shields.io/badge/Motifcode-000000?style=flat-square&labelColor=000000&color=000000" alt="Motifcode">
   <img src="https://img.shields.io/badge/Local--first-000000?style=flat-square&labelColor=000000&color=000000" alt="Local-first">
   <img src="https://img.shields.io/badge/API%20key%20不要-000000?style=flat-square&labelColor=000000&color=000000" alt="No API key">
 </p>
 
 Agent-Blackbox は、**コーディングエージェントのためのローカルファースト（local-first）なフライトレコーダー兼コンテキスト効率プロファイラ**です。すべての実行を**ライブで再生可能な操作グラフ**に変えます—何を読み、変更し、実行し、判断し、委譲し、詰まり、検証したか—それをエージェント自身の要約ではなく**観測されたイベント**から再構成します。さらに、その実行を**二つの軸**で採点します：コンテキストウィンドウをどれだけ経済的に使ったか、*そして*タスクが本当に着地したか。判断には**タスク種別**（research / debug / ops…）と**あなた自身の過去の実行**に合う物差しを使い、次の実行をより安く・速くする方法を具体的に示します。
 
-**[Claude Code](https://www.claude.com/product/claude-code)、[Codex](https://developers.openai.com/codex/)、[OpenCode](https://opencode.ai) に対応** — 同じレコーダー、同じマップ、同じ効率スコア。1 つだけでも、すべて同時でも記録できます。
+**[Claude Code](https://www.claude.com/product/claude-code)、[Codex](https://developers.openai.com/codex/)、[OpenCode](https://opencode.ai)、[Motifcode](https://github.com/TaewoooPark/Motifcode) に対応** — 同じレコーダー、同じマップ、同じ効率スコア。1 つだけでも、すべて同時でも記録できます。
+
+**Motifcode 0.4.2 対応を検証しました。** 実際の Morphfactory モデルとインストール済み CLI のテストで、ファイル編集、テスト失敗からの修復、サブエージェント、レコーダー再起動を確認しました。`--host motifcode` または `--host all` で利用できます。検証範囲と上流ジャーナルの制約は[対応表と再現ガイド](./docs/motifcode.md)をご覧ください。
 
 > *「トランスクリプトはエージェントが*言ったこと*、ブラックボックスはエージェントが*やったこと*—そしてその*コスト*。」*
 
@@ -54,7 +57,7 @@ Agent-Blackbox は、**コーディングエージェントのためのローカ
 
 ## クイックスタート
 
-**1 コマンド。Claude Code、Codex、OpenCode に対応**（Node 20+ が必要）：
+**1 コマンド。Claude Code、Codex、OpenCode、Motifcode に対応**（Node 20+ が必要）：
 
 ```bash
 # Claude Code を記録 — インストール不要；デーモンが
@@ -64,10 +67,13 @@ npx @taewooopark/agent-blackbox up --host claude-code
 # …または Codex を記録（CLI とデスクトップアプリ、レコーダー導入不要）
 npx @taewooopark/agent-blackbox up --host codex
 
+# …または現在のプロジェクトの Motifcode セッションを記録（レコーダー導入不要）
+npx @taewooopark/agent-blackbox up --host motifcode
+
 # …または OpenCode を記録（レコーダーを OpenCode のグローバルプラグインディレクトリに導入）
 npx @taewooopark/agent-blackbox up
 
-# …または両方のホストを一度に、1 つのダッシュボードへ記録
+# …または対応するすべてのホストを一度に、1 つのダッシュボードへ記録
 npx @taewooopark/agent-blackbox up --host all
 ```
 
@@ -76,14 +82,16 @@ npx @taewooopark/agent-blackbox up --host all
 ```bash
 claude            # Claude Code、任意のフォルダで — 設定不要、実行するだけ
 opencode          # …または OpenCode（ターミナルでもデスクトップアプリでも）
+motif             # Motifcode、レコーダーで選択したプロジェクトで実行
 ```
 
 - **Claude Code はインストールが一切不要** — デーモンが CLI のすでに書き出す JSONL トランスクリプトを追尾するので、`claude` を実行した瞬間に、どのフォルダ・どのセッションでも記録されます。（`--optimize` を付けると、オプトインの実行内アクチュエータフックも導入されます。）
 - **Codex もレコーダー導入不要** — `--host codex` が CLI とデスクトップアプリの `$CODEX_HOME/sessions`（既定 `~/.codex/sessions`）を追尾します。`--optimize` で任意のアクチュエータを導入し、`/hooks` で一度信頼します。
 - **OpenCode** は**グローバル**プラグインディレクトリ（`~/.config/opencode/plugins/`）に置かれたレコーダーで記録します — どのセッション・どのフォルダでも、デスクトップアプリも含めて。
 - **Gajae-Code** *(実験的)* — `--host gjc` で [Gajae-Code](https://github.com/Yeachan-Heo/gajae-code) のセッションを追尾します（`~/.gjc/agent/sessions/`、インストール不要）。`--host all` にも含まれます。
+- **Motifcode** — 0.4.2 で検証済み。`--host motifcode` はレコーダープラグインや API 呼び出しなしで `<cwd>/.motif/sessions/` の v2 ジャーナルを追尾し、`--host all` も同じプロジェクトを含みます。別の場所は `--project /path/to/project` または `--motifcode-sessions-dir /path/to/.motif/sessions` で指定できます。ディレクトリやモデル接続がなくても、記録が始まるまで待機します。通常のタスクか対話モードを使ってください。`motif --print` はジャーナルを出力しません。[検証範囲、プライバシー、制約](./docs/motifcode.md)。
 
-記録を止めるには `npx @taewooopark/agent-blackbox uninstall`。
+Ctrl+C でデーモンとセッション追尾を停止します。グローバル OpenCode レコーダーと任意のフックは `npx @taewooopark/agent-blackbox uninstall` で削除します。
 
 <details>
 <summary><b>OpenCode を 1 プロジェクトに限定、またはソースから実行</b></summary>
@@ -346,7 +354,8 @@ opencode "ultrawork: refactor the auth module and add tests"   # OMO とレコ�
 
 ```
  Claude Code transcripts (tailed) ─┐
- Codex rollout sessions (tailed) ──┼─▶ host adapter ─▶ daemon ─▶ dashboard
+ Codex rollout sessions (tailed) ──┤
+ Motifcode session journals ───────┼─▶ host adapter ─▶ daemon ─▶ dashboard
  OpenCode hooks → recorder plugin ─┘
                                        redact+normalize  NDJSON    live session map
                                                          + graph   + efficiency
@@ -355,6 +364,7 @@ opencode "ultrawork: refactor the auth module and add tests"   # OMO とレコ�
 - **`packages/core`** — 正規 `TraceEvent`、ワークフローグラフモデル、マスキング、再生、監査、ハンドオフ生成、コンテキスト効率エンジン。
 - **`packages/claude-code-adapter`** — Claude Code が書き出す JSONL トランスクリプト（`~/.claude/projects/`）を追尾し、正規・マスキング済みイベントに変換する — プラグイン不要、インストール不要。オプションのフックで実行内アクチュエータを追加。
 - **`packages/codex-adapter`** — Codex CLI/デスクトップアプリの rollout セッション（`$CODEX_HOME/sessions`）を追尾し、token・patch・search・MCP・compaction・subagent 信号を正規化。任意の信頼済みフックで安全な再読抑制と working-set コンテキストを追加。
+- **`packages/motifcode-adapter`** — プロジェクト内の Motifcode v2 JSONL ジャーナル（`.motif/sessions/`）を追尾し、モデル接続なしでメッセージ・ツール呼び出し/結果・サブエージェント・記録済み使用量を正規化します。
 - **`packages/opencode-adapter`** — ホストイベントとツール呼び出しを正規・マスキング済みイベント（内容ではなく*サイズ*のみ）に変換し、デーモンへベストエフォート（リトライ付き）で送る軽量 OpenCode プラグイン。
 - **`apps/daemon`** — イベントをローカル NDJSON ログへ取り込み、グラフ化、任意地点へ再生、効率レポート計算、提案ルーティング、WebSocket でライブスナップショット送出。
 - **`apps/dashboard`** — オペレーターコンソール：ライブセッションマップ、再生、インスペクタ、効率副操縦士、ハンドオフ。
@@ -401,6 +411,7 @@ packages/
   storage/            NDJSON 永続化
   claude-code-adapter/ Claude Code transcript tailer + 実行内 actuator hooks
   codex-adapter/      Codex CLI/app rollout tailer + 実行内 actuator hooks
+  motifcode-adapter/    Motifcode project-local session journal tailer
   opencode-adapter/   OpenCode plugin / SDK bridge
 ```
 
@@ -420,7 +431,7 @@ npm run build
 
 ## ロードマップ
 
-- 同じ正規コア上で、より多くの host adapters（PI、その他 harness）を追加 — **Claude Code、Codex、OpenCode** は現在出荷済み。
+- 同じ正規コア上で、より多くの host adapters（PI、その他 harness）を追加 — **Claude Code、Codex、OpenCode、Motifcode** は現在出荷済み。
 - **最近出荷：**二つ目の **outcome** 軸、**task-archetype** scoring、**プロジェクト別 baselines**（"普段の実行との比較"）、**累積型** optimize memory、**custom rule packs** — 詳細は **[docs/analysis.md](docs/analysis.md)**。
 - 多数の実行にまたがる **fleet-wide** 効率トレンドチャート（各実行の baseline データはすでにローカルに保存され、longitudinal view が次）。
 - より深い audit：claim-vs-evidence 検証と risky-command 表示を拡充。

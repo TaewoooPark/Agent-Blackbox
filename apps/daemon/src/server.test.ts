@@ -94,6 +94,58 @@ describe("snapshot scale cap", () => {
 });
 
 describe("trace daemon", () => {
+  it("persists replayed IDs once across concurrent sinks and daemon restarts", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "agent-blackbox-dedup-"));
+    const event = createTraceEvent(1, {
+      host: "motifcode", runId: "replayed-journal", sessionId: "replayed-journal", kind: "file_read",
+      payload: { path: "before.ts" }
+    });
+    let daemon = await startTraceDaemon({ projectDir: tempDir, port: 0 });
+    try {
+      const responses = await Promise.all([
+        daemon.ingest(event),
+        daemon.ingest(event),
+        fetch(`http://127.0.0.1:${daemon.port}/events`, {
+          method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(event)
+        })
+      ]);
+      expect(responses[2]?.status).toBe(202);
+      expect((await buildReplaySummary(daemon.eventsFile)).events).toBe(1);
+    } finally {
+      await daemon.close();
+    }
+    daemon = await startTraceDaemon({ projectDir: tempDir, port: 0 });
+    try {
+      const next = createTraceEvent(2, {
+        host: "motifcode", runId: "replayed-journal", sessionId: "replayed-journal", kind: "file_edit",
+        payload: { path: "after.ts", success: true }
+      });
+      await Promise.all([daemon.ingest(event), daemon.ingest(next), daemon.ingest(next)]);
+      const snapshot = await buildTraceSnapshot(daemon.eventsFile);
+      expect(snapshot.events.map((entry) => entry.id)).toEqual([event.id, next.id]);
+      expect(snapshot.graph?.nodes.some((node) => node.type === "FILE" && node.label === "after.ts")).toBe(true);
+    } finally {
+      await daemon.close();
+    }
+  });
+
+  it("preserves other hosts whose recorder restart may reuse a sequence", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "agent-blackbox-legacy-ids-"));
+    const daemon = await startTraceDaemon({ projectDir: tempDir, port: 0 });
+    try {
+      const first = createTraceEvent(1, {
+        host: "claude-code", runId: "legacy-run", sessionId: "legacy-run", kind: "file_read",
+        payload: { path: "before.ts" }
+      });
+      const resumed = { ...first, payload: { path: "after.ts" } };
+      await daemon.ingest(first);
+      await daemon.ingest(resumed);
+      expect((await buildTraceSnapshot(daemon.eventsFile)).events).toEqual([first, resumed]);
+    } finally {
+      await daemon.close();
+    }
+  });
+
   it("accepts events and serves a replayed graph", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "agent-blackbox-daemon-"));
     const daemon = await startTraceDaemon({ projectDir: tempDir, port: 0 });
@@ -327,6 +379,21 @@ describe("trace daemon", () => {
     } finally {
       await daemon.close();
     }
+  });
+
+  it("keeps future prompts out of replay handoffs", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "agent-blackbox-replay-objective-"));
+    const eventsFile = join(tempDir, "events.ndjson");
+    const events = [
+      createTraceEvent(1, { host: "motifcode", runId: "replay", sessionId: "replay", kind: "session_created", payload: {} }),
+      createTraceEvent(2, { host: "motifcode", runId: "replay", sessionId: "replay", kind: "message", payload: { role: "user", text: "A future objective" } })
+    ];
+    await writeFile(eventsFile, events.map((event) => JSON.stringify(event)).join("\n") + "\n");
+    const replay = await buildTraceSnapshot(eventsFile, { seq: 1 });
+    expect(replay.events).toHaveLength(2); // retain full timeline bounds
+    expect(replay.handoffMarkdown).not.toContain("A future objective");
+    expect(replay.handoffMarkdown).toContain("Not captured in the recorded events");
+    expect((await buildTraceSnapshot(eventsFile)).handoffMarkdown).toContain("A future objective");
   });
 
   it("rejects invalid replay queries as bad requests", async () => {

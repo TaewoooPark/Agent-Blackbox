@@ -1,5 +1,6 @@
 import type { PromiseCheck } from "./audit.js";
-import type { TraceEvent } from "./events.js";
+import { eventSucceeded, type TraceEvent } from "./events.js";
+import { orderEventsForAnalysis } from "./analysisOrder.js";
 
 // The second axis. Efficiency asks "did the run use context economically?" — a run
 // can ace that and still have FAILED (looped, errored, left a broken build). This
@@ -25,10 +26,9 @@ const NEUTRAL = 72;
 
 const str = (e: TraceEvent, k: string): string | undefined =>
   typeof e.payload[k] === "string" ? (e.payload[k] as string) : undefined;
-const num = (e: TraceEvent, k: string): number | undefined =>
-  typeof e.payload[k] === "number" && Number.isFinite(e.payload[k] as number) ? (e.payload[k] as number) : undefined;
 
 export function computeEffectiveness(events: TraceEvent[], checks: PromiseCheck[] = []): EffectivenessReport {
+  events = orderEventsForAnalysis(events);
   let edits = 0;
   let creates = 0;
   let commits = 0;
@@ -48,12 +48,11 @@ export function computeEffectiveness(events: TraceEvent[], checks: PromiseCheck[
         creates += 1;
         break;
       case "git_commit": {
-        const code = num(e, "exitCode");
-        if (code === undefined || code === 0) commits += 1; // only a clean commit counts
+        if (eventSucceeded(e) !== false) commits += 1; // exclude observed failed commits
         break;
       }
       case "git_push":
-        pushes += 1;
+        if (eventSucceeded(e) !== false) pushes += 1;
         break;
       case "session_error":
         hardErrors += 1;
@@ -62,12 +61,12 @@ export function computeEffectiveness(events: TraceEvent[], checks: PromiseCheck[
         if (str(e, "level") === "error") softErrors += 1;
         break;
       case "bash": {
-        const code = num(e, "exitCode");
+        const success = eventSucceeded(e);
         const c = str(e, "command") ?? "";
-        if (code !== undefined) {
+        if (success !== undefined) {
           cmds += 1;
-          if (code !== 0) failCmds += 1;
-          if (TEST_BUILD.test(c)) lastVerify = code === 0 ? "passed" : "failed";
+          if (!success) failCmds += 1;
+          if (TEST_BUILD.test(c)) lastVerify = success ? "passed" : "failed";
         }
         break;
       }

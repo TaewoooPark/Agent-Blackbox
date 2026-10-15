@@ -1,5 +1,5 @@
 import type { TraceEvent, WorkflowGraph, WorkflowNode } from "@agent-blackbox/core";
-import { promptTextForEvent } from "@agent-blackbox/core";
+import { eventSucceeded, promptTextForEvent } from "@agent-blackbox/core";
 
 export type PositionedNode = WorkflowNode & {
   x: number;
@@ -50,6 +50,8 @@ export type WorkflowBranch = {
   description: string;
   tone: TimelineTone;
   detail?: string;
+  parentScopeId?: string;
+  agentName?: string;
 };
 
 export type WorkflowStep = {
@@ -66,6 +68,7 @@ export type WorkflowStep = {
   agentLabel?: string; // the lane identity (agentId) — used for matching, not display
   agentName?: string; // human-readable lane name for display only
   agentRole?: string;
+  parentScopeId?: string;
 };
 
 export type AgentTreeLane = {
@@ -199,8 +202,11 @@ export function createWorkflowSteps(events: TraceEvent[]): WorkflowStep[] {
   for (const event of [...events].sort((a, b) => a.seq - b.seq)) {
     const tokenSnapshot = tokenUsageForEvent(event);
     const previousTokenSnapshot = previousTokenSnapshots.get(event.sessionId);
+    // Motifcode emits a separate provider usage report for each request, even
+    // when two requests use identical token counts. Its child scopes share a
+    // session ID, so subtracting a previous session snapshot loses real usage.
     const tokenDelta = tokenSnapshot
-      ? previousTokenSnapshot
+      ? previousTokenSnapshot && event.host !== "motifcode"
         ? subtractTokenUsage(tokenSnapshot, previousTokenSnapshot)
         : tokenSnapshot
       : emptyTokenUsage();
@@ -209,9 +215,12 @@ export function createWorkflowSteps(events: TraceEvent[]): WorkflowStep[] {
     }
 
     const promptStep = promptStepForEvent(event);
+    const promptKey = promptStep && event.host === "motifcode"
+      ? `${event.agentId ?? "root"}\0${promptStep.description}`
+      : promptStep?.description;
     const skipTitlePrompt = promptStep && event.kind !== "message" && seenPrompts.size > 0;
-    if (promptStep && !skipTitlePrompt && !seenPrompts.has(promptStep.description)) {
-      seenPrompts.add(promptStep.description);
+    if (promptStep && promptKey && !skipTitlePrompt && !seenPrompts.has(promptKey)) {
+      seenPrompts.add(promptKey);
       promptStep.branches.unshift(...pendingBranches);
       promptStep.tokens = addTokenUsage(promptStep.tokens, addTokenUsage(pendingTokens, tokenDelta));
       pendingBranches = [];
@@ -226,7 +235,13 @@ export function createWorkflowSteps(events: TraceEvent[]): WorkflowStep[] {
         pendingTokens = addTokenUsage(pendingTokens, tokenDelta);
       }
       if (branch.kind === "agent" && steps.length > 0) {
-        steps[steps.length - 1]!.branches.push(branch);
+        // Motifcode records the spawning scope explicitly. Concurrent sibling
+        // agents must stay under main even if another child's step arrived last.
+        const parentScope = event.host === "motifcode" ? stringPayload(event, "parentScopeId") : undefined;
+        const parent = parentScope
+          ? lastStepForAgent(steps, parentScope === "root" ? undefined : parentScope)
+          : undefined;
+        (parent ?? steps[steps.length - 1]!).branches.push(branch);
       } else if (branch.kind === "file" && event.agentRole === "subagent") {
         // A subagent's reads are its own work — surface them as steps on the
         // subagent's lane (makeStep tags agentLabel) instead of folding them
@@ -265,9 +280,21 @@ export function createWorkflowSteps(events: TraceEvent[]): WorkflowStep[] {
     }
 
     if (tokenDelta.total > 0) {
-      const target = steps.at(-1);
+      const target = event.host === "motifcode"
+        ? lastStepForAgent(steps, event.agentRole === "primary" ? undefined : event.agentId ?? event.agentRole)
+        : steps.at(-1);
       if (target) {
         target.tokens = addTokenUsage(target.tokens, tokenDelta);
+      } else if (event.host === "motifcode") {
+        // Starting at EOF can capture usage after the lane's earlier steps were
+        // primed away. Keep an observed usage step on that lane instead of
+        // handing its tokens to whichever agent emits the next visible action.
+        const usageStep = makeStep(event, {
+          kind: "context", title: "Model usage recorded",
+          description: "Provider token usage was recorded for this model request.", branches: []
+        });
+        usageStep.tokens = tokenDelta;
+        steps.push(usageStep);
       } else {
         pendingTokens = addTokenUsage(pendingTokens, tokenDelta);
       }
@@ -296,6 +323,13 @@ export function createWorkflowSteps(events: TraceEvent[]): WorkflowStep[] {
   }
 
   return aggregateConsecutiveSteps(steps);
+}
+
+function lastStepForAgent(steps: WorkflowStep[], agent: string | undefined, beforeSeq = Infinity): WorkflowStep | undefined {
+  for (let i = steps.length - 1; i >= 0; i--) {
+    if (steps[i]!.agentLabel === agent && steps[i]!.seq <= beforeSeq) return steps[i];
+  }
+  return undefined;
 }
 
 // Collapse a run of identical consecutive moments (e.g. 12 sequential
@@ -377,24 +411,37 @@ export function createAgentTreeLayout(steps: WorkflowStep[]): AgentTreeLayout {
       const branchLane = ensureLane(branch.label);
       if (!branchLane.startBranch || branch.seq < branchLane.startBranch.seq) {
         branchLane.startBranch = branch;
-        branchLane.anchorStepId = step.id;
+        const explicitParent = branch.parentScopeId;
+        const anchor = explicitParent
+          ? lastStepForAgent(steps, explicitParent === "root" ? undefined : explicitParent, branch.seq)
+          : step;
+        branchLane.anchorStepId = anchor?.id ?? null;
         // A lane is never its own parent. The spawn that opens lane X can land on a
         // step already attributed to X — the tailer starts at the end of a transcript
         // by default, so X's real first spawn may predate what we ever saw. Ordering
         // walks parents down from the root, so a self-parented lane drops out of the
         // genealogy entirely (and any future recursive walk would not terminate).
-        const parentLaneId = step.agentLabel ? agentLaneId(step.agentLabel) : "root";
+        const parentLaneId = explicitParent
+          ? explicitParent === "root" ? "root" : agentLaneId(explicitParent)
+          : step.agentLabel ? agentLaneId(step.agentLabel) : "root";
         branchLane.parentLaneId = parentLaneId === branchLane.id ? "root" : parentLaneId;
       }
     }
   }
 
   for (const lane of lanes.values()) {
-    if (lane.id === "root" || lane.anchorStepId || lane.steps.length === 0) continue;
+    if (lane.id === "root" || lane.startBranch || lane.anchorStepId || lane.steps.length === 0) continue;
     const firstStep = lane.steps[0]!;
-    const anchor = latestStepBefore(steps, firstStep.seq, firstStep.agentLabel) ?? rootLane.steps[0] ?? null;
+    // From-now recording can omit the original agent_start. Motifcode repeats
+    // its known parent on child events, so chronology must not invent nesting.
+    const explicitParent = firstStep.parentScopeId;
+    const anchor = explicitParent
+      ? lastStepForAgent(steps, explicitParent === "root" ? undefined : explicitParent, firstStep.seq)
+      : latestStepBefore(steps, firstStep.seq, firstStep.agentLabel) ?? rootLane.steps[0] ?? null;
     lane.anchorStepId = anchor?.id ?? null;
-    lane.parentLaneId = anchor?.agentLabel ? agentLaneId(anchor.agentLabel) : "root";
+    lane.parentLaneId = explicitParent
+      ? explicitParent === "root" || agentLaneId(explicitParent) === lane.id ? "root" : agentLaneId(explicitParent)
+      : anchor?.agentLabel ? agentLaneId(anchor.agentLabel) : "root";
   }
 
   const branchLanes = orderBranchLanesByGenealogy(lanes);
@@ -645,7 +692,7 @@ function trunkStepForEvent(event: TraceEvent): WorkflowStep | undefined {
       stringPayload(event, "command"),
       stringPayload(event, "description")
     );
-    const outcome = describeCommandOutcome(numberPayload(event, "exitCode"));
+    const outcome = describeCommandOutcome(eventSucceeded(event));
     return makeStep(event, {
       kind: outcome.tone === "risk" ? "risk" : "verification",
       title: outcome.titleFor(purpose.shortName),
@@ -1015,7 +1062,9 @@ function makeStep(
       ? { agentLabel: event.agentId ?? event.agentRole }
       : {}),
     ...(event.agentRole !== "primary" && event.agentLabel ? { agentName: event.agentLabel } : {}),
-    ...(event.agentRole ? { agentRole: event.agentRole } : {})
+    ...(event.agentRole ? { agentRole: event.agentRole } : {}),
+    ...(event.host === "motifcode" && stringPayload(event, "parentScopeId")
+      ? { parentScopeId: stringPayload(event, "parentScopeId")! } : {})
   };
 }
 
@@ -1046,7 +1095,10 @@ function makeBranch(
     title: input.title,
     description: input.description,
     tone: input.tone,
-    ...(input.detail ? { detail: input.detail } : {})
+    ...(input.kind === "agent" && event.agentLabel ? { agentName: event.agentLabel } : {}),
+    ...(input.detail ? { detail: input.detail } : {}),
+    ...(event.host === "motifcode" && stringPayload(event, "parentScopeId")
+      ? { parentScopeId: stringPayload(event, "parentScopeId")! } : {})
   };
 }
 
@@ -1073,7 +1125,7 @@ function visibleTextForEvent(event: TraceEvent): string | undefined {
       stringPayload(event, "command"),
       stringPayload(event, "description")
     );
-    const outcome = describeCommandOutcome(numberPayload(event, "exitCode"));
+    const outcome = describeCommandOutcome(eventSucceeded(event));
     return outcome.titleFor(purpose.shortName);
   }
   const statement = stringPayload(event, "statement");
@@ -1168,13 +1220,13 @@ function describeCommandPurpose(command: string | undefined, description: string
   };
 }
 
-function describeCommandOutcome(exitCode: number | undefined): {
+function describeCommandOutcome(success: boolean | undefined): {
   branchLabel: string;
   sentence: string;
   tone: TimelineTone;
   titleFor: (purpose: string) => string;
 } {
-  if (exitCode === undefined) {
+  if (success === undefined) {
     return {
       branchLabel: "Observed",
       sentence: "The result was recorded for the workflow.",
@@ -1182,7 +1234,7 @@ function describeCommandOutcome(exitCode: number | undefined): {
       titleFor: (purpose) => `Ran ${purpose}`
     };
   }
-  if (exitCode === 0) {
+  if (success) {
     return {
       branchLabel: "Passed",
       sentence: "It completed successfully.",
@@ -1236,11 +1288,11 @@ function toneForEvent(event: TraceEvent): TimelineTone {
     event.kind === "session_error" ||
     event.kind === "blocker_detected" ||
     event.kind === "permission_asked" ||
-    (event.kind === "bash" && numberPayload(event, "exitCode") !== undefined && numberPayload(event, "exitCode") !== 0)
+    eventSucceeded(event) === false
   ) {
     return "risk";
   }
-  if (event.kind === "bash" && numberPayload(event, "exitCode") === 0) {
+  if (event.kind === "bash" && eventSucceeded(event) === true) {
     return "success";
   }
   if (
@@ -1263,7 +1315,7 @@ function stringPayload(event: TraceEvent, key: string): string | undefined {
 
 // The slash command name from a `command.executed` event, normalized to "/name".
 function slashCommandName(event: TraceEvent): string {
-  const raw = stringPayloadPath(event, ["properties.name", "name"]);
+  const raw = stringPayloadPath(event, ["properties.name", "name", "command"]);
   if (!raw) return "a command";
   return raw.startsWith("/") ? raw : `/${raw}`;
 }
@@ -1295,6 +1347,8 @@ export function hostDisplayName(host: TraceEvent["host"] | undefined): string {
       return "OpenCode";
     case "codex":
       return "Codex";
+    case "motifcode":
+      return "Motifcode";
     case "pi":
       return "PI";
     case "hermes":
@@ -1456,6 +1510,23 @@ function payloadPath(event: TraceEvent, path: string): unknown {
   return current;
 }
 
+export function latestTokenUsage(events: TraceEvent[]): TokenUsage {
+  let usage = emptyTokenUsage();
+  let latestMotifSequence = -1;
+  for (const event of events) {
+    const next = tokenUsageForEvent(event);
+    if (!next) continue;
+    if (event.host === "motifcode") {
+      // A later history import can append old requests after live observations.
+      // Motifcode IDs preserve journal order across recorder restarts.
+      if (event.seq < latestMotifSequence) continue;
+      latestMotifSequence = event.seq;
+    }
+    usage = next;
+  }
+  return usage;
+}
+
 function tokenUsageForEvent(event: TraceEvent): TokenUsage | undefined {
   const hasTokenSnapshot =
     payloadPath(event, "properties.info.tokens") !== undefined ||
@@ -1488,6 +1559,13 @@ function tokenUsageForEvent(event: TraceEvent): TokenUsage | undefined {
       ]) ?? 0,
     total: 0
   };
+  if (event.host === "motifcode") {
+    // Provider promptTokens is the whole prompt; cachedTokens is a subset.
+    // The UI stores mutually exclusive buckets and sums them for its total.
+    usage.cacheRead = Math.min(usage.input, usage.cacheRead);
+    usage.cacheWrite = Math.min(Math.max(0, usage.input - usage.cacheRead), usage.cacheWrite);
+    usage.input = Math.max(0, usage.input - usage.cacheRead - usage.cacheWrite);
+  }
   return normalizeTokenUsage(usage);
 }
 
