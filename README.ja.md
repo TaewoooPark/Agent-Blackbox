@@ -20,6 +20,7 @@
   <img src="https://img.shields.io/badge/Claude%20Code-000000?style=flat-square&labelColor=000000&color=000000" alt="Claude Code">
   <img src="https://img.shields.io/badge/Codex-000000?style=flat-square&logo=openai&logoColor=white&labelColor=000000" alt="Codex">
   <img src="https://img.shields.io/badge/OpenCode-000000?style=flat-square&labelColor=000000&color=000000" alt="OpenCode">
+  <img src="https://img.shields.io/badge/Motifcode-000000?style=flat-square&labelColor=000000&color=000000" alt="Motifcode">
   <img src="https://img.shields.io/badge/Local--first-000000?style=flat-square&labelColor=000000&color=000000" alt="Local-first">
   <img src="https://img.shields.io/badge/API%20key%20不要-000000?style=flat-square&labelColor=000000&color=000000" alt="No API key">
 </p>
@@ -27,6 +28,8 @@
 Agent-Blackbox は、**コーディングエージェントのためのローカルファースト（local-first）なフライトレコーダー兼コンテキスト効率プロファイラ**です。すべての実行を**ライブで再生可能な操作グラフ**に変えます—何を読み、変更し、実行し、判断し、委譲し、詰まり、検証したか—それをエージェント自身の要約ではなく**観測されたイベント**から再構成します。さらに、その実行を**二つの軸**で採点します：コンテキストウィンドウをどれだけ経済的に使ったか、*そして*タスクが本当に着地したか。判断には**タスク種別**（research / debug / ops…）と**あなた自身の過去の実行**に合う物差しを使い、次の実行をより安く・速くする方法を具体的に示します。
 
 **[Claude Code](https://www.claude.com/product/claude-code)、[Codex](https://developers.openai.com/codex/)、[OpenCode](https://opencode.ai)、[Motifcode](https://github.com/TaewoooPark/Motifcode) に対応** — 同じレコーダー、同じマップ、同じ効率スコア。1 つだけでも、すべて同時でも記録できます。
+
+**Motifcode 0.4.2 対応を検証しました。** 実際の Morphfactory モデルとインストール済み CLI のテストで、ファイル編集、テスト失敗からの修復、サブエージェント、レコーダー再起動を確認しました。`--host motifcode` または `--host all` で利用できます。検証範囲と上流ジャーナルの制約は[対応表と再現ガイド](./docs/motifcode.md)をご覧ください。
 
 > *「トランスクリプトはエージェントが*言ったこと*、ブラックボックスはエージェントが*やったこと*—そしてその*コスト*。」*
 
@@ -79,13 +82,14 @@ npx @taewooopark/agent-blackbox up --host all
 ```bash
 claude            # Claude Code、任意のフォルダで — 設定不要、実行するだけ
 opencode          # …または OpenCode（ターミナルでもデスクトップアプリでも）
+motif             # Motifcode、レコーダーで選択したプロジェクトで実行
 ```
 
 - **Claude Code はインストールが一切不要** — デーモンが CLI のすでに書き出す JSONL トランスクリプトを追尾するので、`claude` を実行した瞬間に、どのフォルダ・どのセッションでも記録されます。（`--optimize` を付けると、オプトインの実行内アクチュエータフックも導入されます。）
 - **Codex もレコーダー導入不要** — `--host codex` が CLI とデスクトップアプリの `$CODEX_HOME/sessions`（既定 `~/.codex/sessions`）を追尾します。`--optimize` で任意のアクチュエータを導入し、`/hooks` で一度信頼します。
 - **OpenCode** は**グローバル**プラグインディレクトリ（`~/.config/opencode/plugins/`）に置かれたレコーダーで記録します — どのセッション・どのフォルダでも、デスクトップアプリも含めて。
 - **Gajae-Code** *(実験的)* — `--host gjc` で [Gajae-Code](https://github.com/Yeachan-Heo/gajae-code) のセッションを追尾します（`~/.gjc/agent/sessions/`、インストール不要）。`--host all` にも含まれます。
-- **Motifcode** — `--host motifcode` で Motifcode 0.4.1 v2 セッションジャーナル（`<cwd>/.motif/sessions/`）を追尾します。プラグインやモデル/API 呼び出しは不要です。`--host all` も同じディレクトリを含み、他のプロジェクトは自動探索しません。別の場所は `--project /path/to/project` または `--motifcode-sessions-dir /path/to/.motif/sessions` で指定できます。モデル接続やセッションディレクトリがなくても起動でき、書き込みが再開すれば自動で取得します。対話型 v2 ジャーナルに対応し、`motif --print` はジャーナルを出力しません。ソース形式に沿うテストデータで検証済みですが、実モデルでの実行は未検証です。
+- **Motifcode** — 0.4.2 で検証済み。`--host motifcode` はレコーダープラグインや API 呼び出しなしで `<cwd>/.motif/sessions/` の v2 ジャーナルを追尾し、`--host all` も同じプロジェクトを含みます。別の場所は `--project /path/to/project` または `--motifcode-sessions-dir /path/to/.motif/sessions` で指定できます。ディレクトリやモデル接続がなくても、記録が始まるまで待機します。通常のタスクか対話モードを使ってください。`motif --print` はジャーナルを出力しません。[検証範囲、プライバシー、制約](./docs/motifcode.md)。
 
 Ctrl+C でデーモンとセッション追尾を停止します。グローバル OpenCode レコーダーと任意のフックは `npx @taewooopark/agent-blackbox uninstall` で削除します。
 

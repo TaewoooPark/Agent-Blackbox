@@ -4,6 +4,8 @@
 
 A **local-first flight recorder and context-efficiency profiler** for **[Claude Code](https://www.claude.com/product/claude-code)**, **[Codex](https://developers.openai.com/codex/)**, **[OpenCode](https://opencode.ai)**, and **[Motifcode](https://github.com/TaewoooPark/Motifcode)**. It turns every agent run into a **live, replayable map** of what the agent actually *did* — what it read, changed, ran, decided, delegated, blocked on, and verified — reconstructed from observed events, not from the agent's own summary. Then it **scores how economically the run used its context window** and tells you, concretely, how to make the next one cheaper and faster.
 
+**Motifcode 0.4.2 support is verified:** a live Morphfactory run and installed-CLI tests cover file edits, test recovery, subagents, and recorder restart. Use `--host motifcode` or `--host all`. See the [support matrix and reproduction guide](https://github.com/TaewoooPark/Agent-Blackbox/blob/main/docs/motifcode.md) for coverage and upstream limits.
+
 Everything runs on your machine. **No API key. Nothing leaves your computer.**
 
 <p align="center">
@@ -40,6 +42,7 @@ It starts a local daemon and **opens the dashboard** at `http://127.0.0.1:5173/`
 claude            # Claude Code, in any folder — zero setup, just run it
 codex              # Codex CLI (desktop-app tasks are captured too)
 opencode          # …or OpenCode (terminal or the desktop app)
+motif             # Motifcode, in the project selected by the recorder
 ```
 
 Press Ctrl+C to stop the daemon and session tailers. Use `npx @taewooopark/agent-blackbox uninstall` to remove the global OpenCode recorder and optional hooks.
@@ -71,7 +74,7 @@ You can't just **ask** an agent what a task cost. A 2026 study of eight frontier
 - **Claude Code** — **no install at all.** The daemon tails the JSONL transcripts the CLI already writes, so any folder, any session is recorded the moment you run `claude`. Add `--optimize` to also install the opt-in in-run actuator hooks.
 - **Codex** — also **no recorder install.** The daemon tails `$CODEX_HOME/sessions` (default `~/.codex/sessions`) for CLI and desktop-app tasks. Add `--optimize` for the opt-in actuator, then review/trust it once with `/hooks`.
 - **OpenCode** — records via a recorder dropped into OpenCode's **global** plugin directory (`~/.config/opencode/plugins/`), so any session is captured, the desktop app included. Scope to one project with `up --project <dir>`.
-- **Motifcode** — `--host motifcode` tails Motifcode 0.4.1 v2 session journals in `<cwd>/.motif/sessions/`, without a plugin or model/API calls. `--host all` includes that same directory; it does not discover other projects automatically. Use `--project /path/to/project` or `--motifcode-sessions-dir /path/to/.motif/sessions` to select another source. Startup works while the model is disconnected or the directory is absent, and new sessions are picked up when writing resumes. Interactive v2 journals are supported; `motif --print` does not write a journal. Validated against source-compatible fixtures; a live model run remains unverified.
+- **Motifcode** — verified with 0.4.2. `--host motifcode` tails v2 journals in `<cwd>/.motif/sessions/` without a recorder plugin or API calls; `--host all` includes the same project. Select another source with `--project /path/to/project` or `--motifcode-sessions-dir /path/to/.motif/sessions`. Recording waits safely while the source is absent or the model is disconnected. Use normal task or interactive mode; `motif --print` writes no journal. [Coverage, privacy, and limits](https://github.com/TaewoooPark/Agent-Blackbox/blob/main/docs/motifcode.md).
 
 `--project` also stores the trace in `<project>/.agent-blackbox/events.ndjson` and scopes the OpenCode plugin when selected. The other transcript hosts keep their global source directories.
 

@@ -20,6 +20,7 @@
   <img src="https://img.shields.io/badge/Claude%20Code-000000?style=flat-square&labelColor=000000&color=000000" alt="Claude Code">
   <img src="https://img.shields.io/badge/Codex-000000?style=flat-square&logo=openai&logoColor=white&labelColor=000000" alt="Codex">
   <img src="https://img.shields.io/badge/OpenCode-000000?style=flat-square&labelColor=000000&color=000000" alt="OpenCode">
+  <img src="https://img.shields.io/badge/Motifcode-000000?style=flat-square&labelColor=000000&color=000000" alt="Motifcode">
   <img src="https://img.shields.io/badge/Local--first-000000?style=flat-square&labelColor=000000&color=000000" alt="Local-first">
   <img src="https://img.shields.io/badge/无需%20API%20key-000000?style=flat-square&labelColor=000000&color=000000" alt="No API key">
 </p>
@@ -27,6 +28,8 @@
 Agent-Blackbox 是一个**面向编码智能体、本地优先（local-first）的飞行记录仪与上下文效率分析器**。它把每一次智能体运行重建为一张**实时、可回放的操作图** —— 读了什么、改了什么、跑了什么、做了什么决定、委派了什么、卡在哪里、验证了什么 —— 全部来自**观测到的事件**，而不是智能体自己的总结。然后它从**两个轴**给运行打分：上下文窗口用得有多经济，*以及*任务是否真的落地；评分会套用**适合任务类型**（research / debug / ops…）和**你自己的历史运行**的尺子，并具体告诉你怎样让下一次更便宜、更快。
 
 **支持 [Claude Code](https://www.claude.com/product/claude-code)、[Codex](https://developers.openai.com/codex/)、[OpenCode](https://opencode.ai) 与 [Motifcode](https://github.com/TaewoooPark/Motifcode)** —— 同一个记录器、同一张地图、同一套效率评分。可记录其中一个，也可同时记录全部。
+
+**已验证 Motifcode 0.4.2 支持。** 通过实际 Morphfactory 模型运行和已安装 CLI 测试，验证了文件修改、测试失败后的修复、子智能体及记录器重启。使用 `--host motifcode` 或 `--host all` 即可。验证范围及上游日志的限制详见[支持矩阵与复现指南](./docs/motifcode.md)。
 
 > *"对话记录是智能体所*说*的，黑匣子是它所*做*的 —— 以及它的*代价*。"*
 
@@ -79,13 +82,14 @@ npx @taewooopark/agent-blackbox up --host all
 ```bash
 claude            # Claude Code，在任意文件夹 —— 零配置，直接运行
 opencode          # …或 OpenCode（终端或桌面应用）
+motif             # Motifcode，在记录器所选的项目中运行
 ```
 
 - **Claude Code 完全无需安装** —— 守护进程会跟读 CLI 本就写出的 JSONL 会话记录，所以任意文件夹、任意会话，在你运行 `claude` 的那一刻就被记录。（加 `--optimize` 可一并安装可选的运行内执行器钩子。）
 - **Codex 同样无需安装记录器** —— `--host codex` 会跟读 CLI 与桌面应用的 `$CODEX_HOME/sessions`（默认 `~/.codex/sessions`）。加 `--optimize` 可安装可选执行器，并在 `/hooks` 中信任一次。
 - **OpenCode** 通过装入其**全局**插件目录（`~/.config/opencode/plugins/`）的记录器进行记录 —— 任意会话、任意文件夹，连桌面应用也算。
 - **Gajae-Code** *(实验性)* —— `--host gjc` 跟读 [Gajae-Code](https://github.com/Yeachan-Heo/gajae-code) 会话（`~/.gjc/agent/sessions/`，无需安装）；`--host all` 亦包含。
-- **Motifcode** —— `--host motifcode` 跟读 Motifcode 0.4.1 v2 会话日志（`<cwd>/.motif/sessions/`），无需插件或模型/API 调用。`--host all` 也包含该目录，不会自动查找其他项目。可通过 `--project /path/to/project` 或 `--motifcode-sessions-dir /path/to/.motif/sessions` 指定其他位置。模型未连接或目录不存在时仍可启动，恢复写入后自动采集。支持交互式 v2 日志；`motif --print` 不写日志。已用符合源码格式的测试数据验证，尚未验证真实模型运行。
+- **Motifcode** —— 已在 0.4.2 验证。`--host motifcode` 无需记录器插件或 API 调用即可跟读 `<cwd>/.motif/sessions/` 的 v2 日志，`--host all` 也包含同一项目。使用 `--project /path/to/project` 或 `--motifcode-sessions-dir /path/to/.motif/sessions` 选择其他位置。目录不存在或模型断开时，记录器会等待日志开始写入。请使用普通任务或交互模式；`motif --print` 不写日志。[验证范围、隐私与限制](./docs/motifcode.md)。
 
 按 Ctrl+C 停止守护进程和会话采集。使用 `npx @taewooopark/agent-blackbox uninstall` 移除全局 OpenCode 记录器及可选钩子。
 

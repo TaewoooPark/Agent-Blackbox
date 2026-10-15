@@ -20,6 +20,7 @@
   <img src="https://img.shields.io/badge/Claude%20Code-000000?style=flat-square&labelColor=000000&color=000000" alt="Claude Code">
   <img src="https://img.shields.io/badge/Codex-000000?style=flat-square&logo=openai&logoColor=white&labelColor=000000" alt="Codex">
   <img src="https://img.shields.io/badge/OpenCode-000000?style=flat-square&labelColor=000000&color=000000" alt="OpenCode">
+  <img src="https://img.shields.io/badge/Motifcode-000000?style=flat-square&labelColor=000000&color=000000" alt="Motifcode">
   <img src="https://img.shields.io/badge/Local--first-000000?style=flat-square&labelColor=000000&color=000000" alt="Local-first">
   <img src="https://img.shields.io/badge/API%20key%20불필요-000000?style=flat-square&labelColor=000000&color=000000" alt="No API key">
 </p>
@@ -27,6 +28,8 @@
 Agent-Blackbox는 **코딩 에이전트를 위한 로컬 우선(local-first) 플라이트 레코더이자 컨텍스트 효율 프로파일러**입니다. 모든 에이전트 실행을 **실시간으로 보고 되감아 볼 수 있는 작업 그래프**로 바꿉니다 — 에이전트가 무엇을 읽고, 바꾸고, 실행하고, 결정하고, 위임하고, 어디서 막혔고, 무엇을 검증했는지를 에이전트 자신의 요약이 아니라 **실제로 관측된 이벤트**로 재구성합니다. 그리고 그 실행을 **두 축**으로 채점합니다 — 컨텍스트 윈도를 얼마나 경제적으로 썼는지, *그리고* 태스크가 실제로 착지했는지 — **태스크 유형**(리서치/디버그/운영…)과 **당신의 과거 런**에 맞춘 잣대로 판단하고, 다음 실행을 더 싸고 빠르게 만들 방법을 구체적으로 알려줍니다.
 
 **[Claude Code](https://www.claude.com/product/claude-code), [Codex](https://developers.openai.com/codex/), [OpenCode](https://opencode.ai), [Motifcode](https://github.com/TaewoooPark/Motifcode)에서 동작합니다** — 같은 레코더, 같은 맵, 같은 효율 점수. 하나만, 혹은 전부 한꺼번에 기록하세요.
+
+**Motifcode 0.4.2 지원을 검증했습니다.** 실제 Morphfactory 모델 실행과 설치된 CLI 테스트로 파일 수정, 실패한 테스트 복구, 서브에이전트, 레코더 재시작을 확인했습니다. `--host motifcode` 또는 `--host all`로 사용하세요. 검증 범위와 원본 저널의 제약은 [지원 표와 재현 가이드](./docs/motifcode.md)를 참고하세요.
 
 > *"트랜스크립트는 에이전트가 한 *말*이고, 블랙박스는 에이전트가 한 *일* — 그리고 그 *비용*이다."*
 
@@ -80,13 +83,14 @@ npx @taewooopark/agent-blackbox up --host all
 claude            # Claude Code, 아무 폴더에서 — 설정 없이 그냥 실행
 codex              # Codex CLI (데스크톱 앱 작업도 함께 포착)
 opencode          # …또는 OpenCode (터미널이든 데스크톱 앱이든)
+motif             # Motifcode, 레코더에서 선택한 프로젝트에서 실행
 ```
 
 - **Claude Code는 설치가 전혀 필요 없습니다** — 데몬이 CLI가 이미 쓰는 JSONL 트랜스크립트를 따라 읽으므로, `claude`를 실행하는 순간 어느 폴더·어느 세션이든 기록됩니다. (`--optimize`를 붙이면 선택형 인-런 액추에이터 훅까지 설치됩니다.)
 - **Codex도 레코더 설치가 필요 없습니다** — `--host codex`가 CLI와 데스크톱 앱의 `$CODEX_HOME/sessions`(기본 `~/.codex/sessions`)을 따라 읽습니다. `--optimize`를 붙이면 선택형 Codex 액추에이터가 설치되며, `/hooks`에서 한 번 신뢰하면 됩니다.
 - **OpenCode**는 레코더를 **글로벌** 플러그인 폴더(`~/.config/opencode/plugins/`)에 떨궈 기록합니다 — 어느 세션·어느 폴더든, 데스크톱 앱까지.
 - **Gajae-Code** *(실험적)* — `--host gjc`로 [Gajae-Code](https://github.com/Yeachan-Heo/gajae-code) 세션을 따라 읽습니다(`~/.gjc/agent/sessions/`, 설치 불필요). `--host all`에도 포함됩니다.
-- **Motifcode** — `--host motifcode`로 Motifcode 0.4.1 v2 세션 저널(`<cwd>/.motif/sessions/`)을 따라 읽습니다. 플러그인이나 모델/API 호출은 필요 없습니다. `--host all`도 같은 폴더를 포함하며 다른 프로젝트를 자동 탐색하지는 않습니다. 다른 경로는 `--project /path/to/project` 또는 `--motifcode-sessions-dir /path/to/.motif/sessions`로 지정하세요. 모델 연결이나 세션 폴더가 없어도 시작되며, 세션 기록이 재개되면 자동으로 수집합니다. 대화형 v2 저널을 지원하며 `motif --print`는 저널을 남기지 않습니다. 소스 형식에 맞춘 테스트 데이터로 검증했으며 실제 모델 실행은 아직 검증하지 않았습니다.
+- **Motifcode** — 0.4.2에서 검증했습니다. `--host motifcode`는 레코더 플러그인이나 API 호출 없이 `<cwd>/.motif/sessions/`의 v2 저널을 따라 읽으며, `--host all`도 같은 프로젝트를 포함합니다. 다른 경로는 `--project /path/to/project` 또는 `--motifcode-sessions-dir /path/to/.motif/sessions`로 선택하세요. 폴더가 없거나 모델 연결이 끊겨도 기록이 시작될 때까지 기다립니다. 일반 태스크나 대화형 모드를 사용하세요. `motif --print`는 저널을 남기지 않습니다. [검증 범위, 개인정보 처리, 제약](./docs/motifcode.md).
 
 Ctrl+C로 데몬과 세션 수집을 멈춥니다. 글로벌 OpenCode 레코더와 선택형 훅은 `npx @taewooopark/agent-blackbox uninstall`로 제거합니다.
 
