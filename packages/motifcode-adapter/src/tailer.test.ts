@@ -85,7 +85,7 @@ describe("Motifcode journal tailer", () => {
     await appendFile(file, lines(record(5, { t: "event", event: { type: "tool_end", id: "read-1", ok: true, output: "export const ready = true;", ms: 2 } }, "run-1", true)));
     await waitFor(() => events.some((event) => event.kind === "tool_result"));
     const result = events.find((event) => event.kind === "tool_result");
-    expect(result).toMatchObject({ host: "motifcode", runId: "run-1", sessionId: "run-1", cwd: projectDir, agentId: "reviewer-scope", agentRole: "subagent", agentLabel: "reviewer" });
+    expect(result).toMatchObject({ host: "motifcode", runId: "run-1", sessionId: "run-1", cwd: projectDir, agentId: "run-1:reviewer-scope", agentRole: "subagent", agentLabel: "reviewer", payload: { parentScopeId: "root" } });
     expect(result?.turnId).toBeTruthy();
     expect(JSON.stringify(result)).toContain("read_file");
     expect(events.some((event) => ["session_created", "tool_call", "agent_start", "subagent_spawned", "message"].includes(event.kind))).toBe(false);
@@ -203,5 +203,103 @@ describe("Motifcode journal tailer", () => {
     await appendFile(join(sessionsDir, "run-1.jsonl"), lines(content(21, "after stop")));
     await pause();
     expect(events).toHaveLength(1);
+  });
+
+  it("preserves event IDs across recorder restart and a full journal backfill", async () => {
+    const sessionsDir = await temporaryProject();
+    const file = join(sessionsDir, "run-1.jsonl");
+    const events: TraceEvent[] = [];
+    const sink = { write: async (event: TraceEvent) => { events.push(event); } };
+    const first = await startMotifcodeTailer(sink, { sessionsDir, pollMs: 10 });
+    stopAfter(first);
+    await writeFile(file, lines(header(), content(1, "before restart")));
+    await waitFor(() => events.some((event) => hasText(event, "before restart")));
+    first.stop();
+
+    const restarted = await startMotifcodeTailer(sink, { sessionsDir, pollMs: 10 });
+    stopAfter(restarted);
+    await appendFile(file, lines(content(2, "after restart")));
+    await waitFor(() => events.some((event) => hasText(event, "after restart")));
+    expect(new Set(events.map((event) => event.id)).size).toBe(events.length);
+    expect(events.map((event) => event.seq)).toEqual([1, 2, 3]);
+
+    const replayed: TraceEvent[] = [];
+    const backfill = await startMotifcodeTailer({ write: async (event) => { replayed.push(event); } }, { sessionsDir, pollMs: 10, backfillDays: 1 });
+    stopAfter(backfill);
+    await waitFor(() => replayed.some((event) => hasText(event, "after restart")));
+    expect(replayed.map((event) => event.id)).toEqual(events.map((event) => event.id));
+  });
+
+  it("retries the same pending event and retains later records and appends in order", async () => {
+    const sessionsDir = await temporaryProject();
+    const file = join(sessionsDir, "run-1.jsonl");
+    const delivered: TraceEvent[] = [];
+    const attempts: TraceEvent[] = [];
+    let failures = 0;
+    const tailer = await startMotifcodeTailer({ write: async (event) => {
+      attempts.push(event);
+      // Fail halfway through the two events produced by a child scope_start.
+      if (event.kind === "message" && event.agentRole === "subagent" && failures < 2) {
+        failures++;
+        throw new Error("temporary sink outage");
+      }
+      delivered.push(event);
+    } }, { sessionsDir, pollMs: 20 });
+    stopAfter(tailer);
+    await writeFile(file, lines(
+      header(), content(1, "before child"),
+      record(2, { t: "scope_start", initialMessages: [], task: "queued child" }, "run-1", true),
+      content(3, "after child")
+    ));
+    await waitFor(() => failures > 0);
+    await appendFile(file, lines(content(4, "while sink recovering")));
+    await waitFor(() => delivered.some((event) => hasText(event, "while sink recovering")));
+    expect(delivered.map((event) => event.seq)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(delivered.filter((event) => event.kind === "message").map((event) => event.payload.text))
+      .toEqual(["before child", "queued child", "after child", "while sink recovering"]);
+    const retried = attempts.filter((event) => event.seq === 4);
+    expect(retried).toHaveLength(3);
+    expect(retried.every((event) => event === retried[0])).toBe(true);
+  });
+
+  it("delivers already-read pending records even if the journal disappears", async () => {
+    const sessionsDir = await temporaryProject();
+    const file = join(sessionsDir, "run-1.jsonl");
+    await writeFile(file, lines(header(), content(1, "retained first"), content(2, "retained second")));
+    const delivered: TraceEvent[] = [];
+    let started = false;
+    let release!: () => void;
+    const gate = new Promise<void>((done) => { release = done; });
+    cleanups.unshift(async () => { release(); });
+    const tailer = await startMotifcodeTailer({ write: async (event) => {
+      if (!started) {
+        started = true;
+        await gate;
+        throw new Error("temporary sink outage");
+      }
+      delivered.push(event);
+    } }, { sessionsDir, pollMs: 10, backfillDays: 1 });
+    stopAfter(tailer);
+    await waitFor(() => started);
+    await rm(file);
+    release();
+    await waitFor(() => delivered.some((event) => hasText(event, "retained second")));
+    expect(delivered.map((event) => event.seq)).toEqual([1, 2, 3]);
+  });
+
+  it("stops retrying a rejected pending event after stop", async () => {
+    const sessionsDir = await temporaryProject();
+    await writeFile(join(sessionsDir, "run-1.jsonl"), lines(header(), content(1, "pending")));
+    let attempts = 0;
+    const tailer = await startMotifcodeTailer({ write: async () => {
+      attempts++;
+      throw new Error("sink unavailable");
+    } }, { sessionsDir, pollMs: 10, backfillDays: 1 });
+    stopAfter(tailer);
+    await waitFor(() => attempts > 0);
+    tailer.stop();
+    const stoppedAt = attempts;
+    await pause();
+    expect(attempts).toBe(stoppedAt);
   });
 });

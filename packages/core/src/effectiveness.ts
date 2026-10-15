@@ -1,5 +1,6 @@
 import type { PromiseCheck } from "./audit.js";
 import { eventSucceeded, type TraceEvent } from "./events.js";
+import { orderEventsForAnalysis } from "./analysisOrder.js";
 
 // The second axis. Efficiency asks "did the run use context economically?" — a run
 // can ace that and still have FAILED (looped, errored, left a broken build). This
@@ -27,6 +28,7 @@ const str = (e: TraceEvent, k: string): string | undefined =>
   typeof e.payload[k] === "string" ? (e.payload[k] as string) : undefined;
 
 export function computeEffectiveness(events: TraceEvent[], checks: PromiseCheck[] = []): EffectivenessReport {
+  events = orderEventsForAnalysis(events);
   let edits = 0;
   let creates = 0;
   let commits = 0;

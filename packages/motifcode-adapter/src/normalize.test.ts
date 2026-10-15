@@ -3,14 +3,14 @@ import { computeEfficiencyReport, createTraceEvent, materializeWorkflowGraph, ty
 import { createMotifcodeNormalizer } from "./normalize.js";
 import type { UnknownRecord } from "./types.js";
 
-// Source-shaped fixtures, not a live model dependency: Motifcode 0.4.1's
+// Source-shaped fixtures, not a live model dependency: Motifcode 0.4.2's
 // packages/journal/src/index.ts and packages/core/src/events.ts.
 const at = "2026-10-08T01:00:00.000Z";
 const header = {
   t: "header", header: {
     schemaVersion: 2, runId: "motif-run", startedAt: at,
     repository: { cwd: "/Users/test/project" }, model: { id: "motif/motif-3" },
-    harness: { version: "0.4.1" }
+    harness: { version: "0.4.2" }
   }
 };
 
@@ -79,7 +79,7 @@ describe("createMotifcodeNormalizer", () => {
     f.start("read", { path: "child.ts" }, "sub-review-1");
     const child = f.end("child", true, "sub-review-1");
     const root = f.end("root");
-    expect(child[0]).toMatchObject({ runId: "motif-run", sessionId: "motif-run", agentId: "sub-review-1", agentRole: "subagent", agentLabel: "review", kind: "file_read", payload: { path: "child.ts", chars: 5 } });
+    expect(child[0]).toMatchObject({ runId: "motif-run", sessionId: "motif-run", agentId: "motif-run:sub-review-1", agentRole: "subagent", agentLabel: "review", kind: "file_read", payload: { path: "child.ts", chars: 5, scopeId: "sub-review-1", parentScopeId: "root" } });
     expect(root[0]).toMatchObject({ kind: "file_read", payload: { path: "root.ts", chars: 4 } });
     expect(root[0]?.agentId).toBeUndefined();
   });
@@ -105,6 +105,24 @@ describe("createMotifcodeNormalizer", () => {
       f.start(tool, { path: "failed.ts", content: "oops", patch: "--- a/failed.ts\n+++ b/failed.ts\n@@ -1 +1 @@\n-a\n+b\n" });
       expect(f.end("Permission denied", false)[0]).toMatchObject({ kind: "tool_result", payload: { success: false } });
     }
+  });
+
+  it("records human denials without claiming successful commands or file changes", () => {
+    const f = fixture(); f.n.consume(header);
+    const output = "The person declined this tool call. Do not retry it as it was; ask what they would prefer, or take a different approach.";
+    for (const name of ["write", "apply_patch", "bash", "term", "mcp"]) {
+      f.start(name, { path: "untouched.ts", content: "hello", patch: "--- /dev/null\n+++ b/untouched.ts\n@@ -0,0 +1 @@\n+hello\n", command: "git push origin main", keystrokes: "touch untouched.ts\n" });
+      // This ok:true is Motifcode's actual execution contract for denial.
+      const events = f.end(output, true);
+      expect(events.map((event) => event.kind)).toEqual(["permission_replied", "tool_result"]);
+      for (const event of events) {
+        expect(event.payload).toMatchObject({ success: false, executed: false, decision: "deny", tool: name });
+        expect(event.payload?.exitCode).toBeUndefined();
+      }
+    }
+    // A file containing that sentence is still a real file read.
+    f.start("read", { path: "instructions.txt" });
+    expect(f.end(output)[0]?.kind).toBe("file_read");
   });
 
   it("parses Motifcode unified diff additions, edits and deletions", () => {
@@ -200,6 +218,31 @@ describe("createMotifcodeNormalizer", () => {
     }
     expect(f.consume({ type: "parse_failure", kind: "unrecoverable", sample: "private tool response" })[0]?.payload).toEqual({ event: "parse_failure", kind: "unrecoverable", sampleChars: 21 });
   });
+
+  it("captures the remaining recorded lifecycle, skill, terminal and recovery events", () => {
+    const f = fixture(); f.n.consume(header);
+    expect(f.n.consume(f.line({ t: "resume", fromSeq: 42, previousRunId: "earlier-run" }))[0]).toMatchObject({ kind: "host_event", payload: { event: "resume", previousRunId: "earlier-run" } });
+    expect(f.consume({ type: "session_start", model: "motif/new-model", endpoint: "https://api-cbt.morphfactory.io", channel: "native", tools: [], toolsHash: "tools" })[0]).toMatchObject({ kind: "model_switched", payload: { model: "motif/new-model" } });
+    f.start("skill", { name: "review", arguments: "src/" });
+    expect(f.end("private skill instructions")[0]).toMatchObject({ kind: "command_run", payload: { command: "review", outputChars: 26 } });
+    f.start("term", { keystrokes: "printf ready\n", duration_s: 0.1 });
+    expect(f.end("ready")[0]).toMatchObject({ kind: "tool_result", payload: { tool: "term", success: true, outputChars: 5 } });
+    // A persistent terminal reporting alive is not evidence that the command
+    // finished, so it does not produce a bash event with a fabricated exit code.
+    for (const event of [
+      { type: "repair", kind: "tool_failure", reason: "tool failure", attempt: 1, max: 2 },
+      { type: "channel_downgrade", from: "native", to: "object", reason: "repeated parse failures" },
+      { type: "hook", event: "OnRepair", label: "check", ok: true },
+      { type: "queue", agent: "review", state: "running" },
+      { type: "loop_detected", signature: "read:file", repeats: 3 }
+    ]) {
+      const [output] = f.consume(event);
+      expect(output?.kind).toBe("host_event");
+      expect(output?.payload?.type).toBe(event.type);
+    }
+    expect(f.consume({ type: "compaction", beforeTokens: 240000, summaryChars: 7, summary: "summary" })[0]).toMatchObject({ kind: "context_compacted", payload: { beforeTokens: 240000, summaryChars: 7 } });
+  });
+
   it("treats header-shaped hunk content as edits to the existing file", () => {
     const f = fixture(); f.n.consume(header);
     f.start("apply_patch", { patch: [
@@ -210,5 +253,37 @@ describe("createMotifcodeNormalizer", () => {
     const changes = f.end("applied");
     expect(changes).toHaveLength(1);
     expect(changes[0]).toMatchObject({ kind: "file_edit", payload: { path: "real.txt", chars: "-- not-a-path".length + "++ fake.txt".length + 6 } });
+  });
+
+  it("keeps identically named child scopes in separate runs distinct in the graph", () => {
+    const outputs: TraceEventInput[] = [];
+    for (const runId of ["run-one", "run-two"]) {
+      const n = createMotifcodeNormalizer({ defaultSessionId: runId });
+      outputs.push(...n.consume({ ...header, header: { ...header.header, runId } }));
+      const child = { v: 2, at, runId, scopeId: "sub-explorer-001", scopeKind: "subagent", parentScopeId: "root", agentName: "explorer" };
+      outputs.push(...n.consume({ ...child, seq: 1, record: { t: "scope_start", task: "Inspect" } }));
+      outputs.push(...n.consume({ ...child, seq: 2, record: { t: "scope_end", result: { endReason: runId === "run-one" ? "transport_error" : "done" } } }));
+    }
+    const graph = materializeWorkflowGraph(outputs.map((event, index) => createTraceEvent(index + 1, event)));
+    const agents = graph.nodes.filter((node) => node.type === "AGENT");
+    expect(agents).toHaveLength(2);
+    expect(agents.find((node) => node.data.agentId === "run-one:sub-explorer-001")?.status).toBe("FAILED");
+    expect(agents.find((node) => node.data.agentId === "run-two:sub-explorer-001")?.status).toBe("SUCCEEDED");
+    for (const event of outputs.filter((event) => event.kind === "agent_start" || event.kind === "agent_end")) {
+      expect(event.payload?.agentId).toBe(event.agentId);
+      expect(event.payload?.parentScopeId).toBe("root");
+    }
+  });
+
+  it("carries namespaced parent identity on child events after priming", () => {
+    const f = fixture();
+    f.n.prime(header);
+    f.n.prime(f.line({ t: "scope_start", task: "Parent" }, "parent"));
+    const start = f.line({ t: "scope_start", task: "Nested child" }, "nested");
+    start.parentScopeId = "parent";
+    f.n.prime(start);
+    const next = f.event({ type: "content_delta", text: "Continued" }, "nested");
+    next.parentScopeId = "parent";
+    expect(f.n.consume(next)[0]).toMatchObject({ agentId: "motif-run:nested", payload: { scopeId: "nested", parentScopeId: "motif-run:parent" } });
   });
 });

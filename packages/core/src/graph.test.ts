@@ -81,6 +81,51 @@ function fixtureEvents() {
 }
 
 describe("workflow graph materialization", () => {
+  it("settles permission replies from explicit decisions instead of leaving them waiting", () => {
+    const seq = createEventSequencer({ host: "motifcode", runId: "r", sessionId: "r" });
+    const graph = materializeWorkflowGraph([
+      seq.next({ kind: "permission_asked", payload: { callID: "pending" } }),
+      seq.next({ kind: "permission_replied", payload: { decision: "deny" } }),
+      seq.next({ kind: "permission_replied", payload: { decision: "allow" } }),
+      seq.next({ kind: "permission_replied", payload: { decision: "future-value" } }),
+      seq.next({ kind: "permission_replied", payload: { properties: { decision: "deny" } } })
+    ]);
+    const gates = graph.nodes.filter((node) => node.type === "PERMISSION_GATE");
+    expect(gates.map((gate) => gate.status)).toEqual(["NEEDS_APPROVAL", "BLOCKED", "SUCCEEDED", "UNKNOWN", "BLOCKED"]);
+    expect(graph.edges.find((edge) => edge.to === gates[2]?.id)?.type).toBe("UNBLOCKS");
+    expect(graph.edges.find((edge) => edge.to === gates[3]?.id)?.type).toBe("CONTAINS");
+  });
+
+  it("completes call nodes from specialized results and keeps replay before results active", () => {
+    const seq = createEventSequencer({ host: "motifcode", runId: "r", sessionId: "r" });
+    const events = [
+      seq.next({ kind: "tool_call", payload: { callID: "read-1", tool: "read" } }),
+      seq.next({ kind: "file_read", payload: { callID: "read-1", path: "file.ts", success: true } }),
+      seq.next({ kind: "tool_call", payload: { callID: "bash-1", tool: "bash" } }),
+      seq.next({ kind: "bash", payload: { callID: "bash-1", command: "npm test", success: false } }),
+      seq.next({ kind: "tool_call", payload: { callID: "write-1", tool: "write" } }),
+      seq.next({ kind: "file_edit", payload: { callID: "unrelated", path: "other.ts", success: true } })
+    ];
+    const graph = materializeWorkflowGraph(events);
+    expect(graph.nodes.filter((node) => node.data.eventKind === "tool_call").map((node) => node.status)).toEqual(["SUCCEEDED", "FAILED", "ACTIVE"]);
+    const first = graph.nodes.find((node) => node.data.callID === "read-1");
+    expect(first?.eventIds).toEqual([events[0]!.id, events[1]!.id]);
+    expect(replayWorkflowGraphAtSeq(events, 1).nodes.find((node) => node.type === "TOOL_CALL")?.status).toBe("ACTIVE");
+  });
+
+  it("pairs identical tool IDs only within their session and agent lane", () => {
+    const seq = createEventSequencer({ host: "motifcode", runId: "r", sessionId: "r" });
+    const child = { agentId: "child", agentRole: "subagent" as const };
+    const events = [
+      seq.next({ kind: "tool_call", payload: { callID: "1", tool: "read" } }),
+      seq.next({ ...child, kind: "tool_call", payload: { callID: "1", tool: "read" } }),
+      seq.next({ ...child, kind: "file_read", payload: { callID: "1", path: "child.ts", success: true } })
+    ];
+    expect(materializeWorkflowGraph(events).nodes.filter((node) => node.data.eventKind === "tool_call").map((node) => node.status)).toEqual(["ACTIVE", "SUCCEEDED"]);
+    events.push(seq.next({ kind: "tool_result", payload: { callID: "1", tool: "read", success: false } }));
+    expect(materializeWorkflowGraph(events).nodes.filter((node) => node.data.eventKind === "tool_call").map((node) => node.status)).toEqual(["FAILED", "SUCCEEDED"]);
+  });
+
   it("turns trace events into operational nodes and edges", () => {
     const graph = materializeWorkflowGraph(fixtureEvents());
 

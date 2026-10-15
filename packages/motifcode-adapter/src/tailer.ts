@@ -1,4 +1,4 @@
-import { createTraceEvent } from "@agent-blackbox/core";
+import { createTraceEvent, type TraceEvent } from "@agent-blackbox/core";
 import { open, readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
@@ -19,6 +19,8 @@ type FileState = {
   decoder: StringDecoder;
   identity?: string;
   normalizer: ReturnType<typeof createMotifcodeNormalizer>;
+  pendingLines?: { lines: string[]; next: number; prime: boolean };
+  pendingEvents?: { events: TraceEvent[]; next: number };
 };
 
 type InitialRead = { size: number; prime: boolean };
@@ -70,14 +72,60 @@ export async function startMotifcodeTailer(
     }
   };
 
+  const drainPending = async (state: FileState): Promise<void> => {
+    while (running) {
+      const pending = state.pendingEvents;
+      if (pending && pending.next < pending.events.length) {
+        // Do not advance until delivery succeeds. If a sink rejects, the next
+        // poll retries this same event and ID before processing another record.
+        await sink.write(pending.events[pending.next]!);
+        pending.next++;
+        continue;
+      }
+      delete state.pendingEvents;
+      const pendingLines = state.pendingLines;
+      if (!pendingLines || pendingLines.next >= pendingLines.lines.length) {
+        delete state.pendingLines;
+        return;
+      }
+      const raw = pendingLines.lines[pendingLines.next++]!;
+      if (!raw.trim()) continue;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        continue;
+      }
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) continue;
+      const line = parsed as Record<string, unknown>;
+      if (pendingLines.prime) {
+        // Priming must advance the same sequence as a full replay. A restarted
+        // recorder otherwise reuses IDs and the graph hides appended work.
+        for (const input of state.normalizer.prime(line)) {
+          seqByRun.set(input.runId, (seqByRun.get(input.runId) ?? 0) + 1);
+        }
+        continue;
+      }
+      const events = state.normalizer.consume(line).map((input) => {
+        const seq = (seqByRun.get(input.runId) ?? 0) + 1;
+        seqByRun.set(input.runId, seq);
+        return createTraceEvent(seq, input);
+      });
+      state.pendingEvents = { events, next: 0 };
+    }
+  };
+
   const drainFile = (filePath: string, initial?: InitialRead): Promise<void> =>
     withFileLock(filePath, async () => {
+      if (!running) return;
+      const state = ensureFile(filePath);
+      // Drain before opening the file: queued records survive removal/rotation.
+      await drainPending(state);
       if (!running) return;
       const file = await open(filePath, "r");
       try {
         const info = await file.stat();
         if (!info.isFile()) return;
-        const state = ensureFile(filePath);
         const identity = `${info.dev}:${info.ino}`;
         const reset = (state.identity !== undefined && state.identity !== identity)
           || info.size < state.offset
@@ -100,28 +148,10 @@ export async function startMotifcodeTailer(
           state.buffer += state.decoder.write(chunk.subarray(0, bytesRead));
           const lines = state.buffer.split(/\r?\n/);
           state.buffer = lines.pop() ?? "";
-          for (const raw of lines) {
-            if (!running) return;
-            if (!raw.trim()) continue;
-            let parsed: unknown;
-            try {
-              parsed = JSON.parse(raw);
-            } catch {
-              continue;
-            }
-            if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) continue;
-            const line = parsed as Record<string, unknown>;
-            if (prime) {
-              state.normalizer.prime(line);
-              continue;
-            }
-            for (const input of state.normalizer.consume(line)) {
-              if (!running) return;
-              const seq = (seqByRun.get(input.runId) ?? 0) + 1;
-              seqByRun.set(input.runId, seq);
-              await sink.write(createTraceEvent(seq, input));
-            }
-          }
+          // Retain at most one chunk's complete lines and one normalized record
+          // batch; a slow/failing sink prevents reading more journal bytes.
+          state.pendingLines = { lines, next: 0, prime };
+          await drainPending(state);
         }
       } finally {
         await file.close();
@@ -175,7 +205,11 @@ export async function startMotifcodeTailer(
     if (!running || tickRunning) return;
     tickRunning = true;
     try {
-      for (const filePath of await listJournals()) {
+      const paths = new Set(await listJournals());
+      for (const [filePath, state] of files) {
+        if (state.pendingEvents || state.pendingLines) paths.add(filePath);
+      }
+      for (const filePath of paths) {
         if (!running) return;
         // Reserve startup files so live polling cannot race priming/backfill.
         if (initial.has(filePath)) continue;

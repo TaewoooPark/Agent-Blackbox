@@ -1,4 +1,5 @@
 import { eventSucceeded, type TraceEvent } from "./events.js";
+import { orderEventsForAnalysis } from "./analysisOrder.js";
 import { ARCHETYPE_PROFILES, classifyRun, type TaskArchetype } from "./taskProfile.js";
 
 // Context Efficiency — derive how economically a run used its context window from
@@ -163,6 +164,7 @@ export type EfficiencyOptions = {
 };
 
 export function computeEfficiencyReport(events: TraceEvent[], options: EfficiencyOptions = {}): EfficiencyReport {
+  events = orderEventsForAnalysis(events);
   // --- token snapshots -------------------------------------------------------
   let finalSnapshot: TokenSnapshot | undefined;
   let peakInput = 0;

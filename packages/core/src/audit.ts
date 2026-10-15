@@ -1,4 +1,5 @@
 import { eventSucceeded, type TraceEvent } from "./events.js";
+import { orderEventsForAnalysis } from "./analysisOrder.js";
 import { firstUserPrompt } from "./prompt.js";
 import type { WorkflowGraph, WorkflowNode } from "./graph.js";
 
@@ -46,6 +47,7 @@ const claimRules: ClaimRule[] = [
 ];
 
 export function evaluatePromiseChecks(events: TraceEvent[]): PromiseCheck[] {
+  events = orderEventsForAnalysis(events);
   const messageEvents = events.filter((event) => event.kind === "message" && event.evidence.claimedByModel);
   const checks: PromiseCheck[] = [];
   // A rule's evidence depends only on the events, not on which message made the

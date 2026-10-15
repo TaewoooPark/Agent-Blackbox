@@ -68,13 +68,20 @@ export async function appendTraceEvent(filePath: string, event: TraceEvent): Pro
 }
 
 export async function readTraceEvents(filePath: string): Promise<TraceEvent[]> {
+  const events: TraceEvent[] = [];
+  for await (const event of iterateTraceEvents(filePath)) events.push(event);
+  return events;
+}
+
+// Consumers such as the daemon's ID index need only one field from each record;
+// yield incrementally so scanning history does not retain every payload in memory.
+export async function* iterateTraceEvents(filePath: string): AsyncGenerator<TraceEvent> {
   // Stream the file in bounded chunks and parse newline-terminated slices as we go.
   // Reading it as a single string (readFile "utf8") throws once the file exceeds
   // Node's max string length (~512 MB) — which a large backfilled store does.
   const handle = await open(filePath, "r");
   try {
     const { size } = await handle.stat();
-    const events: TraceEvent[] = [];
     const chunk = Buffer.alloc(8 * 1024 * 1024);
     const decoder = new StringDecoder("utf8");
     let buffer = "";
@@ -89,13 +96,12 @@ export async function readTraceEvents(filePath: string): Promise<TraceEvent[]> {
       if (nl >= 0) {
         // Complete lines are newline-terminated, so parseTraceEvents parses them all
         // strictly; the trailing partial line carries to the next chunk.
-        for (const event of parseTraceEvents(buffer.slice(0, nl + 1))) events.push(event);
+        yield* parseTraceEvents(buffer.slice(0, nl + 1));
         buffer = buffer.slice(nl + 1);
       }
     }
     // Flush a final line with no trailing newline (a torn last record is tolerated).
-    if (buffer.trim().length > 0) for (const event of parseTraceEvents(buffer)) events.push(event);
-    return events;
+    if (buffer.trim().length > 0) yield* parseTraceEvents(buffer);
   } finally {
     await handle.close();
   }

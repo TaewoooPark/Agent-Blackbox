@@ -18,7 +18,8 @@
     "start": "npm run build && node apps/daemon/dist/cli.js up",
     "test": "vitest run",
     "typecheck": "tsc -b",
-    "up": "node apps/daemon/dist/cli.js up"
+    "up": "node apps/daemon/dist/cli.js up",
+    "test:motifcode": "node e2e/motifcode-integration.mjs"
   },
   "engines": {
     "node": ">=20"

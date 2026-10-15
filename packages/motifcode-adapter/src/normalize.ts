@@ -6,13 +6,18 @@ type Call = { name: string; input: UnknownRecord };
 type PartialEvent = { kind: TraceEventInput["kind"]; summary: string; payload: UnknownRecord };
 const MAX_SCOPES = 256;
 const MAX_PENDING_CALLS = 128;
+// Motifcode deliberately returns ok:true for a human denial so the agent does
+// not retry it as a tool failure. The operation itself never ran.
+const DECLINED_TOOL_OUTPUT = "The person declined this tool call. Do not retry it as it was; ask what they would prefer, or take a different approach.";
+const CONFIRMED_TOOLS = new Set(["bash", "write", "apply_patch", "term", "mcp"]);
 
 /**
- * Motifcode @motifcode/journal v2, verified against Motifcode 0.4.1.
+ * Motifcode @motifcode/journal v2, verified against Motifcode 0.4.1 and 0.4.2.
  * Each task has one journal; child scopes share that file. Checkpoints repeat
  * the entire conversation and must never be replayed as fresh messages/usage.
  * Contract: https://github.com/TaewoooPark/Motifcode/blob/9c34b45f5cd8e617f74be0a2c35aeaabb65c175b/packages/journal/src/index.ts
  * Events: https://github.com/TaewoooPark/Motifcode/blob/9c34b45f5cd8e617f74be0a2c35aeaabb65c175b/packages/core/src/events.ts
+ * Denials: https://github.com/TaewoooPark/Motifcode/blob/c30ebb7ec23ec252c6b60667f1d6776f310a6753/packages/cli/src/executor.ts
  */
 export function createMotifcodeNormalizer(ctx: MotifcodeNormalizerContext) {
   let runId = ctx.defaultSessionId;
@@ -22,6 +27,16 @@ export function createMotifcodeNormalizer(ctx: MotifcodeNormalizerContext) {
   let created = false;
   const scopes = new Map<string, Scope>();
   const calls = new Map<string, Call>();
+
+  // Motifcode scope IDs such as sub-explorer-001 restart in every journal.
+  // Agent nodes are global within an aggregated graph, so qualify their IDs.
+  const agentIdFor = (scopeId: string): string => `${runId}:${scopeId}`;
+  const parentIdFor = (scope: Scope): string | undefined => {
+    if (!scope.parent) return undefined;
+    return scope.parent === "root" || scopes.get(scope.parent)?.child === false
+      ? "root"
+      : agentIdFor(scope.parent);
+  };
 
   function scopeFor(line: UnknownRecord): Scope {
     const id = str(line.scopeId)!;
@@ -40,7 +55,11 @@ export function createMotifcodeNormalizer(ctx: MotifcodeNormalizerContext) {
 
   function make(line: UnknownRecord, scope: Scope | undefined, partial: PartialEvent): TraceEventInput {
     const options = { ...(ctx.homeDir ? { homeDir: ctx.homeDir } : {}), ...(cwd ? { projectDir: cwd } : {}), maxStringLength: 4000 };
-    const payload = redactJsonObject(json(partial.payload), options);
+    const parentScopeId = scope?.child ? parentIdFor(scope) : undefined;
+    const payload = redactJsonObject(json({
+      ...partial.payload,
+      ...(scope?.child ? { scopeId: scope.id, ...(parentScopeId ? { parentScopeId } : {}) } : {})
+    }), options);
     const summary = redactJsonValue(partial.summary, options);
     const label = scope?.label ? redactJsonValue(scope.label, options) : undefined;
     const timestamp = str(line.at) ?? str(record(line.header).startedAt);
@@ -52,7 +71,7 @@ export function createMotifcodeNormalizer(ctx: MotifcodeNormalizerContext) {
       // summaries/payloads, not this machine-local routing field.
       ...(cwd ? { cwd } : {}),
       ...(scope?.turn ? { turnId: scope.turn } : {}),
-      ...(scope?.child ? { agentId: scope.id, agentRole: "subagent" as const, ...(label ? { agentLabel: label.value } : {}) } : {}),
+      ...(scope?.child ? { agentId: agentIdFor(scope.id), agentRole: "subagent" as const, ...(label ? { agentLabel: label.value } : {}) } : {}),
       kind: partial.kind, summary: summary.value, payload: payload.value,
       redaction: {
         rawStored: ctx.rawStored ?? false,
@@ -74,7 +93,7 @@ export function createMotifcodeNormalizer(ctx: MotifcodeNormalizerContext) {
     out.push(make(line, scope, {
       kind: scope.child ? "agent_end" : reason === "done" ? "session_idle" : "session_error",
       summary: scope.child ? `Subagent ended: ${scope.label ?? scope.id}` : `Motifcode task ended: ${reason}`,
-      payload: { reason, success: reason === "done", ...(scope.child ? { agentId: scope.id } : {}) }
+      payload: { reason, success: reason === "done", ...(scope.child ? { agentId: agentIdFor(scope.id) } : {}) }
     }));
     for (const key of calls.keys()) if (key.startsWith(`${scope.id}\0`)) calls.delete(key);
     return out;
@@ -113,7 +132,7 @@ export function createMotifcodeNormalizer(ctx: MotifcodeNormalizerContext) {
     }
     const emit = (kind: TraceEventInput["kind"], summary: string, payload: UnknownRecord): void => { out.push(make(line, scope, { kind, summary, payload })); };
     if (rec.t === "scope_start") {
-      if (scope.child) emit("agent_start", `Subagent started: ${scope.label ?? scope.id}`, { agentId: scope.id, ...(scope.label ? { agent: scope.label } : {}), ...(scope.parent ? { parentScopeId: scope.parent } : {}) });
+      if (scope.child) emit("agent_start", `Subagent started: ${scope.label ?? scope.id}`, { agentId: agentIdFor(scope.id), ...(scope.label ? { agent: scope.label } : {}) });
       const task = str(rec.task);
       if (task) emit("message", "user prompt", { role: "user", text: task });
       return out;
@@ -213,7 +232,9 @@ export function createMotifcodeNormalizer(ctx: MotifcodeNormalizerContext) {
     return out;
   }
 
-  return { consume, prime: (line: MotifcodeJournalLine): void => { consume(line); } };
+  // Primed outputs are counted by the tailer to restore deterministic event
+  // sequence IDs across restarts, but are never written as historical replay.
+  return { consume, prime: (line: MotifcodeJournalLine): TraceEventInput[] => consume(line) };
 }
 
 function toolResult(call: Call | undefined, event: UnknownRecord): PartialEvent[] {
@@ -223,6 +244,13 @@ function toolResult(call: Call | undefined, event: UnknownRecord): PartialEvent[
   const common: UnknownRecord = { tool: name, ...(str(event.id) ? { callID: event.id } : {}), ...(success !== undefined ? { success } : {}), outputChars: output.length, ...(number(event.ms) !== undefined ? { durationMs: event.ms } : {}) };
   const fallback = (): PartialEvent[] => [{ kind: "tool_result", summary: success === false ? `${name} failed` : `Used ${name}`, payload: common }];
   if (!call) return fallback();
+  if (CONFIRMED_TOOLS.has(name) && output === DECLINED_TOOL_OUTPUT) {
+    const denied = { ...common, success: false, executed: false, decision: "deny", source: "motifcode-denial-output" };
+    return [
+      { kind: "permission_replied", summary: `Declined ${name}`, payload: denied },
+      { kind: "tool_result", summary: `${name} was not executed`, payload: denied }
+    ];
+  }
   const path = str(call.input.path);
   if (name === "bash") {
     const command = str(call.input.command);

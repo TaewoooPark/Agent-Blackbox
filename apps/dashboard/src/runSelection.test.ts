@@ -1,6 +1,7 @@
-import { createTraceEvent } from "@agent-blackbox/core";
+import { computeEffectiveness, createTraceEvent, generateHandoffMarkdown, materializeWorkflowGraph } from "@agent-blackbox/core";
 import { describe, expect, it } from "vitest";
 import { filterEventsForRun, latestRunId, listRuns } from "./runSelection.js";
+import { createWorkflowSteps, latestTokenUsage } from "./graphLayout.js";
 
 function event(seq: number, runId: string, ts: string) {
   return createTraceEvent(seq, {
@@ -83,6 +84,30 @@ describe("run selection", () => {
   it("returns every event when no run is selected", () => {
     const events = [event(1, "a", "2026-06-16T01:30:00.000Z")];
     expect(filterEventsForRun(events, null)).toHaveLength(1);
+  });
+
+  it("keeps future evidence out of replay analysis while retaining the full run for navigation", () => {
+    const make = (seq: number, kind: Parameters<typeof createTraceEvent>[1]["kind"], payload: Record<string, unknown>) =>
+      createTraceEvent(seq, { host: "motifcode", runId: "replay", sessionId: "replay", kind, payload: payload as never });
+    const events = [
+      make(1, "message", { role: "user", text: "Fix the failing test" }),
+      make(2, "message", { role: "assistant", tokens: { input: 100, output: 10 } }),
+      make(3, "bash", { command: "npm test", success: false }),
+      make(4, "file_created", { path: "future.ts", success: true }),
+      make(5, "message", { role: "assistant", tokens: { input: 5000, output: 100 } }),
+      make(6, "bash", { command: "npm test", success: true })
+    ];
+    const fullRun = filterEventsForRun(events, "replay");
+    const visible = filterEventsForRun(fullRun, "replay", 3);
+    const graph = materializeWorkflowGraph(visible);
+    expect(fullRun.at(-1)?.seq).toBe(6);
+    expect(visible.map((event) => event.seq)).toEqual([1, 2, 3]);
+    expect(latestTokenUsage(visible).total).toBe(110);
+    expect(createWorkflowSteps(visible).reduce((total, step) => total + step.tokens.total, 0)).toBe(110);
+    expect(computeEffectiveness(visible).signals.find((signal) => signal.id === "verify")?.tone).toBe("bad");
+    expect(generateHandoffMarkdown(graph, [], visible)).not.toContain("future.ts");
+    expect(filterEventsForRun(fullRun, "replay", 0)).toEqual([]);
+    expect(filterEventsForRun(fullRun, "replay", null)).toEqual(fullRun);
   });
 
   it("lists runs most-recent first with counts", () => {
