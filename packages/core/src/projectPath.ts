@@ -6,7 +6,15 @@ import type { TraceEvent } from "./events.js";
 // "usual run" to compare against). Picks the DOMINANT cwd — the dir most events
 // ran in — so a transient first-event subdir doesn't win.
 
-const isAbsolutePath = (p: string): boolean => p.startsWith("/") || /^[A-Za-z]:[\\/]/.test(p);
+// Core also bundles into the browser, so recognize Windows roots without
+// node:path. A namespace prefix alone is not an absolute drive or UNC root.
+const isAbsolutePath = (p: string): boolean => {
+  if (p.startsWith("\\\\?\\") || p.startsWith("\\\\.\\")) {
+    const namespaced = p.slice(4);
+    return /^[A-Za-z]:\\/.test(namespaced) || /^UNC\\[^\\/]+\\[^\\/]+(?:\\|$)/i.test(namespaced);
+  }
+  return p.startsWith("/") || /^[A-Za-z]:[\\/]/.test(p) || /^\\\\[^\\/]+\\[^\\/]+(?:[\\/]|$)/.test(p);
+};
 const baseName = (p: string): string => p.replace(/[\\/]+$/, "").split(/[\\/]/).filter(Boolean).pop() ?? p;
 
 export function dominantCwd(events: TraceEvent[]): string | null {
